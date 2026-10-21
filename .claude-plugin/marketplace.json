@@ -1,0 +1,14 @@
+{
+  "name": "review-guide",
+  "description": "Guided pull request reviews for Claude Code.",
+  "owner": {
+    "name": "Nidhal Dogga"
+  },
+  "plugins": [
+    {
+      "name": "review-guide",
+      "source": "./plugins/review-guide",
+      "description": "Guided pull request reviews with verified draft comments and one-click posting."
+    }
+  ]
+}

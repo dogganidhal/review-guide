@@ -1,0 +1,7 @@
+{
+  "name": "review-guide",
+  "version": "0.1.0",
+  "description": "Guided pull request reviews: a reading order, file roles with diff links, verified draft comments, and one-click posting from a local page.",
+  "author": { "name": "Nidhal Dogga", "url": "https://github.com/dogganidhal" },
+  "keywords": ["code-review", "pull-request", "github"]
+}
