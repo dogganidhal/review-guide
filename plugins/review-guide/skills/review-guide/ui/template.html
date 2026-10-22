@@ -259,8 +259,11 @@ svg .hopnum { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: 
 .cm .proof { margin: 8px 0 0; padding: 7px 9px; border-radius: 6px; background: var(--surface-2); font-size: .8rem; color: var(--muted); }
 .cm .proof b { color: var(--text); }
 .cm .ev { font-family: var(--mono); font-size: .72rem; color: var(--faint); margin-top: 4px; overflow-wrap: anywhere; }
-.cm .cites { font-size: .8rem; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
-.cm .cites a, .cm .ev a { font-family: var(--mono); font-size: .76rem; }
+.cm .cites { font-size: .8rem; color: var(--muted); padding: 3px 12px 0; }
+.cm .cites a, .cm .ev a { font-family: var(--mono); font-size: .76rem; white-space: nowrap; }
+.cm .where { margin: 8px 12px 0; }
+.cm .where .code { font-size: 11.5px; }
+.cm .where .head button { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .types { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .types button { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 99px; padding: 1px 9px; font-size: .74rem; cursor: pointer; }
 .types button[aria-pressed="true"] { border-color: transparent; font-weight: 700; }
@@ -829,16 +832,16 @@ function findingsView(st) {
     })];
 }
 
-function codeBlock(st, rows, path, { excerpt, link, title } = {}) {
+function codeBlock(st, rows, path, { excerpt, link, title, bare, onOpen, oldNums } = {}) {
   const flat = Array.isArray(rows[0]) ? rows.flat() : rows;
   const texts = (k) => flat.filter((r) => (k === '-') === (r.k === '-'));
   const nw = texts('+'), od = texts('-');
   const hNew = highlight(nw.map((r) => r.t), path), hOld = highlight(od.map((r) => r.t), path);
   const html = new Map([...nw.map((r, i) => [r, hNew[i]]), ...od.map((r, i) => [r, hOld[i]])]);
   const byLine = new Map();
-  for (const c of comments(st)) if (c.path === path) (byLine.get(c.line) || byLine.set(c.line, []).get(c.line)).push(c);
+  if (!bare) for (const c of comments(st)) if (c.path === path) (byLine.get(c.line) || byLine.set(c.line, []).get(c.line)).push(c);
   const box = el('div', { class: 'code' });
-  if (title || link) box.append(el('div', { class: 'head' }, el('span', {}, title || path), link ? ext(link, 'GitHub ↗') : null));
+  if (title || link) box.append(el('div', { class: 'head' }, onOpen ? el('button', { type: 'button', onclick: onOpen, title: 'Open the file' }, title || path) : el('span', {}, title || path), link ? ext(link, 'GitHub ↗') : null));
   const hunkRows = (list) => list.forEach((r) => {
     const can = r.k === '+' && r.pr;
     const dim = state.focus && r.k === '+' && r.pr !== state.focus;
@@ -847,15 +850,36 @@ function codeBlock(st, rows, path, { excerpt, link, title } = {}) {
     const src = el('span', { class: 'src', html: html.get(r) || ' ' });
     const fresh = r.k === '+' && sinceLines(st, path)?.includes(r.n);
     const cls = `ln${excerpt ? ' excerpt' : ''}${r.k === '+' ? ' add' : r.k === '-' ? ' del' : ''}${dim ? ' dim' : ''}${fresh ? ' mark' : ''}`;
+    if (excerpt && r.k === '-' && oldNums) num.textContent = r.o;
     box.append(excerpt ? el('div', { class: cls }, num, strip, src) : el('div', { class: cls }, el('span', { class: 'no' }, r.k === '+' ? '' : r.o), num, strip, src));
-    if (r.k !== '-') for (const c of byLine.get(r.n) || []) box.append(commentCard(st, c));
+    if (r.k !== '-') for (const c of byLine.get(r.n) || []) box.append(commentCard(st, c, { inDiff: true }));
   });
   if (Array.isArray(rows[0])) rows.forEach((h, i) => { box.append(el('div', { class: 'hunksep' }, i ? '⋯' : `@@ ${h[0]?.n ?? h[0]?.o}`)); hunkRows(h); });
   else hunkRows(rows);
   return box;
 }
 
-function commentCard(st, c) {
+// The few diff lines a finding sits on, so the reviewer sees the code without leaving the list. A general finding shows
+// the first line it cites that the stack changed; a deleted file matches on its old line numbers.
+function snippet(st, c) {
+  const at = c.path ? [{ path: c.path, from: c.start_line || c.line, to: c.line }]
+    : evRefs(st, c).map((r) => { const m = /:(\d+)(?:-(\d+))?$/.exec(r.e); return m && fileOf(st, r.path) ? { path: r.path, from: +m[1], to: +(m[2] || m[1]) } : null; }).filter(Boolean);
+  for (const { path, from, to } of at) {
+    const f = fileOf(st, path), rows = f.hunks.flat();
+    const old = f.status === 'deleted';
+    const hit = (r) => old ? r.k === '-' && r.o >= from && r.o <= to : r.k !== '-' && r.n >= from && r.n <= to;
+    const first = rows.findIndex(hit);
+    if (first < 0) continue;
+    let last = first;
+    while (last + 1 < rows.length && hit(rows[last + 1])) last++;
+    const lines = rows.slice(Math.max(0, first - 3), Math.min(rows.length, Math.max(last + 3, first + 4), first + 14));
+    const label = `${path.split('/').pop()}:${from}${to !== from ? `-${to}` : ''}${old ? ' (deleted)' : ''}`;
+    return el('div', { class: 'where' }, codeBlock(st, lines, path, { excerpt: true, bare: true, title: label, oldNums: old, onOpen: () => openFile(path) }));
+  }
+  return null;
+}
+
+function commentCard(st, c, { inDiff } = {}) {
   const cs = cmState(c);
   const rerender = () => { save(); render(); };
   const where = c.path ? `${c.path.split('/').pop()}:${c.line}` : 'review summary';
@@ -875,7 +899,7 @@ function commentCard(st, c) {
       el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Suggested comment'),
         el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.axis ? el('span', { class: 'axtag' }, c.axis) : null, c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null,
         el('span', { class: 'grow' }), target),
-      el('div', { class: 'ttl' }, c.title), cites,
+      el('div', { class: 'ttl' }, c.title), cites, inDiff ? null : snippet(st, c),
       open ? el('div', { class: 'cmb' }, el('p', { class: 'preview' }, cs.text), proof) : null,
       el('div', { class: 'acts' },
         el('button', { class: 'btn primary', type: 'button', onclick: () => { cs.on = true; state.cmOpen[c.id] = true; rerender(); } }, 'Add to my review'),
@@ -889,6 +913,7 @@ function commentCard(st, c) {
   return el('div', { class: 'cm mine' },
     el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, DATA.viewer.slice(0, 1).toUpperCase()), c.custom ? 'Your comment' : 'In your review'),
       types, el('span', { class: 'grow' }), target),
+    inDiff ? null : snippet(st, c),
     el('div', { class: 'cmb' }, ta, PREFIX[cs.sev] ? el('div', { class: 'ev' }, `Posted as “${PREFIX[cs.sev]}…”`) : null, cites && el('div', { class: 'ev' }, 'Posted with links to the code it cites.'), c.custom ? null : proof),
     el('div', { class: 'acts' },
       c.custom
@@ -1034,7 +1059,7 @@ function fileView(st) {
         f.status !== 'modified' ? `${f.status} · ` : '', `+${f.adds} −${f.dels} · `,
         f.prs.map((n, j) => [j ? ', ' : 'changed by ', ext(f.pr_links[n], `#${n}`)]), ' · ', ext(f.link, 'stack diff ↗'),
         sinceLines(st, f.path) ? [' · ', el('span', { class: 'newmark' }, 'new'), ` ${plural(sinceLines(st, f.path).length, 'line', 'lines')} changed since your last review`] : null)),
-    general.map((c) => commentCard(st, c)),
+    general.map((c) => commentCard(st, c, { inDiff: true })),
     f.hunks.length ? codeBlock(st, f.hunks, f.path) : el('div', { class: 'empty' }, f.status === 'deleted' ? 'Deleted in this stack.' : 'No text diff to show (binary, too large, or rename only). Open it on GitHub.')];
 }
 
