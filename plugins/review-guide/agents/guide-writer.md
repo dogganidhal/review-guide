@@ -22,26 +22,37 @@ Read beyond the brief only to explain something the diff leaves unclear: `W/S/ti
 
 **`key_facts`**: the 2 to 4 things someone opening this stack must know before anything else makes sense. What changes for users today (often nothing yet: behind a switch, or not wired), which half of a feature is missing and where it lands, one name that means two things, the invariant everything else relies on, what a deploy needs. `title` is a short claim shown in bold; `text` is one sentence. Do not repeat the summary.
 
-**`sections`**: 1 to 4 sections, chosen for this change. Ask what the reviewer needs to see to understand it, then pick the shapes that show it. Never fill a section to have one.
+**`sections`**: 1 to 5 sections, chosen for this change. Ask what the reviewer needs to see to understand it, then pick the shapes that show it. Never fill a section to have one.
 
 | Type | Use it when | Do not use it when |
 | --- | --- | --- |
-| `flow` | a request, job or event now travels a new or changed path | nothing runs differently, or the path is one call |
-| `map` | the stack adds or rewires several components across layers | it touches one module |
+| `diagram` | a picture answers a question about how the change works; pick its `kind` below | the answer is one call or one sentence |
+| `risks` | the change has a few places that can go wrong, each with a status the reviewer should see (`open`, `decided`, `accepted`) | the summary already says it all |
 | `before_after` | behavior changes for users, operators or callers: a removal, a migration, a switched default, a refactor that must preserve behavior | the change only adds |
 | `table` | the change is many similar items: keys moved, settings, endpoints, metrics, what each PR of a long stack does | there are fewer than three rows |
 | `list` | a few points that need no structure: a rollout order, what to verify after deploy, what a follow-up must do | the points fit in key facts |
 | `steps` | the reader should read code in an order to follow a decision | the diff is short or mechanical |
 
+| `kind` | Use it for |
+| --- | --- |
+| `sequence` | who calls whom in order, and what happens on each outcome: an endpoint's 404, 503 and 200 as `alt` branches on one diagram, a retry as a `loop` |
+| `flowchart` | how a request or job is decided and routed: branches, fan-out, retries, a pipeline |
+| `states` | the lifecycle of one thing: a status column, a turn, a task |
+| `structure` | what depends on what after the change, and what was removed (`removed` nodes) |
+| `data` | a stored record, an event or a payload, with its added, removed and changed fields |
+
 Some shapes that fit common changes, as a starting point, not a rule:
 
-- a new feature: `flow`, then `steps`;
-- a removal: `before_after` (what stops happening and for whom), then `table` of what still depends on the removed names when the brief lists any;
-- a refactor: `before_after` of the structure and the behavior it must keep, then `map` when components moved;
+- outcomes of a request: a `sequence` with `alt` frames;
+- a status column or lifecycle: `states`;
+- a removal: `before_after` (what stops happening and for whom), a `structure` with the removed parts, and a `table` of what still depends on the removed names when the brief lists any;
+- a payload, schema or migration: `data`;
 - a long stack: `table` with one row per PR (what it does, whether it is safe to merge alone), then `steps`;
 - configuration or infrastructure: `table` of the settings and their values, then `list` for the rollout.
 
-`flow` and `map` draw from `components`, the components the change touches: 5 to 12 nodes across the layers the repo uses (module or package names), each with a code `label`, a plain-words `role` of 2 to 4 words ("the event log", "the push router"), a `state` (`new`, `changed`, `existing`, `external`) and, when new or changed, the `path` that holds it. Edges carry the operation (`XADD`, `publishes`). Leave `components` out when no section draws it. A `flow` is one runtime path from its entry point to where data lands, each hop labeled with the operation in 2 to 5 words.
+A diagram answers one question and holds at most 12 boxes; split a bigger one. `sequence` participants and `structure` nodes come from `components`, the code units the change touches, across the layers the repo uses (module or package names): each with a code `label`, a plain-words `role` of 2 to 4 words ("the event log", "the push router"), a `state` (`new`, `changed`, `existing`, `external`, `removed`) and, when new or changed, the `path` that holds it. `flowchart`, `states` and `data` declare their own nodes. Node ids are unique across the guide. Labels name the operation in 2 to 5 words (`XADD`, `publishes`, "pool full").
+
+Ground every diagram in the code: give each call, edge and node that stands for code `"at": "path:line"`, the tip line that makes it happen (a changed file, or any file of the checkout at the tip). Read the line before you cite it. An arrow you cannot place is drawn as a guess; leave it out unless the reader needs it. The check fails when more than half the arrows cite no line.
 
 A `steps` section holds 2 to 6 steps, ordered so each needs only the earlier ones. A step is a behavior, not a file. It anchors on the 10 to 60 tip lines that hold the decision, sets `test` to the test that covers it or `null`, and uses `kind: decide` when the reviewer must make a call (the author asks for confirmation, the stack departs from its ticket, a tradeoff needs an owner).
 

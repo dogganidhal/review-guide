@@ -149,7 +149,8 @@ Explaining and finding are separate agents, and finding is split by axis, after 
 ### guide-writer
 
 - Reads `brief.md` and `spec.md`, and code only where the diff is unclear. Writes no findings.
-- Produces `summary`, 2 to 4 `key_facts`, a role for every changed file, and 1 to 4 `sections` chosen for the change from six types: `flow` (a sequence diagram), `map` (components by layer), `before_after`, `table`, `list` and `steps` (a reading order with anchored excerpts). The prompt gives each type a "use when / not when" and common shapes (a removal gets before/after and what still depends on it, a long stack gets a per-PR table). `components` feed `flow` and `map` and are left out when neither is used.
+- Produces `summary`, 2 to 4 `key_facts`, a role for every changed file, and 1 to 5 `sections` chosen for the change from six types: `diagram`, `risks`, `before_after`, `table`, `list` and `steps` (a reading order with anchored excerpts). A `diagram` has a `kind` picked by its question: `sequence` (who calls whom, with `alt`/`opt`/`loop` frames for outcomes), `flowchart` (decisions and routing), `states` (a lifecycle), `structure` (dependencies grouped by layer, removals included) or `data` (records and payloads, field by field). `risks` lists 1 to 6 cards with a status. The prompt gives each type a "use when / not when" and common shapes (outcomes of a request get a sequence with `alt` frames, a removal gets before/after, a structure with the removed parts and what still depends on them). `components` feed `sequence` participants and `structure` nodes and are left out when neither is used.
+- Cites a tip line (`at`) for every arrow and box that stands for code.
 
 ### reviewer (one per axis)
 
@@ -179,17 +180,24 @@ Explaining and finding are separate agents, and finding is split by axis, after 
   | list item | 220 |
   | finding title | 90 |
   | finding body | 700 |
-  | labels | 40 |
+  | labels, guards, field names | 40 |
+  | field type | 30 |
+  | sequence note | 90 |
   | node role | 30 |
   | fact title | 60 |
   | fact text | 200 |
+  | risk title | 70 |
+  | risk text | 220 |
   | test | 140 |
 
 - Every changed file has a role, and no other file does.
 - Anchors exist at the tip and span 60 lines at most.
 - Inline comments sit on lines the stack wrote. A range must cover consecutive lines from one PR. A line error lists nearby valid lines.
-- 1 to 5 sections of a known type, each with its own shape rules (cells per row, items, hops). `flow` and `map` need `components`.
-- Components reference declared layers. `new` and `changed` nodes name the changed file that holds them. Edges and flow hops reference node ids.
+- 1 to 8 sections of a known type, each with its own shape rules (cells per row, items, risks).
+- Diagrams: at most 12 boxes each (participants for a sequence), or the check fails and asks for a split. Node ids are unique across the guide, and steps reference them. Sequence participants and structure nodes are component ids; calls, notes and edges reference boxes of their own diagram. An `alt` frame has 2 to 4 branches, `opt` and `loop` one, nested 2 deep at most; up to 24 calls and notes, 20 edges, 12 fields per data card. A states diagram has one initial state and labels every transition.
+- Components reference declared layers. `new` and `changed` nodes name the changed file that holds them.
+- `at` references point at a line within a file the stack changed, or within any file of the checkout at the tip; the checkout lookups go in one `git cat-file --batch` per stack. The check prints how many arrows cite no line and fails above half.
+- Guides from before the diagram kinds (`flow`, `map`) fail `--check`; a plain build still renders them, as a sequence and a structure diagram, so an earlier round rebuilds.
 - At most 3 findings per PR per axis.
 - `--only guide|<axis>` checks one agent's file, so agents running in parallel do not see each other's errors.
 
@@ -213,8 +221,11 @@ Single self-contained HTML file. Figtree from Google Fonts and highlight.js 11.9
   - then chips for the GitHub link and Rerun, a PR list with one row per PR (title, CI state, failing check names, GitHub link; collapsed above five PRs), plus warnings in a collapsible box;
   - "Know this first";
   - the writer's sections, in its order, each under its own title:
-    - `flow`: a sequence diagram. Components are columns in call order with role above label. Arrows are numbered top to bottom, and blue arrows are what the stack added. Clicking a box opens its file;
-    - `map`: the layered component map. Nodes are ordered by barycenter to reduce crossings, edges are spread along node borders, and labels are placed where they do not collide;
+    - `diagram`: our own SVG, no library. Boxes are colored by state (new filled with the accent, changed tinted, existing plain, external dashed, removed struck through and dashed in Berryblush), blue arrows are what the stack added, and an arrow with no cited line is dotted and faint. Clicking a box or an arrow with `at` opens the file view at that line (GitHub at the tip for a file outside the stack). Hovering a box lights its arrows and dims the rest; hovering a step lights its nodes in every diagram. A legend lists only the states present.
+      - `sequence`: participants as columns with role above label, numbered calls (solid) and returns (dashed), self-calls, notes on a participant, and `alt`/`opt`/`loop` frames with their guards, `alt` split by a dashed line per branch.
+      - `flowchart`, `states`, `structure`, `data` share one layered layout: ranks by longest path with cycles broken by a depth-first search, barycenter sweeps then neighbour swaps to remove crossings, positions pulled toward connected boxes, a reserved slot per edge label so no label sits on a box, ports spread along box sides, and long back edges routed around the side. `flowchart` runs top to bottom with step, decision (diamond), store (cylinder) and end (pill) shapes. `states` runs left to right from the initial dot, terminal states double-bordered. `structure` draws one box per layer, stacking a layer's boxes by their inner edges. `data` draws cards listing fields and types, added fields green with `+`, removed red and struck with `−`, changed amber with `~`. States and data switch to top to bottom when that shows them larger.
+      - Fit: the diagram fills the content width and scales down to 80% (12.5 px text stays above 10 px); past that it scrolls in its frame and the legend shows "Expand", which opens it full screen (Esc or Close).
+    - `risks`: cards with a status pill (open amber, decided green, accepted limit grey), one sentence, and a link to the cited line;
     - `before_after` and `table`: plain tables, backticked names as code;
     - `list`: a bullet list;
     - `steps`: collapsible steps showing title, one sentence, a decide badge, and a count of findings on the excerpt. Opening a step shows the highlighted excerpt with those findings under their lines, the test line ("none covers this" in red), a "Reviewed" checkbox, and a link to the whole file;
