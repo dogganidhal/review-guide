@@ -47,22 +47,39 @@ a:hover { text-decoration: underline; }
 button { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.app { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
-.top { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg); flex-wrap: wrap; }
+.app { display: grid; grid-template-rows: auto 1fr; height: 100vh; height: 100dvh; }
+.top { position: relative; z-index: 30; border-bottom: 1px solid var(--line); background: var(--bg); }
+.topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; padding: 8px 16px; min-height: 48px; }
+.tl, .tr { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tr { justify-content: flex-end; }
 .top .brand { font-weight: 700; white-space: nowrap; }
-.chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.chain .arrow { color: var(--faint); }
-.prchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 99px; padding: 3px 10px; background: var(--bg); cursor: pointer; font-size: .85rem; }
-.prchip[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.prchip .t { color: var(--muted); max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top .title { font-weight: 600; font-size: .9rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
+.stages { display: flex; align-items: center; gap: 2px; }
+.stage { border: 0; background: none; padding: 5px 11px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: .88rem; color: var(--muted); white-space: nowrap; }
+.stage:hover { background: var(--surface-2); }
+.stage[aria-current="true"] { background: var(--accent-soft); color: var(--text); }
+.stage .n { margin-left: 5px; font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; }
+.stage[aria-current="true"] .n { color: var(--muted); }
+.stage .n.full { color: var(--ok); }
+.saveerr { color: var(--danger); background: var(--danger-soft); font-size: .82rem; padding: 4px 16px; border-top: 1px solid var(--line); }
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; }
 .stackmenu { position: relative; }
-.stackmenu > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 99px; padding: 3px 12px; cursor: pointer; font-size: .85rem; }
+.stackmenu > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; flex: none; border: 1px solid var(--line); border-radius: 99px; padding: 3px 12px; cursor: pointer; font-size: .85rem; }
 .stackmenu > summary::-webkit-details-marker { display: none; }
 .stackmenu > summary .t { color: var(--muted); max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stackmenu[open] > summary { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.stackmenu > summary .prdots { gap: 3px; }
+.stackmenu > summary .prdots .dot { width: 9px; height: 9px; }
+.stackmenu > summary.iconbtn { border-radius: 8px; padding: 2px 10px; font-size: 1.15rem; line-height: 1.2; color: var(--muted); }
 .stackmenu .panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: min(760px, calc(100vw - 32px)); max-height: 70vh; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
+.stackmenu.right .panel { left: auto; right: 0; width: min(300px, calc(100vw - 32px)); padding: 6px; }
+.stackmenu .panel .hint { margin: 0; padding: 8px 12px 6px; }
+.mitem, .mrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; background: none; border: 0; border-radius: 8px; padding: 8px 10px; font-size: .88rem; text-align: left; cursor: pointer; color: var(--text); }
+.mitem:hover { background: var(--surface-2); }
+.mrow { cursor: default; color: var(--muted); } .mrow select { flex: 1; min-width: 0; padding: 4px 6px; }
 .stackmenu .fails { display: none; }
+.stackmenu > summary.on { border-color: var(--accent); }
+.linkish { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: .8rem; padding: 0; }
 .prrow { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 22px; gap: 2px 10px; align-items: center; padding: 5px 10px; border-top: 1px solid var(--line); font-size: .85rem; }
 .prrow:first-child { border-top: 0; }
 .prrow .i { color: var(--faint); font-size: .75rem; text-align: right; font-variant-numeric: tabular-nums; }
@@ -80,15 +97,26 @@ button { font: inherit; color: inherit; }
 .prlist { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); margin-bottom: 16px; }
 .prlist > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; font-size: .9rem; }
 .prlist[open] > summary { border-bottom: 1px solid var(--line); }
-.tabs { margin-left: auto; display: flex; gap: 4px; }
-.tab { border: 1px solid transparent; background: none; padding: 5px 12px; border-radius: 8px; cursor: pointer; font-weight: 600; color: var(--muted); }
-.tab[aria-selected="true"] { background: var(--accent-soft); color: var(--text); }
 .iconbtn { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 4px 9px; cursor: pointer; color: var(--muted); font-size: .85rem; }
 
 .body { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 0; }
 .side { border-right: 1px solid var(--line); background: var(--surface); overflow-y: auto; overflow-x: hidden; padding: 12px 0 24px; }
 .ftree { overflow-x: auto; overscroll-behavior-x: contain; }
 .ftree .rows { width: max-content; min-width: 100%; }
+.railsw { display: flex; gap: 2px; margin: 0 12px 10px; padding: 2px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); }
+.railsw button { flex: 1; border: 0; background: none; border-radius: 7px; padding: 4px 8px; font-size: .82rem; font-weight: 600; color: var(--muted); cursor: pointer; }
+.railsw button[aria-selected="true"] { background: var(--accent-soft); color: var(--text); }
+.oi { display: flex; align-items: baseline; gap: 8px; padding: 4px 12px 4px 9px; border-left: 3px solid transparent; font-size: .84rem; color: var(--text); cursor: pointer; }
+.oi:hover { background: var(--surface-2); text-decoration: none; }
+.oi[aria-current="true"] { background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
+.oi .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oi.grp { margin-top: 8px; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; }
+.oi.stp, .oi.ax { padding-left: 14px; }
+.oi .ck { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent-soft); color: var(--text); font-size: .68rem; font-weight: 700; display: grid; place-items: center; align-self: center; }
+.oi.done .ck { background: var(--ok-soft); color: var(--ok); }
+.oi.done .t { color: var(--muted); }
+.oi .cnt { font-size: .74rem; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.oi .cnt.ok { color: var(--ok); }
 .side .tools { display: flex; gap: 6px; padding: 0 12px 10px; flex-wrap: wrap; }
 .side input[type=search] { width: 100%; border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 8px; padding: 6px 9px; font: inherit; font-size: .85rem; }
 .fchip { border: 1px solid var(--line); background: var(--bg); border-radius: 99px; padding: 2px 9px; font-size: .78rem; cursor: pointer; color: var(--muted); }
@@ -150,9 +178,12 @@ button { font: inherit; color: inherit; }
 .prdots .dot { width: 6px; height: 6px; }
 
 main { overflow: auto; padding: 22px clamp(16px, 3vw, 40px) 120px; }
-.wrap { max-width: 1060px; }
+.wrap { max-width: 1600px; }
 h1 { font-size: 1.35rem; line-height: 1.2; margin: 0 0 6px; }
 .summary { margin: 0 0 10px; max-width: 80ch; }
+.step .ttl .why, .glist, .cm .ttl, .cm .preview, .cm .cites, .cm textarea { max-width: 80ch; }
+.facts li > span:last-child { max-width: 80ch; }
+@media (min-width: 1200px) { .facts ol { grid-template-columns: 1fr 1fr; gap: 10px 36px; } }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; font-size: .78rem; }
 .meta span, .meta a { padding: 1px 9px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
 .meta .bad { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
@@ -299,7 +330,6 @@ svg .hopnum { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: 
 .closebtn.quiet { border-color: transparent; background: transparent; color: var(--faint); }
 .closebtn.done { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
 .top a.brand { color: var(--text); }
-.saveerr { color: var(--danger); font-size: .8rem; }
 .robox, .lostbox { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: .86rem; margin-bottom: 14px; background: var(--surface); }
 .lostbox { border-color: var(--warn); background: var(--warn-soft); }
 .lostbox .lost { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; }
@@ -341,6 +371,15 @@ details.more > summary { cursor: pointer; color: var(--muted); font-size: .84rem
 .to { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; color: var(--muted); white-space: nowrap; }
 .cm input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
 
+.crumbrow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 10px; }
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; flex: 1 1 320px; min-width: 0; font-size: .86rem; color: var(--faint); }
+.crumb { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: inherit; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crumb:hover { text-decoration: underline; }
+.crumb.cur { color: var(--text); font-weight: 600; cursor: default; text-decoration: none; }
+.walk { max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.walkers { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: .8rem; color: var(--muted); }
+.ln.anchor { outline: 2px solid var(--hot); outline-offset: -2px; }
+.railbtn { display: none; }
 .filehead { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 12px; }
 .filehead .path { font-family: var(--mono); font-size: .85rem; overflow-wrap: anywhere; flex: 1 1 320px; }
 .filehead .why { color: var(--muted); font-size: .85rem; flex-basis: 100%; }
@@ -386,9 +425,24 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
 .status.err { color: var(--danger); }
 .status.ok { color: var(--ok); }
 @media (max-width: 860px) {
-  .app { height: auto; }
-  .body { grid-template-columns: 1fr; }
-  .side { border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
+  .body { grid-template-columns: minmax(0, 1fr); position: relative; }
+  .side { display: none; position: absolute; top: 0; bottom: 0; left: 0; width: min(330px, 88vw); z-index: 25; box-shadow: 8px 0 24px rgb(0 0 0 / .18); }
+  body.rail-open .side { display: block; }
+  .railbtn { display: inline-block; }
+  .topbar { grid-template-columns: minmax(0, 1fr) auto; padding: 6px 16px; gap: 6px 10px; }
+  .stages { grid-row: 2; grid-column: 1 / -1; overflow-x: auto; margin: 0 -8px; }
+  .stage { padding: 5px 8px; font-size: .84rem; }
+  .top .title { display: none; }
+  .stackmenu { position: static; }
+  .stackmenu .panel { left: 16px; right: 16px; width: auto; top: 100%; }
+  .stackmenu.right .panel { left: auto; width: min(300px, calc(100vw - 32px)); }
+  .tl select { max-width: 38vw; }
+  .stackmenu .prrow { grid-template-columns: 18px minmax(0, 1fr) auto 22px; }
+  .stackmenu .prrow .t { display: none; }
+  .stackmenu .prrow .pick b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .testline code { overflow-wrap: anywhere; }
+  .cm .to { white-space: normal; flex-wrap: wrap; }
+  main { overflow-x: hidden; }
   .step .inner { padding-left: 12px; }
   .code .cm { margin-left: 10px; }
   .srow { grid-template-columns: minmax(0, 1fr); }
@@ -411,7 +465,7 @@ const TOKEN = '/*TOKEN*/';
 // Set by serve.py: where this round's API lives, its saved page state, and the review's rounds.
 const BOOT = /*BOOT*/null || { base: '/api', review: null, round: 1, live: true, status: 'open', ui: {}, rounds: [] };
 const API = BOOT.base;
-const CHAIN_MAX = 5;
+const PRLIST_OPEN_MAX = 5;
 const PR_COLORS =['#107aca', '#ffcd4d', '#ff4773', '#00bfff', '#d0e9fb', '#ffecb2'];
 const PREFIX = { blocker: 'Blocker: ', should: 'Should fix: ', nit: 'Nit: ', question: '', comment: '' };
 const SEV = { comment: 'comment', question: 'question', nit: 'nit', should: 'should fix', blocker: 'blocker' };
@@ -420,7 +474,7 @@ const LANG = { java: 'java', kt: 'kotlin', kts: 'kotlin', py: 'python', ts: 'typ
   go: 'go', rb: 'ruby', rs: 'rust', sql: 'sql', sh: 'bash', bash: 'bash', yml: 'yaml', yaml: 'yaml', xml: 'xml', html: 'xml', json: 'json', md: 'markdown',
   toml: 'ini', ini: 'ini', properties: 'ini', css: 'css', scss: 'scss', graphql: 'graphql', swift: 'swift', php: 'php', cs: 'csharp', c: 'c', h: 'c', cpp: 'cpp' };
 
-const defaults = { stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {}, lost: [] };
+const defaults = { stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {}, lost: [], rail: null, origin: null, nav: null };
 let state = { ...defaults, ...(BOOT.ui || {}) };
 if (!DATA.stacks.some((s) => s.id === state.stack)) state.stack = DATA.stacks[0].id;
 let posted = {};
@@ -481,11 +535,11 @@ function evRefs(st, c) {
     const path = m ? m[1] : e, f = fileOf(st, path);
     const sha = f?.status === 'deleted' ? st.base : st.tip;
     const url = `https://github.com/${DATA.repo}/blob/${sha}/${path}` + (m ? `#L${m[2]}${m[3] ? `-L${m[3]}` : ''}` : '');
-    return { e, label: `${path.split('/').pop()}${m ? `:${m[2]}${m[3] ? `-${m[3]}` : ''}` : ''}`, url, inStack: !!f && f.status !== 'deleted', path };
+    return { e, label: `${path.split('/').pop()}${m ? `:${m[2]}${m[3] ? `-${m[3]}` : ''}` : ''}`, url, inStack: !!f && f.status !== 'deleted', path, line: m ? +m[2] : null };
   });
 }
 const evLinks = (st, c) => evRefs(st, c).map((r, i) => [i ? ' · ' : '', r.inStack
-  ? el('a', { href: '#', title: r.e, onclick: (ev) => { ev.preventDefault(); openFile(r.path); } }, r.label) : ext(r.url, r.label + ' ↗')]);
+  ? el('a', { href: '#', title: r.e, onclick: (ev) => { ev.preventDefault(); openFile(r.path, { line: r.line }); } }, r.label) : ext(r.url, r.label + ' ↗')]);
 // A comment with no line goes in the review summary; it carries links to the code it cites, since the author reads it without the page.
 const postText = (c) => {
   const cs = cmState(c), text = ((PREFIX[cs.sev] ?? '') + cs.text.trim()).trim();
@@ -513,30 +567,63 @@ function highlight(texts, path) {
   return out;
 }
 
+const reviewTitle = (st) => (SELF ? `Self-review of ${DATA.source?.branch || 'local work'}${st.prs.length > 1 ? `, ${st.prs.length} layers` : ''}` : st.prs.length > 1 ? `Stack of ${st.prs.length} PRs` : st.prs[0].title);
+const allSteps = (st) => st.sections.flatMap((sec, si) => (sec.type === 'steps' ? sec.steps.map((s, i) => ({ s, n: i + 1, sec, si })) : []));
+const axisFindings = (st) => comments(st).filter((c) => c.axis && c.status !== 'duplicate');
+let stackOpen = false;
+
+function stackChip(st) {
+  const fp = st.prs.find((p) => p.n === state.focus);
+  const failing = st.prs.filter((p) => p.checks.failed.length).length;
+  const noun = SELF ? 'layers' : 'PRs';
+  return el('details', { class: 'stackmenu', open: stackOpen, ontoggle: (e) => { stackOpen = e.target.open; } },
+    el('summary', { class: fp ? 'on' : '', title: fp ? `Showing only what ${tag(fp.n)} wrote` : `The ${st.prs.length} ${noun} of this stack` },
+      fp ? [prDot(st, fp.n), `${tag(fp.n)} only`] : [el('span', { class: 'prdots' }, st.prs.map((p) => prDot(st, p.n))), `${st.prs.length} ${noun}`],
+      failing ? el('span', { class: 'ci bad' }, `✕ ${failing}`) : null, el('span', { class: 'chev' }, '▾')),
+    el('div', { class: 'panel' },
+      el('p', { class: 'hint' }, `Pick one to show only what it wrote. `, fp ? el('button', { class: 'linkish', type: 'button', onclick: () => { state.focus = null; save(); render(); } }, 'Show the whole stack') : null),
+      prRows(st)));
+}
+
+function moreMenu() {
+  const act = (f) => (e) => { e.currentTarget.closest('details')?.removeAttribute('open'); f(); };
+  const rounds = roundPick(), all = DATA.stacks.flatMap((s) => s.prs);
+  const finish = BOOT.live && BOOT.review && BOOT.status !== 'done' && !all.every((p) => posted[p.n]);
+  return el('details', { class: 'stackmenu right' },
+    el('summary', { class: 'iconbtn', title: 'More', 'aria-label': 'More' }, '⋯'),
+    el('div', { class: 'panel' },
+      rounds ? el('div', { class: 'mrow' }, rounds) : null,
+      BOOT.live ? el('button', { class: 'mitem', type: 'button', onclick: act(() => { rerunOpen = true; go('guide', 'g-top'); }) }, 'Rerun the guide', el('span', {}, '↻')) : null,
+      el('button', { class: 'mitem', type: 'button', onclick: act(toggleTheme) }, 'Switch theme', el('span', {}, '◐')),
+      finish ? el('button', { class: 'mitem', type: 'button', onclick: act(finishReview) }, 'Finish review') : null));
+}
+
 function renderTop() {
   const st = ST();
   const n = comments(st).filter((c) => cmState(c).on && !cmState(c).gone).length;
-  const stackPick = DATA.stacks.length > 1 ? el('select', { 'aria-label': 'Stack', onchange: (e) => { state.stack = e.target.value; state.file = null; state.view = 'guide'; state.focus = null; save(); render(); } },
+  const steps = allSteps(st), found = axisFindings(st);
+  const readDone = steps.filter((e) => state.done[e.s.id]).length, decided = found.filter((c) => cmState(c).on || cmState(c).gone).length;
+  const firstSteps = st.sections.findIndex((x) => x.type === 'steps');
+  const stage = (id, label, count, full) => el('button', { class: 'stage', type: 'button', 'data-s': id, 'aria-current': 'false', onclick: () => goStage(id) },
+    label, count ? el('span', { class: 'n' + (full ? ' full' : '') }, count) : null);
+  const stackPick = DATA.stacks.length > 1 ? el('select', { 'aria-label': 'Stack', onchange: (e) => { state.stack = e.target.value; state.file = null; state.view = 'guide'; state.focus = null; state.origin = state.nav = null; save(); render(); } },
     DATA.stacks.map((s) => el('option', { value: s.id }, s.prs.map((p) => tag(p.n)).join(' → ')))) : null;
   if (stackPick) stackPick.value = st.id;
-  const fp = st.prs.find((p) => p.n === state.focus);
-  const failingPrs = st.prs.filter((p) => p.checks.failed.length).length;
-  const chain = st.prs.length > CHAIN_MAX ? el('details', { class: 'stackmenu' },
-    el('summary', {}, fp ? [prDot(st, fp.n), tag(fp.n), el('span', { class: 't' }, ptitle(fp))] : `All ${st.prs.length} ${SELF ? 'layers' : 'PRs'}`,
-      failingPrs ? el('span', { class: 'ci bad' }, `✕ ${failingPrs}`) : null, el('span', { class: 'chev' }, '▾')),
-    el('div', { class: 'panel' }, prRows(st))) : el('div', { class: 'chain' }, st.prs.map((p, i) => [
-    i ? el('span', { class: 'arrow' }, '→') : null,
-    el('button', { class: 'prchip', type: 'button', 'aria-pressed': String(state.focus === p.n), title: `Show only what #${p.n} wrote`,
-      onclick: () => { state.focus = state.focus === p.n ? null : p.n; save(); render(); } },
-      prDot(st, p.n), tag(p.n), el('span', { class: 't' }, ptitle(p)), posted[p.n] ? el('span', { class: 'st verified' }, '✓') : null)]));
-  document.getElementById('top').replaceChildren(...[
-    el('a', { class: 'brand', href: '/', title: 'All reviews' }, '← Reviews'), roundPick(), stackPick, chain,
-    el('div', { class: 'tabs', role: 'tablist' },
-      el('button', { class: 'tab', role: 'tab', type: 'button', 'aria-selected': String(state.view !== 'send'), onclick: () => { state.view = state.file ? 'file' : 'guide'; if (state.view === 'file' && !fileOf(st, state.file)) state.view = 'guide'; save(); render(); } }, 'Guide'),
-      el('button', { class: 'tab', role: 'tab', type: 'button', 'aria-selected': String(state.view === 'send'), onclick: () => { state.view = 'send'; save(); render(); } }, `Your review (${n})`)),
-    saveErr ? el('span', { class: 'saveerr', role: 'alert' }, saveErr) : null,
-    el('button', { class: 'iconbtn', type: 'button', onclick: toggleTheme, title: 'Toggle theme' }, '◐'), finishButton()].filter(Boolean));
+  const bar = el('div', { class: 'topbar' },
+    el('div', { class: 'tl' }, el('button', { class: 'iconbtn railbtn', type: 'button', 'aria-label': 'Outline and files', onclick: () => document.body.classList.toggle('rail-open') }, '☰'),
+      el('a', { class: 'brand', href: '/', title: 'All reviews' }, '← Reviews'), el('span', { class: 'title', title: reviewTitle(st) }, reviewTitle(st)),
+      st.prs.length > 1 ? stackChip(st) : null, stackPick),
+    el('nav', { class: 'stages', 'aria-label': 'Review stages' },
+      stage('understand', 'Understand'),
+      steps.length ? stage('read', 'Read', `${readDone}/${steps.length}`, readDone === steps.length) : null,
+      found.length ? stage('findings', 'Findings', `${decided}/${found.length}`, decided === found.length) : stage('findings', 'Findings'),
+      stage('send', 'Send', `(${n})`)),
+    el('div', { class: 'tr' }, finishButton(), moreMenu()));
+  document.getElementById('top').replaceChildren(...[bar, saveErr ? el('div', { class: 'saveerr', role: 'alert' }, saveErr) : null].filter(Boolean));
+  stageTargets = { understand: 'g-top', read: `sec-${firstSteps}`, findings: 'g-findings' };
+  markSpy();
 }
+let stageTargets = {};
 
 function roundPick() {
   const built = BOOT.rounds.filter((r) => r.built);
@@ -549,14 +636,12 @@ function roundPick() {
   return pick;
 }
 
-// Quiet until something is posted, primary once every PR has a review.
+// A primary button once every PR has a review; until then Finish lives in the more menu.
 function finishButton() {
   if (!BOOT.live || !BOOT.review) return null;
   if (BOOT.status === 'done') return el('button', { class: 'closebtn', type: 'button', onclick: () => setStatus('reopen'), title: 'Move this review back to the open ones' }, 'Reopen');
-  const all = DATA.stacks.flatMap((s) => s.prs), n = all.filter((p) => posted[p.n]).length;
-  const cls = n === all.length ? 'done' : n ? '' : 'quiet';
-  return el('button', { class: 'closebtn ' + cls, type: 'button', onclick: finishReview, title: 'Mark this review done and go back to the inbox' },
-    n === all.length ? 'Done · Finish review' : 'Finish review');
+  const all = DATA.stacks.flatMap((s) => s.prs);
+  return all.every((p) => posted[p.n]) ? el('button', { class: 'closebtn done', type: 'button', onclick: finishReview, title: 'Mark this review done and go back to the inbox' }, 'Finish review') : null;
 }
 
 async function setStatus(action) {
@@ -608,8 +693,7 @@ function buildTree(files) {
   return { root, compress };
 }
 
-function renderSide() {
-  const st = ST();
+function filesRail(st) {
   const q = state.q.toLowerCase();
   if (state.filter === 'since' && !st.since) state.filter = 'all';
   const visible = st.files.filter((f) => inFilter(st, f) && (!q || f.path.toLowerCase().includes(q)));
@@ -644,16 +728,80 @@ function renderSide() {
     oninput: (e) => { state.q = e.target.value; save(); renderSide(); document.querySelector('.side input')?.focus(); } });
   const chip = (id, label) => el('button', { class: 'fchip', type: 'button', 'aria-pressed': String(state.filter === id), onclick: () => { state.filter = id; save(); renderSide(); } }, label);
   const viewed = st.files.filter((f) => state.viewed[st.id + f.path]).length;
-  document.getElementById('side').replaceChildren(...[
+  return [
     el('div', { class: 'tools' }, search),
     el('div', { class: 'tools' }, chip('all', `All ${st.files.length}`), st.since ? chip('since', `New ${Object.keys(st.since.files).length}`) : null, st.pending ? null : [chip('read', `Read ${counts.read}`), chip('skim', `Skim ${counts.skim}`), chip('skip', `Skip ${counts.skip}`)]),
     el('div', { class: 'count' }, `${viewed}/${st.files.length} viewed`, state.focus ? ` · showing #${state.focus}` : ''),
-    el('div', { class: 'ftree' }, el('div', { class: 'rows' }, rows))]);
-  const tree = document.querySelector('.ftree');
-  tree.scrollLeft = sideScrollLeft;
-  tree.addEventListener('scroll', () => { sideScrollLeft = tree.scrollLeft; }, { passive: true });
+    el('div', { class: 'ftree' }, el('div', { class: 'rows' }, rows))];
 }
 let sideScrollLeft = 0;
+
+const railMode = () => state.rail ?? (state.view === 'file' ? 'files' : 'outline');
+function renderSide() {
+  const st = ST(), mode = railMode();
+  const sw = el('div', { class: 'railsw', role: 'tablist', 'aria-label': 'Left rail' }, [['outline', 'Outline'], ['files', 'Files']].map(([k, l]) =>
+    el('button', { type: 'button', role: 'tab', 'aria-selected': String(mode === k), onclick: () => { state.rail = k; save(); renderSide(); } }, l)));
+  document.getElementById('side').replaceChildren(sw, ...(mode === 'files' ? filesRail(st) : outlineRail(st)).flat(Infinity).filter(Boolean));
+  const tree = document.querySelector('.ftree');
+  if (tree) { tree.scrollLeft = sideScrollLeft; tree.addEventListener('scroll', () => { sideScrollLeft = tree.scrollLeft; }, { passive: true }); }
+  applySpy();
+}
+
+function outlineRail(st) {
+  const item = (id, cls, ...kids) => el('a', { class: 'oi ' + cls, href: '#', 'data-t': id, 'aria-current': 'false', onclick: (e) => { e.preventDefault(); goOutline(id); } }, kids);
+  const t = (x) => el('span', { class: 't', title: x }, x);
+  const found = axisFindings(st), left = found.filter((c) => !cmState(c).on && !cmState(c).gone).length;
+  return [item('g-top', '', t('Overview')),
+    st.sections.map((sec, i) => [item(`sec-${i}`, sec.type === 'steps' ? 'grp' : '', t(sec.title), sec.type === 'steps' ? el('span', { class: 'cnt' }, `${sec.steps.filter((x) => state.done[x.id]).length}/${sec.steps.length}`) : null),
+      sec.type === 'steps' ? sec.steps.map((x, j) => item(x.id, 'stp' + (state.done[x.id] ? ' done' : ''), el('span', { class: 'ck' }, state.done[x.id] ? '✓' : j + 1), t(x.title))) : null]),
+    item('g-findings', 'grp', t('Findings'), el('span', { class: 'cnt' + (found.length && !left ? ' ok' : '') }, found.length ? (left ? `${left} left` : '✓') : '')),
+    AXES.map(([a, label]) => {
+      const mine = found.filter((c) => c.axis === a), n = mine.filter((c) => !cmState(c).on && !cmState(c).gone).length;
+      return item('axis-' + a, 'ax', t(label), el('span', { class: 'cnt' + (mine.length && !n ? ' ok' : '') }, !mine.length ? (st.reviewing.includes(a) ? '…' : '0') : n ? n : '✓'));
+    }),
+    item('send', 'grp', t('Your review'), el('span', { class: 'cnt' }, `${comments(st).filter((c) => cmState(c).on && !cmState(c).gone).length}`))];
+}
+
+// Where the page is: the stage and the outline item at the top of the screen, from the scroll position.
+const $main = () => document.getElementById('main');
+let spy = { stage: null, item: null }, spyItem = null;
+const spyList = (st) => [{ id: 'g-top', stage: 'understand' }, ...st.sections.flatMap((sec, i) => [{ id: `sec-${i}`, stage: sec.type === 'steps' ? 'read' : 'understand' },
+  ...(sec.type === 'steps' ? sec.steps.map((x) => ({ id: x.id, stage: 'read' })) : [])]), { id: 'g-findings', stage: 'findings' }, ...AXES.map(([a]) => ({ id: 'axis-' + a, stage: 'findings' }))];
+function markSpy() {
+  if (state.view !== 'guide') spy = state.view === 'send' ? { stage: 'send', item: 'send' } : { stage: null, item: null };
+  else {
+    const m = $main(), line = m.getBoundingClientRect().top + 90;
+    const here = spyList(ST()).filter((x) => document.getElementById(x.id));
+    let cur = here.filter((x) => document.getElementById(x.id).getBoundingClientRect().top <= line).pop() || here[0];
+    if (m.scrollTop > 0 && m.scrollTop + m.clientHeight >= m.scrollHeight - 4) cur = here.at(-1);
+    spy = cur ? { stage: cur.stage, item: cur.id } : { stage: null, item: null };
+  }
+  applySpy();
+}
+function applySpy() {
+  for (const b of document.querySelectorAll('.stage')) b.setAttribute('aria-current', String(b.dataset.s === spy.stage));
+  let on = null;
+  for (const a of document.querySelectorAll('.oi')) { const is = a.dataset.t === spy.item; a.setAttribute('aria-current', String(is)); if (is) on = a; }
+  if (spy.item !== spyItem) { spyItem = spy.item; on?.scrollIntoView({ block: 'nearest' }); }
+}
+
+function goTo(id) {
+  document.body.classList.remove('rail-open');
+  const e = document.getElementById(id), m = $main();
+  if (e) m.scrollTo({ top: e.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - 12, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+}
+function go(view, id) {
+  state.view = view; state.origin = state.nav = null; save(); render();
+  if (id) goTo(id); else $main().scrollTo(0, 0);
+}
+function goOutline(id) {
+  const st = ST();
+  if (id === 'send') return go('send');
+  if (allSteps(st).some((e) => e.s.id === id)) state.open[id] = true;
+  if (id.startsWith('axis-')) state.open[`axis:${st.id}:${id.slice(5)}`] = true;
+  go('guide', id);
+}
+const goStage = (id) => (id === 'send' ? go('send') : go('guide', stageTargets[id]));
 
 function mapView(st) {
   const m = st.components, MINW = 980, ROW = 112, TOP = 30, LEFT = 150, NH = 32, GAP = 28;
@@ -829,7 +977,7 @@ function findingsView(st) {
       const mine = all.filter((c) => c.axis === a && !cmState(c).gone).sort((x, y) => RANK[y.severity] - RANK[x.severity]);
       const busy = st.reviewing.includes(a), skip = st.skipped[a];
       const key = `axis:${st.id}:${a}`;
-      return el('details', { class: 'axis', open: state.open[key] ?? (mine.length > 0), ontoggle: (e) => { state.open[key] = e.target.open; save(); } },
+      return el('details', { class: 'axis', id: 'axis-' + a, open: state.open[key] ?? (mine.length > 0), ontoggle: (e) => { state.open[key] = e.target.open; save(); } },
         el('summary', {}, el('b', {}, label), el('span', { class: 'aside' }, hint), el('span', { class: 'grow' }),
           el('span', { class: 'n' }, busy ? [el('span', { class: 'spin' }), 'reviewing'] : skip ? 'skipped' : mine.length ? plural(mine.length, 'finding', 'findings') : 'nothing found')),
         el('div', { class: 'axbody' }, skip ? el('p', { class: 'hint' }, skip) : null,
@@ -857,7 +1005,7 @@ function codeBlock(st, rows, path, { excerpt, link, title, bare, onOpen, oldNums
     const fresh = r.k === '+' && sinceLines(st, path)?.includes(r.n);
     const cls = `ln${excerpt ? ' excerpt' : ''}${r.k === '+' ? ' add' : r.k === '-' ? ' del' : ''}${dim ? ' dim' : ''}${fresh ? ' mark' : ''}`;
     if (excerpt && r.k === '-' && oldNums) num.textContent = r.o;
-    box.append(excerpt ? el('div', { class: cls }, num, strip, src) : el('div', { class: cls }, el('span', { class: 'no' }, r.k === '+' ? '' : r.o), num, strip, src));
+    box.append(excerpt ? el('div', { class: cls }, num, strip, src) : el('div', { class: cls, 'data-n': r.k === '-' ? null : r.n }, el('span', { class: 'no' }, r.k === '+' ? '' : r.o), num, strip, src));
     if (r.k !== '-') for (const c of byLine.get(r.n) || []) box.append(commentCard(st, c, { inDiff: true }));
   });
   if (Array.isArray(rows[0])) rows.forEach((h, i) => { box.append(el('div', { class: 'hunksep' }, i ? '⋯' : `@@ ${h[0]?.n ?? h[0]?.o}`)); hunkRows(h); });
@@ -880,7 +1028,7 @@ function snippet(st, c) {
     while (last + 1 < rows.length && hit(rows[last + 1])) last++;
     const lines = rows.slice(Math.max(0, first - 3), Math.min(rows.length, Math.max(last + 3, first + 4), first + 14));
     const label = `${path.split('/').pop()}:${from}${to !== from ? `-${to}` : ''}${old ? ' (deleted)' : ''}`;
-    return el('div', { class: 'where' }, codeBlock(st, lines, path, { excerpt: true, bare: true, title: label, oldNums: old, onOpen: () => openFile(path) }));
+    return el('div', { class: 'where' }, codeBlock(st, lines, path, { excerpt: true, bare: true, title: label, oldNums: old, onOpen: () => openFile(path, { line: from }) }));
   }
   return null;
 }
@@ -895,13 +1043,13 @@ function commentCard(st, c, { inDiff } = {}) {
   const proof = c.status ? el('div', { class: 'proof' }, el('b', { class: 'st ' + c.status }, STATUS[c.status]), c.note ? [' ', c.note] : null,
     c.evidence?.length ? el('div', { class: 'ev' }, evLinks(st, c)) : null) : null;
   if (cs.gone) {
-    return el('div', { class: 'cm gone' }, el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Dismissed suggestion'),
+    return el('div', { class: 'cm gone', 'data-cid': c.id }, el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Dismissed suggestion'),
       el('span', { class: 'grow' }), el('button', { class: 'linkish', type: 'button', onclick: () => { cs.gone = false; rerender(); } }, 'Undo')),
       el('div', { class: 'ttl' }, c.title));
   }
   if (!cs.on) {
     const open = !!state.cmOpen[c.id];
-    return el('div', { class: 'cm sugg' + (c.status === 'refuted' ? ' refuted' : '') },
+    return el('div', { class: 'cm sugg' + (c.status === 'refuted' ? ' refuted' : ''), 'data-cid': c.id },
       el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Suggested comment'),
         el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.axis ? el('span', { class: 'axtag' }, c.axis) : null, c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null,
         el('span', { class: 'grow' }), target),
@@ -916,7 +1064,7 @@ function commentCard(st, c, { inDiff } = {}) {
   ta.value = cs.text;
   const types = el('span', { class: 'types', role: 'group', 'aria-label': 'Comment type' },
     Object.keys(SEV).map((k) => el('button', { class: k, type: 'button', 'aria-pressed': String(cs.sev === k), onclick: () => { cs.sev = k; rerender(); } }, SEV[k])));
-  return el('div', { class: 'cm mine' },
+  return el('div', { class: 'cm mine', 'data-cid': c.id },
     el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, DATA.viewer.slice(0, 1).toUpperCase()), c.custom ? 'Your comment' : 'In your review'),
       types, el('span', { class: 'grow' }), target),
     inDiff ? null : snippet(st, c),
@@ -952,7 +1100,7 @@ function stepCard(st, s, i) {
       s.test === false ? null : el('p', { class: 'testline' }, 'Test: ', s.test ? el('code', {}, s.test) : el('span', { class: 'none' }, 'none covers this')),
       el('div', { class: 'bar' },
         el('label', {}, el('input', { type: 'checkbox', checked: done, onchange: (e) => { state.done[s.id] = e.target.checked; save(); render(); } }), 'Reviewed'),
-        f ? el('a', { href: '#', onclick: (e) => { e.preventDefault(); openFile(s.path); } }, 'Whole file in the stack →') : null)));
+        f ? el('a', { href: '#', onclick: (e) => { e.preventDefault(); openFile(s.path, { line: s.start }); } }, 'Whole file in the stack →') : null)));
   }
   return card;
 }
@@ -1014,7 +1162,7 @@ function guideView(st) {
   const listKey = 'prs:' + st.id;
   const warnings = DATA.warnings.filter((w) => st.prs.some((p) => w.includes('#' + p.n)));
   return [
-    el('h1', {}, SELF ? `Self-review of ${DATA.source?.branch || 'local work'}${st.prs.length > 1 ? `, ${st.prs.length} layers` : ''}` : st.prs.length > 1 ? `Stack of ${st.prs.length} PRs` : st.prs[0].title),
+    el('h1', { id: 'g-top' }, reviewTitle(st)),
     el('p', { class: 'summary' }, st.summary),
     tiles(st),
     el('div', { class: 'meta' },
@@ -1022,7 +1170,7 @@ function guideView(st) {
       !BOOT.live ? null : el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
     rerunBox(st),
     el('div', { class: 'runpanel', 'aria-live': 'polite' }),
-    el('details', { class: 'prlist', open: state.open[listKey] ?? st.prs.length <= CHAIN_MAX, ontoggle: (e) => { state.open[listKey] = e.target.open; save(); } },
+    el('details', { class: 'prlist', open: state.open[listKey] ?? st.prs.length <= PRLIST_OPEN_MAX, ontoggle: (e) => { state.open[listKey] = e.target.open; save(); } },
       el('summary', {}, SELF ? `${plural(st.prs.length, 'layer', 'layers')} · ` : st.prs.length > 1 ? `${st.prs.length} PRs in this stack · ` : 'Pull request · ', SELF && st.prs.every((p) => !p.pushed) ? el('span', { class: 'ci none' }, 'not pushed') : el('span', { class: 'ci ' + (failing.length ? 'bad' : pending ? 'wait' : 'ok') }, ci)),
       prRows(st)),
     st.since ? sinceBox(st) : null,
@@ -1032,8 +1180,8 @@ function guideView(st) {
       'The guide is being written, and three reviewers are reading the code. Each part appears here when it lands. The files and diffs are ready now.') : null,
     !st.key_facts.length ? null : el('section', { class: 'facts' }, el('h3', {}, 'Know this first'),
       el('ol', {}, st.key_facts.map((f, i) => el('li', {}, el('span', { class: 'n' }, i + 1), el('span', {}, el('b', {}, rich(f.title)), ' ', rich(f.text)))))),
-    st.sections.map((sec) => sectionView(st, sec)),
-    findingsView(st)];
+    st.sections.map((sec, i) => { const v = sectionView(st, sec); return v ? el('div', { class: 'gsec', id: `sec-${i}` }, v) : null; }),
+    el('div', { id: 'g-findings' }, findingsView(st))];
 }
 
 function sinceBox(st) {
@@ -1049,19 +1197,59 @@ function sinceBox(st) {
       n ? `${plural(n, 'file', 'files')} and ${plural(lines, 'line', 'lines')} changed since; they carry a “new” mark.` : 'Nothing in the stack changed since.'), go);
 }
 
+// The findings in the order the page lists them, each with the file line it points at.
+function findingTarget(st, c) {
+  if (c.path && fileOf(st, c.path)) return { path: c.path, line: c.line };
+  const r = evRefs(st, c).find((x) => x.inStack);
+  return r && { path: r.path, line: r.line };
+}
+const orderedFindings = (st) => AXES.flatMap(([a]) => axisFindings(st).filter((c) => c.axis === a && !cmState(c).gone).sort((x, y) => RANK[y.severity] - RANK[x.severity])).filter((c) => findingTarget(st, c));
+
+function backToOrigin() {
+  const o = state.origin || { view: 'guide', top: 0 };
+  state.view = o.view; state.origin = state.nav = null; save(); render(); $main().scrollTo(0, o.top);
+}
+
 function fileView(st) {
-  const f = fileOf(st, state.file);
+  const f = fileOf(st, state.file), nv = state.nav || { kind: 'tree' }, o = state.origin || { view: 'guide', label: 'Guide' };
   const order = st.files.filter((x) => inFilter(st, x)).sort((a, b) => a.path.localeCompare(b.path));
   const i = order.findIndex((x) => x.path === f.path);
   const nav = (d) => order[i + d] ? el('button', { class: 'btn', type: 'button', onclick: () => openFile(order[i + d].path) }, d < 0 ? '← Prev' : 'Next →') : null;
   const key = st.id + f.path;
   const general = comments(st).filter((c) => c.path === f.path && !f.hunks.flat().some((r) => r.k !== '-' && r.n === c.line));
+  const crumb = (label, fn) => el('button', { class: 'crumb' + (fn ? '' : ' cur'), type: 'button', onclick: fn, title: label }, label);
+  const parts = [crumb(o.label, backToOrigin)];
+  let walkers = null, reviewed = null;
+  const step = nv.kind === 'step' && allSteps(st).find((e) => e.s.id === nv.id);
+  const finding = nv.kind === 'finding' && comments(st).find((c) => c.id === nv.id);
+  const sec = nv.kind === 'diagram' && st.sections[nv.si];
+  if (o.view === 'guide') {
+    if (step) parts.push(crumb(step.sec.title, () => goOutline(`sec-${step.si}`)), crumb(`${step.n}. ${step.s.title}`, () => goOutline(step.s.id)));
+    if (finding?.axis) parts.push(crumb('Findings', () => goOutline('g-findings')), crumb(AXES.find((x) => x[0] === finding.axis)[1], () => goOutline('axis-' + finding.axis)));
+    if (sec) parts.push(crumb(sec.title, () => goOutline(`sec-${nv.si}`)));
+  }
+  if (finding) parts.push(crumb(finding.title, null));
+  parts.push(crumb(f.path.split('/').pop(), null));
+  if (step) {
+    const list = allSteps(st).filter((e) => fileOf(st, e.s.path)), k = list.findIndex((e) => e.s.id === step.s.id);
+    const to = (e) => () => openFile(e.s.path, { line: e.s.start, nav: { kind: 'step', id: e.s.id } });
+    const w = (d, left) => list[k + d] ? el('button', { class: 'btn walk', type: 'button', title: list[k + d].s.title, onclick: to(list[k + d]) }, left ? `← ${list[k + d].n}. ${list[k + d].s.title}` : `${list[k + d].n}. ${list[k + d].s.title} →`) : null;
+    walkers = [w(-1, true), w(1, false)];
+    reviewed = el('label', {}, el('input', { type: 'checkbox', checked: !!state.done[step.s.id], onchange: (e) => { state.done[step.s.id] = e.target.checked; save(); renderTop(); renderSide(); } }), 'Step reviewed');
+  } else if (finding) {
+    const list = orderedFindings(st), k = list.findIndex((c) => c.id === finding.id);
+    const to = (c) => () => { const t = findingTarget(st, c); openFile(t.path, { line: t.line, nav: { kind: 'finding', id: c.id } }); };
+    const w = (d, label) => list[k + d] ? el('button', { class: 'btn', type: 'button', title: list[k + d].title, onclick: to(list[k + d]) }, label) : null;
+    walkers = [w(-1, '← Previous finding'), k >= 0 ? el('span', {}, `${k + 1} of ${list.length}`) : null, w(1, 'Next finding →')];
+  } else walkers = [nav(-1), nav(1)];
   return [
+    el('div', { class: 'crumbrow' }, el('button', { class: 'btn', type: 'button', onclick: backToOrigin, title: `Back to ${o.label.toLowerCase()}, where you left it` }, '← Back'),
+      el('nav', { class: 'crumbs', 'aria-label': 'Where you are' }, parts.map((p, j) => [j ? el('span', { 'aria-hidden': 'true' }, '›') : null, p]))),
     el('div', { class: 'filehead' },
-      el('button', { class: 'btn', type: 'button', onclick: () => { state.view = 'guide'; save(); render(); } }, '← Guide'),
       el('span', { class: 'path' }, f.path),
+      reviewed,
       el('label', {}, el('input', { type: 'checkbox', checked: !!state.viewed[key], onchange: (e) => { state.viewed[key] = e.target.checked; save(); renderSide(); } }), 'Viewed'),
-      nav(-1), nav(1),
+      el('span', { class: 'walkers' }, walkers),
       el('span', { class: 'why' }, el('span', { class: 'role ' + f.role, style: 'display:inline-block;margin-right:6px' }), `${f.role} · ${f.why} · `,
         f.status !== 'modified' ? `${f.status} · ` : '', `+${f.adds} −${f.dels} · `,
         f.prs.map((n, j) => [j ? ', ' : 'changed by ', f.pr_links[n] ? ext(f.pr_links[n], tag(n)) : tag(n)]), ' · ', f.link ? ext(f.link, 'stack diff ↗') : null,
@@ -1365,7 +1553,30 @@ function prRow(st, x, busy) {
   return row;
 }
 
-function openFile(path) { state.file = path; state.view = 'file'; save(); render(); document.getElementById('main').scrollTo(0, 0); }
+// Where a click came from, so a file opened from a step, a finding or a diagram knows its way back and what comes next.
+let lastCtx = null, pendingLine = null;
+document.addEventListener('click', (e) => {
+  const t = e.target.closest ? e.target : e.target.parentElement, step = t.closest('.step[id]'), cm = t.closest('[data-cid]'), g = t.closest('.gsec');
+  lastCtx = cm ? { kind: 'finding', id: cm.dataset.cid } : step ? { kind: 'step', id: step.id } : g && t.closest('.seq, .mapbox') ? { kind: 'diagram', si: +g.id.slice(4) } : null;
+}, true);
+
+function openFile(path, o = {}) {
+  const from = state.view === 'send' ? 'send' : 'guide';
+  if (state.view !== 'file' || !state.origin) state.origin = { view: from, top: $main().scrollTop, label: from === 'send' ? 'Your review' : 'Guide' };
+  state.nav = o.nav || lastCtx || { kind: 'tree' };
+  lastCtx = null; pendingLine = o.line ?? null;
+  state.file = path; state.view = 'file'; document.body.classList.remove('rail-open'); save(); render();
+  if (pendingLine == null) $main().scrollTo(0, 0);
+}
+
+// The changed line nearest the one asked for, outlined and a third of the way down the screen.
+function showLine(n) {
+  const rows = [...document.querySelectorAll('#content .code > .ln[data-n]')];
+  const row = rows.sort((a, b) => Math.abs(a.dataset.n - n) - Math.abs(b.dataset.n - n))[0], m = $main();
+  if (!row) return m.scrollTo(0, 0);
+  row.classList.add('anchor');
+  m.scrollTo(0, row.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop - m.clientHeight / 3);
+}
 
 function render() {
   const st = ST();
@@ -1376,7 +1587,11 @@ function render() {
     'Read only: nothing is saved or posted from here. ', el('a', { href: `/r/${BOOT.review}` }, 'Open the latest round →'));
   document.getElementById('content').replaceChildren(...[ro, view].flat(Infinity).filter(Boolean));
   paintStrip();
+  if (state.view === 'file' && pendingLine != null) { showLine(pendingLine); pendingLine = null; }
+  markSpy();
 }
+let spyFrame = 0;
+$main().addEventListener('scroll', () => { spyFrame ||= requestAnimationFrame(() => { spyFrame = 0; markSpy(); }); }, { passive: true });
 
 function toggleTheme() {
   const r = document.documentElement;
