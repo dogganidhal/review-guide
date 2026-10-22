@@ -128,18 +128,52 @@ def resolve(data: dict, rdir: pathlib.Path, t) -> tuple[dict, dict | None, str]:
             raise ValueError(f"no finding {ref!r} in stack {sid}")
         keys = ("id", "axis", "severity", "title", "body", "evidence", "path", "line", "start_line", "pr", "status", "note")
         return out | {"ref": ref, "label": c["title"]}, st, json.dumps({k: c.get(k) for k in keys}, ensure_ascii=False)
-    comps = st.get("components") or {}
-    nodes, edges = {n["id"]: n for n in comps.get("nodes", [])}, comps.get("edges", [])
+    return resolve_node(st, out, ref, t.get("section"))
+
+
+def diagram_parts(sec: dict, comps: dict) -> tuple[dict, list]:
+    """The boxes (by id) and arrows of one diagram section. A sequence's arrows are its messages, frames flattened."""
+    edges: list = []
+
+    def walk(items) -> None:
+        for m in items or []:
+            if m.get("frame"):
+                for b in m.get("branches") or []:
+                    walk(b.get("messages"))
+            elif "from" in m:
+                edges.append({k: m[k] for k in ("from", "to", "label", "at", "return", "new") if k in m})
+
+    if sec.get("kind") == "sequence":
+        walk(sec.get("messages"))
+        ids = sec.get("participants") or []
+    else:
+        edges, ids = sec.get("edges") or [], sec.get("nodes") or []
+    nodes = {}
+    for n in ids:
+        n = (comps.get(n) or {"id": n, "label": n}) if isinstance(n, str) else n
+        nodes[n["id"]] = n
+    return nodes, edges
+
+
+def resolve_node(st: dict, out: dict, ref, hint) -> tuple[dict, dict, str]:
+    """A box or arrow (`a>b`) of a diagram, or a component no diagram draws. The diagram holding it is stored as `section`;
+    `hint` (the diagram the reviewer clicked in) is tried first, since component ids repeat across diagrams. Edges live in
+    the diagrams, not in `components`, and a flowchart's boxes are its own, so both are looked up there."""
+    sid, comps = st["id"], {n["id"]: n for n in (st.get("components") or {}).get("nodes", [])}
+    parts = sorted(((i, *diagram_parts(s, comps)) for i, s in enumerate(st["sections"]) if s.get("type") == "diagram"), key=lambda p: p[0] != hint)
     if isinstance(ref, str) and ">" in ref:
         a, b = ref.split(">", 1)
-        e = next((e for e in edges if e["from"] == a and e["to"] == b), None)
-        if e is None:
-            raise ValueError(f"no arrow {ref!r} in the components of stack {sid}")
-        return out | {"ref": ref, "label": f"{nodes[a]['label']} to {nodes[b]['label']}"}, st, json.dumps(e, ensure_ascii=False)
-    if ref not in nodes:
-        raise ValueError(f"no component {ref!r} in stack {sid}")
-    near = [e for e in edges if ref in (e["from"], e["to"])]
-    return out | {"ref": ref, "label": nodes[ref]["label"]}, st, json.dumps({"node": nodes[ref], "edges": near}, ensure_ascii=False)
+        for i, nodes, edges in parts:
+            if a in nodes and b in nodes and (e := next((e for e in edges if e["from"] == a and e["to"] == b), None)):
+                return out | {"ref": ref, "section": i, "label": f"{nodes[a]['label']} to {nodes[b]['label']}"}, st, json.dumps(e, ensure_ascii=False)
+        raise ValueError(f"no arrow {ref!r} in the diagrams of stack {sid}")
+    for i, nodes, edges in parts:
+        if ref in nodes:
+            near = [e for e in edges if ref in (e["from"], e["to"])]
+            return out | {"ref": ref, "section": i, "label": nodes[ref]["label"]}, st, json.dumps({"node": nodes[ref], "edges": near}, ensure_ascii=False)
+    if ref not in comps:
+        raise ValueError(f"no box {ref!r} in the diagrams of stack {sid}")
+    return out | {"ref": ref, "label": comps[ref]["label"]}, st, json.dumps({"node": comps[ref]}, ensure_ascii=False)
 
 
 def move_target(t: dict, dst: pathlib.Path, new: dict) -> dict | None:
