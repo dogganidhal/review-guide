@@ -610,6 +610,39 @@ svg.dg [role=button]:focus-visible { outline: 2px solid var(--accent); outline-o
   .srow .cnt, .srow .seg { justify-self: start; }
   .sbody, .srow .sline { padding-left: 0; }
 }
+
+/* ---- Shared file: the band, the save dialog and the post-command dialog (shared mode and the live page's "Share as a file") */
+.sharedband { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 10px 12px; margin-bottom: 14px; font-size: .86rem; display: grid; gap: 6px; }
+.sharedband .sbt { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.sharedband .sbt b { font-weight: 700; }
+.sharedband code, .dlg code { font-family: var(--mono); font-size: .8em; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+.sharedband .sba { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.sharedband .sbn { color: var(--muted); font-size: .8rem; max-width: 100ch; margin: 0; }
+.sharedband.imported { padding: 7px 12px; }
+.sharedband .btn { font-size: .84rem; padding: 4px 11px; }
+.dlg-back { position: fixed; inset: 0; z-index: 60; background: rgb(0 0 0 / .45); display: grid; place-items: center; padding: 16px; }
+.dlg { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 14px; width: min(640px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 18px 20px 16px; box-shadow: 0 12px 40px rgb(0 0 0 / .3); }
+.dlg.wide { width: min(860px, 100%); }
+.dlg h2 { margin: 0 0 10px; font-size: 1.1rem; }
+.dlg h3 { margin: 14px 0 4px; font-size: .74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.dlg p, .dlg ul { margin: 4px 0; font-size: .88rem; }
+.dlg ul { padding-left: 18px; }
+.dlg .opt { display: flex; gap: 8px; align-items: flex-start; font-size: .88rem; margin: 5px 0; cursor: pointer; }
+.dlg .opt input { margin-top: 3px; accent-color: var(--accent); }
+.dlg .opt.off { color: var(--faint); cursor: default; }
+.dlg .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.dlg .hits { border: 1px solid var(--line); border-radius: 8px; margin: 6px 0; max-height: 200px; overflow-y: auto; font-size: .8rem; }
+.dlg .hit { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; padding: 4px 10px; border-top: 1px solid var(--line); align-items: baseline; }
+.dlg .hit:first-child { border-top: 0; }
+.dlg .hit .pill { font-size: .66rem; }
+.dlg .hit .where { font-family: var(--mono); font-size: .76rem; overflow-wrap: anywhere; }
+.dlg .hit .what { color: var(--muted); font-family: var(--mono); font-size: .74rem; }
+.dlg .ok { color: var(--ok); }
+.dlg .warn { color: var(--warn); font-weight: 600; }
+.dlg .muted { color: var(--muted); }
+.dlg pre.cmd { margin: 6px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-family: var(--mono); font-size: 11.5px; line-height: 1.5; max-height: 46vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dlg .cmdhd { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; font-size: .88rem; }
+@media (max-width: 860px) { .dlg { padding: 14px 14px 12px; } .dlg .hit { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 </style>
 </head>
 <body>
@@ -620,12 +653,25 @@ svg.dg [role=button]:focus-visible { outline: 2px solid var(--accent); outline-o
     <main id="main"><div class="wrap" id="content"></div></main>
   </div>
 </div>
+<!--SHARED-->
 <script>
 const DATA = /*DATA*/null;
 const TOKEN = '/*TOKEN*/';
 // Set by serve.py: where this round's API lives, its saved page state, and the review's rounds.
 const BOOT = /*BOOT*/null || { base: '/api', review: null, round: 1, live: true, status: 'open', ui: {}, rounds: [] };
 const API = BOOT.base;
+// ---- Shared file (early): a downloaded guide makes no request but the loopback probe, and starts from its stored drafts
+const SHARED = BOOT.shared || null;
+const SH_SEED = (() => { try { return JSON.parse(document.getElementById('rg-seed')?.textContent || '{}'); } catch (e) { return {}; } })();
+const shKey = () => `rg-draft:${SHARED.key}`;
+const shStored = () => { try { return JSON.parse(localStorage.getItem(shKey()) || 'null'); } catch (e) { return null; } };
+if (SHARED) {
+  const real = window.fetch.bind(window);
+  window.fetch = (u, o) => (/^http:\/\/127\.0\.0\.1:\d+\/api\/ping$/.test(String(u)) ? real(u, o) : Promise.reject(new TypeError('a shared file makes no requests')));
+  const s = shStored();
+  BOOT.ui = s || JSON.parse(JSON.stringify({ cm: SH_SEED.cm || {}, extra: SH_SEED.extra || {}, verdict: SH_SEED.verdict || {}, done: SH_SEED.done || {}, viewed: SH_SEED.viewed || {} }));
+}
+// ---- End of shared file (early)
 const PRLIST_OPEN_MAX = 5;
 const PR_COLORS =['#107aca', '#ffcd4d', '#ff4773', '#00bfff', '#d0e9fb', '#ffecb2'];
 const PREFIX = { blocker: 'Blocker: ', should: 'Should fix: ', nit: 'Nit: ', question: '', comment: '' };
@@ -648,7 +694,7 @@ let saveTimer = null, saveErr = '';
 const putState = (keepalive) => fetch(`${API}/ui`, { method: 'PUT', keepalive, headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(state) })
   .then((r) => { const was = saveErr; saveErr = r.ok ? '' : 'Your changes could not be saved: ' + r.status; if (was !== saveErr) renderTop(); })
   .catch(() => { if (!saveErr) { saveErr = 'Your changes could not be saved: the server does not answer.'; renderTop(); } });
-const save = () => { if (!BOOT.live) return; clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; putState(false); }, 400); };
+const save = () => { if (SHARED) return sharedSave(); if (!BOOT.live) return; clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; putState(false); }, 400); };
 const flush = () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; putState(true); } };
 addEventListener('pagehide', flush);
 document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
@@ -757,7 +803,8 @@ function moreMenu() {
     el('summary', { class: 'iconbtn', title: 'More', 'aria-label': 'More' }, '⋯'),
     el('div', { class: 'panel' },
       rounds ? el('div', { class: 'mrow' }, rounds) : null,
-      BOOT.live ? el('button', { class: 'mitem', type: 'button', onclick: act(() => { rerunOpen = true; go('guide', 'g-top'); }) }, 'Rerun the guide', el('span', {}, '↻')) : null,
+      BOOT.live && !(SELF && BOOT.imported) ? el('button', { class: 'mitem', type: 'button', onclick: act(() => { rerunOpen = true; go('guide', 'g-top'); }) }, 'Rerun the guide', el('span', {}, '↻')) : null,
+      shareMenu(act),
       el('button', { class: 'mitem', type: 'button', onclick: act(toggleTheme) }, 'Switch theme', el('span', {}, '◐')),
       finish ? el('button', { class: 'mitem', type: 'button', onclick: act(finishReview) }, 'Finish review') : null));
 }
@@ -775,7 +822,7 @@ function renderTop() {
   if (stackPick) stackPick.value = st.id;
   const bar = el('div', { class: 'topbar' },
     el('div', { class: 'tl' }, el('button', { class: 'iconbtn railbtn', type: 'button', 'aria-label': 'Outline and files', onclick: () => document.body.classList.toggle('rail-open') }, '☰'),
-      el('a', { class: 'brand', href: '/', title: 'All reviews' }, '← Reviews'), el('span', { class: 'title', title: reviewTitle(st) }, reviewTitle(st)),
+      SHARED ? el('span', { class: 'brand' }, 'Review guide') : el('a', { class: 'brand', href: '/', title: 'All reviews' }, '← Reviews'), el('span', { class: 'title', title: reviewTitle(st) }, reviewTitle(st)),
       st.prs.length > 1 ? stackChip(st) : null, stackPick),
     el('nav', { class: 'stages', 'aria-label': 'Review stages' },
       stage('understand', 'Understand'),
@@ -907,7 +954,7 @@ function renderSide() {
     el('button', { type: 'button', role: 'tab', 'aria-selected': String(mode === k), onclick: () => { state.rail = k; save(); renderSide(); } }, l)));
   const askRail = !CAN_ASK ? null : asking?.rail ? askBox(asking.target, { rail: true })
     : el('button', { class: 'askrail', type: 'button', onclick: () => openAsk(attachment(), { rail: true }), title: 'Ask about what is selected or on screen' }, '✦ Ask a question', el('kbd', {}, '?'));
-  document.getElementById('side').replaceChildren(sw, askRail, ...(mode === 'files' ? filesRail(st) : outlineRail(st)).flat(Infinity).filter(Boolean));
+  document.getElementById('side').replaceChildren(sw, ...(askRail ? [askRail] : []), ...(mode === 'files' ? filesRail(st) : outlineRail(st)).flat(Infinity).filter(Boolean));
   const tree = document.querySelector('.ftree');
   if (tree) { tree.scrollLeft = sideScrollLeft; tree.addEventListener('scroll', () => { sideScrollLeft = tree.scrollLeft; }, { passive: true }); }
   applySpy();
@@ -1820,7 +1867,7 @@ function guideView(st) {
     tiles(st),
     el('div', { class: 'meta' },
       st.compare ? ext(st.compare, st.prs.length > 1 ? 'Whole stack on GitHub ↗' : 'On GitHub ↗') : null,
-      !BOOT.live ? null : el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
+      !BOOT.live || (SELF && BOOT.imported) ? null : el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
     rerunBox(st),
     el('div', { class: 'runpanel', 'aria-live': 'polite' }),
     el('details', { class: 'prlist', open: state.open[listKey] ?? st.prs.length <= PRLIST_OPEN_MAX, ontoggle: (e) => { state.open[listKey] = e.target.open; save(); } },
@@ -1882,7 +1929,9 @@ function settleScroll(top) {
   m.addEventListener('wheel', stop, { once: true, passive: true }); m.addEventListener('touchstart', stop, { once: true, passive: true });
   const set = () => { if (mine !== null) m.scrollTo(0, top); };
   set(); requestAnimationFrame(() => { set(); requestAnimationFrame(set); });
-  setTimeout(() => { set(); m.removeEventListener('wheel', stop); m.removeEventListener('touchstart', stop); }, 250);
+  // The content keeps growing until the last diagram is fitted, which can be after the first frames; follow it for a second.
+  const grow = setInterval(set, 50);
+  setTimeout(() => { clearInterval(grow); set(); m.removeEventListener('wheel', stop); m.removeEventListener('touchstart', stop); }, 1000);
 }
 
 function fileView(st) {
@@ -2063,6 +2112,7 @@ function describe(list) {
 }
 
 async function postMany(list) {
+  if (SHARED) return shCommands(list);
   if (!BOOT.live) return;
   const inline = list.reduce((t, x) => t + x.data.comments.length, 0);
   const where = list.length === 1 ? `on #${list[0].data.pr}` : `on ${list.length} PRs`;
@@ -2090,6 +2140,7 @@ function selfPayload(st) {
 }
 
 async function sendFeedback(st) {
+  if (asFile()) return shFeedback(st);
   const data = selfPayload(st);
   const n = data.layers.reduce((t, x) => t + x.comments.length, 0);
   if (!confirm(`Send ${plural(n, 'comment', 'comments')} and your verdicts to the agent? Nothing leaves this machine, and this round cannot send again.`)) return;
@@ -2112,7 +2163,7 @@ function selfSendView(st) {
   const time = sentAt && new Date(+sentAt.slice(5) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return [el('h1', {}, 'Your review'),
     el('p', { class: 'summary' }, sentAt ? `Sent to the agent at ${time}. Rerun the guide once it has worked on it, for the next round.`
-      : `${plural(n, 'comment', 'comments')} · ${judged} of ${plural(data.layers.length, 'layer', 'layers')} with a verdict. This goes to the agent working on the code, never to GitHub.`),
+      : `${plural(n, 'comment', 'comments')} · ${judged} of ${plural(data.layers.length, 'layer', 'layers')} with a verdict. ${asFile() ? 'This becomes a file you send back to the author.' : 'This goes to the agent working on the code, never to GitHub.'}`),
     rerunBox(st),
     el('div', { class: 'runpanel', 'aria-live': 'polite' }),
     sentAt ? null : el('div', { class: 'bulk' },
@@ -2120,7 +2171,7 @@ function selfSendView(st) {
         `Add ${plural(waiting.length, 'suggestion', 'suggestions')} checked in the code`) : null,
       el('span', { class: 'grow' }),
       el('button', { class: 'btn primary', type: 'button', disabled: feedbackBusy || (!n && !judged), onclick: () => sendFeedback(st) },
-        feedbackBusy ? 'Sending…' : 'Send to the agent')),
+        feedbackBusy ? 'Sending…' : asFile() ? 'Download feedback for the author' : 'Send to the agent')),
     feedbackErr ? el('p', { class: 'status err' }, feedbackErr) : null,
     lostBox(st),
     el('div', { class: 'sendlist' }, st.prs.map((p) => {
@@ -2167,7 +2218,7 @@ function sendView(st) {
         `Add ${plural(waiting.length, 'suggestion', 'suggestions')} checked in the code`) : null,
       el('span', { class: 'grow' }),
       el('button', { class: 'btn primary', type: 'button', disabled: busy || !ready.length, onclick: () => postMany(ready) },
-        busy ? `Posting #${sending}…` : ready.length ? `Post ${plural(ready.length, 'review', 'reviews')}` : 'Post')),
+        busy ? `Posting #${sending}…` : SHARED ? (ready.length ? `Copy the post ${ready.length === 1 ? 'command' : 'commands'}` : 'Copy the post command') : ready.length ? `Post ${plural(ready.length, 'review', 'reviews')}` : 'Post')),
     el('p', { class: 'hint' }, `Pick a verdict per PR; a PR without one is not posted. ✦ marks the suggestion: approve when nothing is open.${unclean ? ` ${plural(unclean, 'PR is', 'PRs are')} not clean (failing CI or an open point).` : ''}${st.reviewing.length ? ' Reviewers are still working, so suggestions can change.' : ''}`),
     lostBox(st),
     open.length ? el('div', { class: 'sendlist' }, open.map((x) => prRow(st, x, busy))) : el('p', { class: 'empty' }, 'Every PR in this stack is posted.'),
@@ -2225,7 +2276,7 @@ function prRow(st, x, busy) {
     mine.length ? mine.map((m) => [commentCard(st, m, { ask: true }), qs(st, (g) => g.kind === 'finding' && g.ref === m.id)]) : el('p', { class: 'verdict' }, 'No comment routed to this PR.'),
     el('div', { class: 'sec' }, 'Summary posted with the review'), body,
     el('div', { class: 'actions' },
-      el('button', { class: 'btn', type: 'button', disabled: busy || !!done || !ready, onclick: () => postMany([reviewOf(st, p)]) }, `Post only #${p.n}`),
+      el('button', { class: 'btn', type: 'button', disabled: busy || !!done || !ready, onclick: () => postMany([reviewOf(st, p)]) }, SHARED ? `Copy the post command for #${p.n}` : `Post only #${p.n}`),
       copy, msg)));
   return row;
 }
@@ -2743,9 +2794,9 @@ function render() {
   if (state.view === 'file' && !fileOf(st, state.file)) state.view = 'guide';
   renderTop(); renderSide();
   const view = state.view === 'send' ? sendView(st) : state.view === 'file' ? fileView(st) : guideView(st);
-  const ro = BOOT.live ? null : el('div', { class: 'robox' }, el('b', {}, `Round ${BOOT.round}, an earlier round of this review. `),
+  const ro = BOOT.live || SHARED ? null : el('div', { class: 'robox' }, el('b', {}, `Round ${BOOT.round}, an earlier round of this review. `),
     'Read only: nothing is saved or posted from here. ', el('a', { href: `/r/${BOOT.review}` }, 'Open the latest round →'));
-  document.getElementById('content').replaceChildren(...[ro, view].flat(Infinity).filter(Boolean));
+  document.getElementById('content').replaceChildren(...[ro, sharedBand(state.view), view].flat(Infinity).filter(Boolean));
   paintStrip();
   if (state.view === 'file' && pendingLine != null) { showLine(pendingLine); pendingLine = null; }
   markSpy();
@@ -2760,6 +2811,232 @@ function toggleTheme() {
   fetch('/api/prefs', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify({ theme: r.dataset.theme }) }).catch(() => {});
 }
 
+// ---- Shared file ---------------------------------------------------------------------------------------------------
+// Sharing a guide as one .html file. In a file (SHARED) the page makes no request except the loopback probe, keeps its drafts
+// in the browser (the one place the plugin uses localStorage), shows a band instead of the inbox link, and turns "Post" into
+// the `gh` commands to run in a terminal. On a live page the same code offers "Share as a file…", and an imported review
+// ("shared by …") sends its feedback as a file. Helpers are prefixed `sh`.
+const shMB = (b) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
+const shWhen = (t) => new Date(t * 1000).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const shMd = (s) => rich(s);
+let shLocal = null, shStorageOk = true, shTimer = null;
+const asFile = () => !!SHARED || !!(SELF && BOOT.imported);
+
+// Drafts: written to localStorage under review+tip, wrapped in try/catch; a blocked storage shows in the band.
+function sharedWrite() {
+  clearTimeout(shTimer); shTimer = null;
+  let ok = true;
+  try { localStorage.setItem(shKey(), JSON.stringify(state)); } catch (e) { ok = false; }
+  if (ok !== shStorageOk) { shStorageOk = ok; document.querySelector('.sharedband')?.replaceWith(sharedBand('guide')); }
+}
+function sharedSave() { clearTimeout(shTimer); shTimer = setTimeout(sharedWrite, 300); }
+addEventListener('pagehide', () => { if (SHARED && shTimer) sharedWrite(); });
+
+// What the file's reader has drafted: the findings they added, the comments they wrote, their verdicts. Same shape as the
+// sender's seed, and what the server reads on import.
+function draftsOut() {
+  const cm = {};
+  for (const [k, v] of Object.entries(state.cm)) if (v.on && !v.gone && (v.text || '').trim()) cm[k] = { on: true, gone: false, sev: v.sev, text: v.text };
+  const extra = {};
+  for (const [sid, cs] of Object.entries(state.extra)) { const keep = cs.filter((c) => cm[c.id]); if (keep.length) extra[sid] = keep; }
+  const verdict = {};
+  for (const [n, v] of Object.entries(state.verdict)) if ((v.body || '').trim() || v.event) verdict[n] = { body: v.body || '', event: v.event ?? null };
+  return { cm, extra, verdict };
+}
+const shSave = (name, type, content) => {
+  const a = el('a', { href: URL.createObjectURL(new Blob([content], { type })), download: name });
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+};
+
+// "Download with my comments": this file again, its seed replaced by the reader's drafts. The page's own markup is rebuilt by
+// script, so the copy is the document with the rendered parts emptied.
+function shDownload() {
+  sharedWrite();
+  const doc = document.documentElement.cloneNode(true);
+  for (const id of ['top', 'side', 'content']) doc.querySelector('#' + id)?.replaceChildren();
+  doc.querySelectorAll('.dlg-back, .dgfull').forEach((x) => x.remove());
+  doc.querySelector('body')?.classList.remove('rail-open');
+  doc.querySelector('#rg-seed').textContent = JSON.stringify({ ...draftsOut(), threads: SH_SEED.threads || [] }).replace(/</g, '\\u003c');
+  shSave(SHARED.name.replace(/\.html$/, '-with-my-comments.html'), 'text/html', '<!doctype html>\n' + doc.outerHTML);
+}
+
+// A small modal: Esc, the backdrop and Close all leave it.
+function shDialog(body, wide) {
+  document.querySelector('.dlg-back')?.remove();
+  const close = () => { back.remove(); removeEventListener('keydown', esc); };
+  const esc = (e) => e.key === 'Escape' && close();
+  const back = el('div', { class: 'dlg-back', onclick: (e) => e.target === back && close() },
+    el('div', { class: 'dlg' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true' }, body));
+  addEventListener('keydown', esc);
+  document.body.append(back);
+  back.querySelector('button, input')?.focus();
+  return close;
+}
+
+// ---- Save: "Share as a file…" in the ⋯ menu of a live page ----------------------------------------------------------
+function shareMenu(act) {
+  if (SHARED) return el('button', { class: 'mitem', type: 'button', onclick: act(shDownload) }, 'Download with my comments', el('span', {}, '⤓'));
+  return BOOT.review && !BOOT.imported?.noshare ? el('button', { class: 'mitem', type: 'button', onclick: act(shareDialog) }, 'Share as a file…', el('span', {}, '⇪')) : null;
+}
+
+async function shareDialog() {
+  const opts = { mine: false, threads: false, refuted: true };
+  let report = null, gen = 0, err = '', busy = false;
+  const body = el('div', {}), foot = el('div', { class: 'acts' });
+  let close = () => {};
+  const ask = async (dry) => {
+    await putState(false).catch(() => {});
+    const r = await fetch(`${API}/export`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify({ ...opts, dry }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    return r;
+  };
+  const refresh = async () => {
+    const mine = ++gen;
+    try { const j = await (await ask(true)).json(); if (mine === gen) { report = j; err = ''; } } catch (e) { if (mine === gen) err = e.message; }
+    if (mine === gen) paint();
+  };
+  const save = async () => {
+    busy = true; paint();
+    try { shSave(report.name, 'text/html', await (await ask(false)).blob()); close(); } catch (e) { err = e.message; busy = false; paint(); }
+  };
+  const opt = (key, text, extra, off) => el('label', { class: 'opt' + (off ? ' off' : '') },
+    el('input', { type: 'checkbox', checked: opts[key] === (key === 'refuted' ? false : true), disabled: off, onchange: (e) => { opts[key] = key === 'refuted' ? !e.target.checked : e.target.checked; refresh(); } }),
+    el('span', {}, text, extra ? el('span', { class: 'muted' }, ' ' + extra) : null));
+  const paint = () => {
+    const r = report, hits = r?.hits || [];
+    body.replaceChildren(...[el('h2', {}, 'Share as a file'),
+      !r ? el('p', { class: err ? 'warn' : 'muted' }, err || 'Checking what goes in the file…') : [
+        el('h3', {}, 'What it holds'),
+        el('p', {}, `The guide, the findings, and the diff of ${plural(r.files, 'file', 'files')}. About ${shMB(r.size)}.`),
+        r.size > 5e6 ? el('p', { class: 'warn' }, `This is a big file. Largest files: ${r.biggest.map((b) => `${b.path.split('/').pop()} (${shMB(b.bytes)})`).join(', ')}.`) : null,
+        el('h3', {}, 'What it leaves out'),
+        el('p', {}, 'Your drafts, your verdicts, what you marked viewed or reviewed, and your feedback to the agent. Unless you tick one below.'),
+        el('h3', {}, 'Options'),
+        opt('mine', 'Include my comments', r.picked || opts.mine ? `(${plural(r.picked, 'comment', 'comments')} in your review; they open as the reader’s drafts)` : '(none in your review yet)'),
+        opt('threads', 'Include questions and answers', r.threads_available ? `(${plural(r.threads_available, 'thread', 'threads')})` : '(no question asked yet)', !r.threads_available),
+        opt('refuted', 'Hide refuted findings', r.refuted ? `(${r.refuted} disproved by the fact check)` : '(none disproved)', !r.refuted),
+        el('h3', {}, 'Where it can go'),
+        el('p', {}, `This file contains source code from `, el('code', {}, r.repo), r.repo.startsWith('doctolib/') ? '. Share it inside Doctolib only.' : '. Share it only with people who may read it.',
+          r.mode === 'self' ? ' It includes code that was never pushed.' : ''),
+        el('h3', {}, 'Secrets and personal data check'),
+        hits.length ? [el('p', { class: 'warn' }, `${plural(hits.length + r.more_hits, 'thing looks', 'things look')} like a secret or personal data. Check before you send.`),
+          el('div', { class: 'hits' }, hits.map((h) => el('div', { class: 'hit' }, el('span', { class: 'pill ' + (h.kind === 'secret' ? 'blocker' : 'question') }, h.kind),
+            el('span', { class: 'where' }, `${h.path}${h.line ? ':' + h.line : ' (a removed line)'}`), el('span', { class: 'what' }, `${h.rule} ${h.text}`)))),
+          r.more_hits ? el('p', { class: 'muted' }, `and ${r.more_hits} more.`) : null]
+          : el('p', { class: 'ok' }, 'Nothing found.'),
+        el('p', { class: 'muted' }, 'It is a reminder, not a guarantee: it looks for key and token patterns, passwords in config, emails, French phone numbers and social security numbers in the diff.'),
+        err ? el('p', { class: 'warn' }, err) : null]].flat(Infinity).filter(Boolean));
+    foot.replaceChildren(el('button', { class: 'btn', type: 'button', onclick: () => close() }, 'Cancel'),
+      el('button', { class: 'btn primary', type: 'button', disabled: !r || busy, onclick: save }, busy ? 'Saving…' : hits.length ? 'Save anyway' : 'Save file'));
+  };
+  close = shDialog([body, foot], true);
+  paint(); refresh();
+}
+
+// ---- The band, and what it offers -----------------------------------------------------------------------------------
+// GitHub's compare view from the commit the guide was built on to each PR's branch: the reader's browser login does the rest.
+const shCompare = (p) => (p.head ? `https://github.com/${DATA.repo}/compare/${p.sha}...${p.head.split('/').map(encodeURIComponent).join('/')}` : p.url ? `${p.url}/commits` : null);
+
+function shProbe() {
+  if (!SHARED || location.protocol !== 'file:') return;
+  fetch('http://127.0.0.1:7357/api/ping', { cache: 'no-store' }).then((r) => r.json()).then((j) => {
+    if (j?.app === 'review-guide') { shLocal = 7357; document.querySelector('.sharedband')?.replaceWith(sharedBand('guide')); }
+  }).catch(() => {});
+}
+
+function shOpenLocal() {
+  const f = el('form', { method: 'post', action: `http://127.0.0.1:${shLocal}/import`, target: '_blank', hidden: true }, el('textarea', { name: 'bundle' }), el('textarea', { name: 'drafts' }));
+  f.elements.bundle.value = document.getElementById('rg-bundle').textContent;
+  f.elements.drafts.value = JSON.stringify(draftsOut());
+  document.body.append(f); f.submit(); f.remove();
+}
+
+function sharedBand(view) {
+  if (SHARED && view === 'file') return null;
+  if (!SHARED) {
+    const im = BOOT.imported;
+    if (!im || view !== 'guide') return null;
+    return el('div', { class: 'sharedband imported' }, el('div', { class: 'sbt' }, el('b', {}, `Shared by ${im.by}`), `· built ${shWhen(im.built)} from `, el('code', {}, im.tip.slice(0, 8)),
+      im.checkout === 'pending' ? ' · fetching the repository, so questions can read the code' : im.checkout === 'none' && !SELF ? ' · no local copy of the repository: questions cannot read the code' : ''));
+  }
+  const S = SHARED, seeded = Object.values(SH_SEED.cm || {}).filter((v) => v.on).length, links = SELF ? [] : DATA.stacks.flatMap((s) => s.prs).map((p) => ({ p, url: shCompare(p) })).filter((x) => x.url);
+  const check = !links.length ? null : links.length === 1 ? ext(links[0].url, 'Check for new commits ↗', 'btn')
+    : el('details', { class: 'stackmenu' }, el('summary', { class: 'btn', style: 'display:inline-flex;gap:6px;align-items:center;border-radius:8px;padding:4px 11px' }, 'Check for new commits', el('span', { class: 'chev' }, '▾')),
+      el('div', { class: 'panel', style: 'width:min(320px,calc(100vw - 32px))' }, links.map(({ p, url }) => el('div', { class: 'prrow', style: 'grid-template-columns:minmax(0,1fr) auto' },
+        el('span', { class: 't', title: p.title }, `${tag(p.n)} ${ptitle(p)}`), ext(url, 'compare ↗')))));
+  return el('div', { class: 'sharedband', role: 'region', 'aria-label': 'About this file' },
+    el('div', { class: 'sbt' }, el('b', {}, 'Shared review guide'), `· built ${shWhen(S.built)} from `, el('code', {}, S.tip.slice(0, 8)), S.author && S.author !== 'you' ? ` · by ${S.author}` : '',
+      seeded ? ` · ${plural(seeded, 'comment', 'comments')} from the author in your drafts` : ''),
+    el('div', { class: 'sba' }, check, shLocal ? el('button', { class: 'btn primary', type: 'button', onclick: shOpenLocal, title: 'Import this guide into the review-guide server running on this machine' }, 'Open in my review-guide') : null,
+      el('button', { class: 'btn', type: 'button', onclick: shDownload }, 'Download with my comments')),
+    el('p', { class: 'sbn' }, shStorageOk ? 'Your drafts are kept in this browser only, for this file. ' : 'This browser blocks storage, so your drafts are lost when you close the page. ',
+      SELF ? 'Feedback for the author becomes a file you send back.'
+        : 'Check for new commits opens GitHub: if it lists commits, this guide describes an older state. Posting needs your gh login, so Your review gives you a command to run.'));
+}
+
+// ---- Posting from a file: one `gh api` command per PR -----------------------------------------------------------------
+// The payload is what serve.py posts for the same review: the reviewed commit, the verdict, the summary and the inline comments
+// on that PR's own lines. The JSON goes in a quoted heredoc, so the shell expands nothing in a comment.
+const SH_REPO = /^[\w.-]+\/[\w.-]+$/;
+function shPayload(x) {
+  const p = prOf(x.data.pr);
+  return { commit_id: p.review_sha, event: x.data.event, body: x.data.body,
+    comments: x.data.comments.map((c) => ({ path: c.path, line: c.line, side: 'RIGHT', body: c.body, ...(c.start_line ? { start_line: c.start_line, start_side: 'RIGHT' } : {}) })) };
+}
+function shCommand(x) {
+  const p = prOf(x.data.pr);
+  if (!SH_REPO.test(DATA.repo) || !Number.isInteger(p.n)) throw new Error('this file names a repository or PR that is not valid');
+  const json = JSON.stringify(shPayload(x), null, 2);
+  let mark = 'REVIEW_GUIDE_JSON';
+  while (json.includes(mark)) mark += '_X';
+  return `gh api --method POST repos/${DATA.repo}/pulls/${p.n}/reviews --input - <<'${mark}'\n${json}\n${mark}`;
+}
+
+function shCommands(list) {
+  const rows = list.filter((x) => x.data.event);
+  const body = el('div', {}), msg = el('span', { class: 'status' });
+  const copy = async (text, label) => {
+    try { await navigator.clipboard.writeText(text); msg.className = 'status ok'; msg.textContent = `Copied ${label}. Paste it in a terminal where gh is logged in.`; }
+    catch (e) { msg.className = 'status err'; msg.textContent = 'The browser blocked the clipboard: select the command and copy it.'; }
+  };
+  let all = '';
+  try {
+    const cmds = rows.map((x) => ({ x, p: prOf(x.data.pr), text: shCommand(x) }));
+    all = cmds.map((c) => c.text).join('\n\n');
+    const lag = cmds.map((c) => `${tag(c.p.n)} on ${c.p.review_sha.slice(0, 8)}`).join(', ');
+    body.append(el('h2', {}, cmds.length === 1 ? 'Post this review with gh' : `Post ${cmds.length} reviews with gh`),
+      el('p', {}, 'Run each command in a terminal where gh is logged in (', el('code', {}, 'gh auth status'), '). It posts as you, the author is notified, and it cannot be edited or deleted from here. Read it first: it is the whole request.'),
+      el('p', { class: 'muted' }, `Comments land on the commit this guide was built on (${lag}). If a PR has moved since, GitHub marks them outdated where those lines changed; Check for new commits in the band tells you.`),
+      ...cmds.flatMap((c) => [el('div', { class: 'cmdhd' }, el('b', {}, `${tag(c.p.n)} · ${VERB[c.x.data.event]} · ${plural(c.x.data.comments.length, 'inline comment', 'inline comments')}`),
+        el('button', { class: 'btn', type: 'button', onclick: () => copy(c.text, tag(c.p.n)) }, 'Copy')), el('pre', { class: 'cmd', tabindex: '0' }, c.text)]));
+  } catch (e) { body.append(el('h2', {}, 'Nothing to post'), el('p', { class: 'warn' }, e.message)); }
+  const close = shDialog([body, el('div', { class: 'acts' }, msg, el('span', { class: 'grow' }), rows.length > 1 && all ? el('button', { class: 'btn', type: 'button', onclick: () => copy(all, 'all commands') }, 'Copy all') : null,
+    el('button', { class: 'btn primary', type: 'button', onclick: () => close() }, 'Close'))], true);
+}
+
+// ---- Self-reviews: feedback for the author, as a file ---------------------------------------------------------------
+function shFeedback(st) {
+  const data = selfPayload(st), meta = SHARED || BOOT.imported && { review: BOOT.imported.from_review, round: BOOT.imported.from_round };
+  if (!meta?.review) { feedbackErr = 'This file does not say which review it came from.'; return render(); }
+  let name = '';
+  try { name = localStorage.getItem('rg-name') || ''; name = prompt('Your name, so the author knows who this is from (optional):', name) ?? ''; localStorage.setItem('rg-name', name); } catch (e) {}
+  const file = { 'review-guide-feedback': 1, review: meta.review, round: meta.round ?? null, from: name.trim(), text: '', layers: data.layers };
+  const fname = `feedback-${slug(DATA.source?.branch || 'review')}-round${meta.round ?? 1}.json`;
+  shSave(fname, 'application/json', JSON.stringify(file, null, 1));
+  feedbackErr = '';
+  const close = shDialog([el('h2', {}, 'Feedback saved'), el('p', {}, el('code', {}, fname), ' is in your downloads. Send it to the author: they drop it on their review-guide inbox, and it reaches their agent as if they had sent it themselves.'),
+    el('div', { class: 'acts' }, el('button', { class: 'btn primary', type: 'button', onclick: () => close() }, 'Close'))]);
+  render();
+}
+const slug = (s) => String(s).replace(/[^\w.-]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+
+if (SHARED) {
+  // The questions the sender chose to include are read-only here: no Ask without a server.
+  for (const t of SH_SEED.threads || []) TH.set(t.id, t);
+  if (TH.size) applyOver();
+  shProbe();
+}
+// ---- End of shared file --------------------------------------------------------------------------------------------
 render();
 let version = null;
 async function poll() {
@@ -2779,7 +3056,7 @@ async function poll() {
   // Slow polling otherwise, so a round started from Claude Code moves this page onto it too.
   if (BOOT.live) setTimeout(poll, busy ? 3000 : 15000);
 }
-poll();
+if (!SHARED) poll();
 if (BOOT.review) loadThreads();
 if (BOOT.live) { checkHeads(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && checkHeads()); }
 </script>

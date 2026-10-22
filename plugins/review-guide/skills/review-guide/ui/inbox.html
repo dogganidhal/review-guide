@@ -61,6 +61,13 @@ h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: 
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty { color: var(--muted); padding: 22px; border: 1px dashed var(--line); border-radius: 12px; }
 .empty code { font-family: var(--mono); font-size: .82rem; }
+.drop { position: fixed; inset: 0; z-index: 20; display: none; place-items: center; background: rgb(0 0 0 / .4); pointer-events: none; }
+.drop > div { border: 2px dashed var(--accent); border-radius: 16px; background: var(--bg); padding: 28px 40px; font-weight: 700; }
+body.dragging .drop { display: grid; }
+.note { margin: 10px 0 0; padding: 8px 12px; border-radius: 8px; font-size: .88rem; border: 1px solid var(--line); }
+.note.err { border-color: var(--danger); color: var(--danger); }
+.note.ok { border-color: var(--ok); color: var(--ok); }
+.sharedtag { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; margin-right: 6px; vertical-align: 1px; }
 .stopped { max-width: 520px; margin: 18vh auto; padding: 0 16px; text-align: center; color: var(--muted); }
 .stopped h1 { color: var(--text); }
 </style>
@@ -70,6 +77,7 @@ h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: 
   <button class="btn" type="button" id="theme" title="Toggle theme">◐</button>
   <button class="btn" type="button" id="stop" title="Stop the local server. Running guides keep going and show up when it starts again.">Stop server</button></header>
 <main id="main"></main>
+<div class="drop"><div>Drop a shared review guide or a feedback file</div></div>
 <script>
 let REVIEWS = /*DATA*/null;
 const TOKEN = '/*TOKEN*/';
@@ -102,7 +110,7 @@ function item(r) {
   const run = nw && nw.state === 'running' ? el('span', { class: 'run' }, el('span', { class: 'spin' }), `${nw.status || 'Starting'}…`)
     : nw && nw.state === 'failed' ? el('span', { class: 'run failed', title: nw.error }, `Round ${nw.n} failed`) : null;
   return el('a', { class: 'item', href: `/r/${r.id}` },
-    el('span', { class: 't' }, self ? el('span', { class: 'selftag' }, 'self') : null, el('span', { class: 'repo' }, r.repo + ' · '), title),
+    el('span', { class: 't' }, self ? el('span', { class: 'selftag' }, 'self') : null, r.imported ? el('span', { class: 'sharedtag', title: `Shared by ${r.imported.by}` }, `shared by ${r.imported.by}`) : null, el('span', { class: 'repo' }, r.repo + ' · '), title),
     el('span', { class: 'when' }, ago(r.updated)),
     el('span', { class: 'meta' },
       el('span', { class: 'prs' }, (self ? r.prs.map((p) => p.n) : nums).map((n) => { const p = r.prs.find((x) => x.n === n);
@@ -114,11 +122,13 @@ function item(r) {
       run));
 }
 
+let NOTE = null;
 function render() {
   const open = REVIEWS.filter((r) => r.status !== 'done'), done = REVIEWS.filter((r) => r.status === 'done');
   document.getElementById('main').replaceChildren(
     el('h1', {}, 'Reviews'),
-    el('p', { class: 'sub' }, 'Every guide built on this machine. Running /review-guide again on the same PRs adds a round to the same review.'),
+    el('p', { class: 'sub' }, 'Every guide built on this machine. Running /review-guide again on the same PRs adds a round to the same review. Drop a shared guide here to import it.'),
+    ...(NOTE ? [el('p', { class: 'note ' + NOTE.kind, role: 'status' }, NOTE.text)] : []),
     open.length ? el('div', { class: 'list' }, open.map(item))
       : el('p', { class: 'empty' }, 'Nothing open. Run ', el('code', {}, '/review-guide <PR links>'), ' in Claude Code to start one.'),
     ...(done.length ? [el('h2', {}, `Finished (${done.length})`), el('div', { class: 'list' }, done.map(item))] : []));
@@ -131,6 +141,34 @@ async function poll() {
   } catch (e) {}
   setTimeout(poll, REVIEWS.some((r) => r.newest?.state === 'running') ? 3000 : 15000);
 }
+
+// A shared guide (.html) goes through the same confirmation page as the one in its own band; a feedback file (.json) for a
+// self-review of yours goes to the waiting session.
+async function take(file) {
+  NOTE = null;
+  const text = await file.text();
+  if (/\.json$/i.test(file.name) || text.trimStart().startsWith('{')) {
+    try {
+      const r = await fetch('/api/feedback-file', { method: 'POST', headers: { 'X-Review-Token': TOKEN, 'Content-Type': 'application/json' }, body: text });
+      const j = await r.json();
+      NOTE = r.ok ? { kind: 'ok', text: 'Feedback delivered to the agent working on that review.' } : { kind: 'err', text: j.error || r.statusText };
+    } catch (e) { NOTE = { kind: 'err', text: 'The server does not answer.' }; }
+    return render();
+  }
+  const m = /<script type="application\/octet-stream" id="rg-bundle">([A-Za-z0-9+\/=\s]*)<\/script>/.exec(text);
+  if (!m) { NOTE = { kind: 'err', text: 'This file holds no review-guide bundle.' }; return render(); }
+  const sd = /<script type="application\/json" id="rg-seed">(.*?)<\/script>/s.exec(text);
+  let drafts = '{}';
+  try { const s = JSON.parse(sd?.[1] || '{}'); drafts = JSON.stringify({ cm: s.cm || {}, extra: s.extra || {}, verdict: s.verdict || {} }); } catch (e) {}
+  const f = el('form', { method: 'post', action: '/import', hidden: true }, el('textarea', { name: 'bundle' }), el('textarea', { name: 'drafts' }));
+  f.elements.bundle.value = m[1]; f.elements.drafts.value = drafts;
+  document.body.append(f); f.submit();
+}
+let depth = 0;
+addEventListener('dragenter', (e) => { if (e.dataTransfer?.types?.includes('Files')) { depth++; document.body.classList.add('dragging'); } });
+addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) document.body.classList.remove('dragging'); });
+addEventListener('dragover', (e) => e.preventDefault());
+addEventListener('drop', (e) => { e.preventDefault(); depth = 0; document.body.classList.remove('dragging'); const f = e.dataTransfer?.files?.[0]; if (f) take(f); });
 
 document.getElementById('theme').onclick = () => {
   const root = document.documentElement;
