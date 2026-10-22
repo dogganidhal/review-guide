@@ -6,6 +6,9 @@ Usage: serve.py WORKDIR [--port N]
 Binds 127.0.0.1 only. Every POST must carry the per-process token embedded in the served page, so another
 site open in the browser cannot post reviews in the user's name. Before posting, the PR head is compared
 with the SHA the guide was built on, and each inline comment line is checked against the diff.
+
+The page can also rerun the guide (POST /api/rerun, same token) through rerun.py. When the PRs have new commits the
+rerun lands in a new work directory, and the server switches to it, so the open page reloads onto the new guide.
 """
 
 import argparse
@@ -14,7 +17,9 @@ import json
 import pathlib
 import secrets
 import subprocess
+import sys
 import threading
+import time
 
 TOKEN = secrets.token_urlsafe(24)
 
@@ -27,14 +32,44 @@ def gh(*args: str, stdin: str | None = None) -> str:
 
 
 def handler(workdir: pathlib.Path):
+    cur = {"w": workdir}  # the work directory being served; a rerun on new commits moves it
+    rerun = {"running": False, "status": "", "error": ""}
+    heads_cache = {"at": 0.0, "w": None, "heads": {}}
+
     def load() -> tuple[dict, dict]:
-        data = json.loads((workdir / "guide.json").read_text())
+        data = json.loads((cur["w"] / "guide.json").read_text())
         return data, {p["n"]: p for st in data["stacks"] for p in st["prs"]}
-    posted_path = workdir / "posted.json"
     lock = threading.Lock()
 
     def posted() -> dict:
-        return json.loads(posted_path.read_text()) if posted_path.is_file() else {}
+        path = cur["w"] / "posted.json"
+        return json.loads(path.read_text()) if path.is_file() else {}
+
+    def heads() -> dict:
+        """The PRs' current head SHAs on GitHub, in one GraphQL call, cached for a minute."""
+        if heads_cache["w"] == cur["w"] and time.time() - heads_cache["at"] < 60:
+            return heads_cache["heads"]
+        data, prs = load()
+        owner, name = data["repo"].split("/")
+        fields = " ".join(f"p{n}: pullRequest(number: {n}) {{ headRefOid }}" for n in prs)
+        out = json.loads(gh("api", "graphql", "-f", f"query=query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ {fields} }} }}"))
+        heads_cache.update(at=time.time(), w=cur["w"], heads={k[1:]: v["headRefOid"] for k, v in out["data"]["repository"].items() if v})
+        return heads_cache["heads"]
+
+    def start_rerun(effort: str) -> None:
+        proc = subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("rerun.py")), str(cur["w"]), "--effort", effort],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        def follow() -> None:
+            for line in proc.stdout:
+                kind, _, text = line.strip().partition(" ")
+                if kind == "workdir":
+                    cur["w"] = pathlib.Path(text)
+                elif kind == "status":
+                    rerun["status"] = text
+            err = proc.stderr.read().strip()
+            rerun.update(running=False, error=err.splitlines()[-1] if proc.wait() and err else "")
+        threading.Thread(target=follow, daemon=True).start()
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def reply(self, code: int, payload, ctype: str = "application/json") -> None:
@@ -48,18 +83,33 @@ def handler(workdir: pathlib.Path):
 
         def do_GET(self) -> None:
             if self.path in ("/", "/index.html"):
-                page = (workdir / "index.html").read_text().replace("/*TOKEN*/", TOKEN)
+                page = (cur["w"] / "index.html").read_text().replace("/*TOKEN*/", TOKEN)
                 self.reply(200, page.encode(), "text/html; charset=utf-8")
             elif self.path == "/api/state":
-                self.reply(200, {"posted": posted(), "version": (workdir / "index.html").stat().st_mtime_ns})
+                self.reply(200, {"posted": posted(), "version": (cur["w"] / "index.html").stat().st_mtime_ns, "rerun": rerun})
+            elif self.path == "/api/heads":
+                try:
+                    self.reply(200, {"heads": heads()})
+                except (RuntimeError, KeyError, ValueError) as e:
+                    self.reply(502, {"error": str(e)})
             else:
                 self.reply(404, {"error": "not found"})
 
         def do_POST(self) -> None:
-            if self.path != "/api/review":
+            if self.path not in ("/api/review", "/api/rerun"):
                 return self.reply(404, {"error": "not found"})
             if not secrets.compare_digest(self.headers.get("X-Review-Token", ""), TOKEN):
                 return self.reply(403, {"error": "missing or wrong token; reload the page"})
+            if self.path == "/api/rerun":
+                effort = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or "{}").get("effort")
+                with lock:
+                    if rerun["running"]:
+                        return self.reply(409, {"error": "a rerun is already running"})
+                    if effort not in ("quick", "balanced", "deep"):
+                        return self.reply(400, {"error": "effort must be quick, balanced or deep"})
+                    rerun.update(running=True, status="Starting", error="")
+                    start_rerun(effort)
+                return self.reply(200, rerun)
             try:
                 req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
                 data, prs = load()
@@ -72,7 +122,7 @@ def handler(workdir: pathlib.Path):
                         return self.reply(400, {"error": "unknown review type"})
                     if req["event"] != "COMMENT" and pr["author"] == data["viewer"]:
                         return self.reply(400, {"error": "GitHub only accepts comment reviews on your own PR"})
-                    hunks = json.loads((workdir / str(n) / "hunks.json").read_text())
+                    hunks = json.loads((cur["w"] / str(n) / "hunks.json").read_text())
                     comments = []
                     for c in req["comments"]:
                         commentable = set(hunks.get(c["path"], {}).get("commentable", []))
@@ -90,7 +140,7 @@ def handler(workdir: pathlib.Path):
                     payload = {"commit_id": pr["review_sha"], "event": req["event"], "body": req["body"], "comments": comments}
                     out = json.loads(gh("api", "-X", "POST", f"repos/{data['repo']}/pulls/{n}/reviews", "--input", "-", stdin=json.dumps(payload)))
                     done = posted() | {str(n): out["html_url"]}
-                    posted_path.write_text(json.dumps(done))
+                    (cur["w"] / "posted.json").write_text(json.dumps(done))
                 self.reply(200, {"url": out["html_url"]})
             except (KeyError, ValueError, TypeError) as e:
                 self.reply(400, {"error": f"bad request: {e}"})

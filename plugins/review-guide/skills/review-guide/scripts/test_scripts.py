@@ -19,7 +19,7 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from fetch import Git, attribute, changed_files, commit_owners, parse_diff, review_shas  # noqa: E402
+from fetch import Git, attribute, changed_files, changed_since, commit_owners, last_seen, parse_diff, review_shas  # noqa: E402
 
 
 def sh(cwd: pathlib.Path, *args: str) -> str:
@@ -61,6 +61,11 @@ def main(keep: str | None = None) -> None:
         # Tip: 1 class A {  2 int x; (pr1, line 2)  3 long y; (pr2)  4 void f() (pr2)  5 }
         assert attr == {"2": [1, 2], "3": [2, 3], "4": [2, 4]}, attr
         assert {f["path"] for f in changed_files(git, r["base"], r["pr2"])} == {"A.java", "B.java"}
+        # The viewer last reviewed #1 at pr1: what #2 added since is new, and a stack they never reviewed has no `since`.
+        seen, problem = last_seen(git, [1, 2], {1: {"state": "APPROVED", "sha": r["pr1"], "at": "2026-10-01T00:00:00Z"}, 2: None})
+        assert seen["pr"] == 1 and problem is None, (seen, problem)
+        assert changed_since(git, r["pr1"], r["pr2"], {"A.java", "B.java"}) == {"A.java": [3, 4], "B.java": [1]}
+        assert last_seen(git, [1, 2], {1: None, 2: None}) == (None, None)
 
         w = root / "w"
         sid = "1-2"
@@ -78,7 +83,8 @@ def main(keep: str | None = None) -> None:
         pr = lambda n, author: {"n": n, "url": f"https://github.com/o/r/pull/{n}", "title": f"PR {n}", "body": "", "author": author,  # noqa: E731
                                 "sha": heads[n], "review_sha": heads[n], "draft": False, "stack": sid, "checks": {"failed": [], "pending": 0, "passed": 1}}
         run = {"repo": "o/r", "viewer": "me", "run_id": "t", "checkout": None, "warnings": [], "prs": [pr(1, "me"), pr(2, "other")],
-               "stacks": [{"id": sid, "prs": [1, 2], "base": r["base"], "tip": r["pr2"], "files": files}]}
+               "stacks": [{"id": sid, "prs": [1, 2], "base": r["base"], "tip": r["pr2"], "files": files,
+                           "since": {"pr": 1, "state": "APPROVED", "sha": r["pr1"], "at": "2026-10-01T00:00:00Z", "files": {"A.java": [3, 4], "B.java": [1]}}}]}
         (w / "run.json").write_text(json.dumps(run))
 
         guide = {
@@ -116,6 +122,8 @@ def main(keep: str | None = None) -> None:
         cms = {c["id"].rsplit("-", 1)[-1]: c for c in data["stacks"][0]["comments"]}
         assert (cms["x"]["pr"], cms["x"]["pl"], cms["x"]["status"]) == (1, 2, "verified"), cms["x"]
         assert (cms["f"]["pr"], cms["f"]["pl"], cms["f"]["status"]) == (2, 4, "unverified"), cms["f"]
+        assert data["stacks"][0]["since"]["files"] == {"A.java": [3, 4], "B.java": [1]}
+        assert data["effort"] == "balanced"
         page = (w / "index.html").read_text()
         assert "/*DATA*/" not in page and "/*TOKEN*/" in page
 
@@ -137,6 +145,13 @@ def main(keep: str | None = None) -> None:
             assert post(outside, "wrong") == 403
             assert post(outside, token) == 400
             assert post({**outside, "pr": 1, "event": "APPROVE", "comments": []}, token) == 400
+            rerun = urllib.request.Request(url + "api/rerun", json.dumps({"effort": "max"}).encode(), {"X-Review-Token": "wrong"})
+            for tok, code in (("wrong", 403), (token, 400)):
+                rerun.headers["X-review-token"] = tok
+                try:
+                    urllib.request.urlopen(rerun)
+                except urllib.error.HTTPError as e:
+                    assert e.code == code, (tok, e.code)
         finally:
             server.terminate()
         if keep:

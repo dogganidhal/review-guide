@@ -20,7 +20,7 @@ fetch.py ──▶ page opens (tree + diffs)
    │                                         │
    │                                         └─▶ comment-verifier ──▶ build.py ──▶ page reloads with verdicts
    │
-serve.py: local page, posts reviews through the user's gh login
+serve.py: local page, posts reviews through the user's gh login, and reruns the whole pipeline from the page (rerun.py)
 ```
 
 | Step | Kind | Output |
@@ -30,13 +30,32 @@ serve.py: local page, posts reviews through the user's gh login
 | `build.py --check` | script | validation errors the writer must fix |
 | `comment-verifier` | agent (sonnet, high effort) | `<stack>/verify.json` |
 | `build.py [--partial]` | script | `guide.json` (merged page data) and `index.html` |
-| `serve.py` | script | serves the page on `127.0.0.1` and posts reviews |
+| `serve.py` | script | serves the page on `127.0.0.1`, posts reviews, and starts reruns |
+| `rerun.py` | script | the pipeline above without a Claude Code session: fetch, then both agents through `claude -p` |
+
+### Effort
+
+One level for the whole run, chosen in the skill's arguments (`quick`, `balanced` by default, `deep`) or on the page when rerunning. `fetch.py --effort` stores it in `run.json`, and each agent prompt carries an `Effort:` line.
+
+| Level | Writer | Verifier | Model |
+| --- | --- | --- | --- |
+| `quick` | about 4 calls, cap 8; brief only; blockers and should-fixes, no nits | about 5 calls, cap 8; `unverified` rather than reading far | agents' own, low effort |
+| `balanced` | about 8 calls, cap 15 | about 10 calls, cap 15 | agents' own (sonnet) |
+| `deep` | about 15 calls, cap 30; reads callers and tests of each risky change | about 20 calls, cap 30; callers, config and tests for every comment | opus, high effort |
+
+The output contract and the limits in `build.py` do not change with the level: `deep` spends its calls on being right, not on more comments.
+
+### Rerun from the page
+
+The page asks `serve.py` for the PRs' current heads (one GraphQL call, cached a minute) when it opens and each time the tab becomes visible. When a head moved, both tabs show a banner: which PRs have new commits, that posting is blocked, an effort picker, and "Rerun the guide". The meta chips also carry "<effort> guide · Rerun ↻" to rerun on unchanged heads.
+
+`POST /api/rerun` (same token as posting, one rerun at a time) starts `rerun.py`. It fetches again, which lands in a new work directory when heads moved, and `serve.py` switches to that directory as soon as it holds a page. The open page reloads onto it and follows the agents as in a first run. Unchanged heads reuse the directory and replace its guides. The agents run with `--permission-mode dontAsk`, no user settings, hooks or MCP servers, writes limited to the work directory, and an allowlist of the read commands their prompts name (`git -C <checkout> show|grep|log`, `gh api -H`, `gh search code`, `build.py`); `gh api` with a method, fields or input is denied. Their output goes to `agents.log` in the work directory. A failed writer is retried once; a failed verifier leaves its comments marked as not checked.
 
 The contract between the agents and the scripts is `plugins/review-guide/skills/review-guide/references/guide-schema.md`. Change the schema doc, `build.py` validation and the prompts together.
 
 ### Work directory
 
-`~/.cache/review-guide/<owner>-<repo>-<prs>-<hash of head SHAs>/`. A rerun on unchanged heads reuses it. `posted.json` records reviews posted from the page, so a PR cannot be posted twice.
+`~/.cache/review-guide/<owner>-<repo>-<prs>-<hash of head SHAs>/`. A rerun on unchanged heads reuses it. `posted.json` records reviews posted from the page, so a PR cannot be posted twice. The viewer's latest review on each PR comes from GitHub, so a new round knows what they last saw: `fetch.py` diffs that commit against the new tip and stores the changed lines as the stack's `since`. The brief tells the writer to focus on them.
 
 When the current directory is a clone of the reviewed repository, `fetch.py` uses it: it fetches PR heads into `refs/review-guide/<n>` and never checks out a branch or modifies the working tree. Otherwise it keeps a blobless bare clone under `~/.cache/review-guide/repos/`, authenticated through `gh auth git-credential`.
 
@@ -123,16 +142,19 @@ Single self-contained HTML file. Figtree from Google Fonts and highlight.js 11.9
 
 ### Layout
 
-- **Top bar:** stack picker (when there are several), the PR chain as chips with a color dot per PR, the tabs "Guide" and "Your review (N)", and the theme toggle. Clicking a PR chip dims everything the other PRs wrote.
-- **Left sidebar:** file tree with collapsible folders, compressed single-child folders, a search box, read/skim/skip filter chips, a viewed count, a role marker per file, and a drafted-comment count. The PR dots sit pinned to the right edge, over a fade, so they stay visible while the tree scrolls sideways. Neither scroll direction shows a scrollbar.
+- **Top bar:** stack picker (when there are several), the PR chain as chips with a color dot per PR (above five PRs, one dropdown listing them with their CI state), the tabs "Guide" and "Your review (N)", and the theme toggle. Clicking a PR chip dims everything the other PRs wrote.
+- **Scrolling:** no panel on the page shows a scrollbar; content still scrolls by wheel, trackpad and keyboard.
+- **Left sidebar:** file tree with collapsible folders, compressed single-child folders, a search box, read/skim/skip filter chips, a viewed count, a role marker per file, and a drafted-comment count. The PR dots sit pinned to the right edge, over a fade, so they stay visible while the tree scrolls sideways.
 - **Guide view:**
-  - title, summary, and meta chips (size, CI, links to the stack and each PR), plus warnings in a collapsible box;
+  - title, summary, and meta chips (size, CI summary, link to the stack), a PR list with one row per PR (title, CI state, failing check names, GitHub link; collapsed above five PRs), plus warnings in a collapsible box;
   - "Know this first";
   - "How a call moves through it": one tab per flow, each drawn as a sequence diagram. Components are columns in call order with role above label. Arrows are numbered top to bottom, and blue arrows are what the stack added. Clicking a box opens its file;
   - "All components by layer": the layered map, collapsed by default. Nodes are ordered by barycenter to reduce crossings, edges are spread along node borders, and labels are placed where they do not collide;
   - "Read in this order": collapsible steps showing title, one sentence, a decide badge, and a comment count. Opening a step shows the highlighted excerpt, the test line ("none covers this" in red), the comments, a "Reviewed" checkbox, and a link to the whole file.
 - **File view:** the full stack diff with old and new line numbers, a color strip per line for the PR that wrote it, drafted comments under their lines, a "Viewed" checkbox, and prev/next buttons. Clicking a line number adds a comment there, routed to the owning PR.
-- **Your review:** one card per PR with the suggested verdict, the comments routed to it, "Add all N suggestions checked in the code", an editable summary, the review type (only "Comment" on the viewer's own PR), "Post on #N", and "Copy as markdown".
+- **Your review:** one compact row per PR waiting to be posted, then a collapsed "Posted (N)" list. A row shows the title, picked comment count with suggestions still waiting, a CI failure mark, and a Comment / Approve / Changes switch. No verdict is selected until the reviewer picks one (clicking it again clears it) or adds a comment, which brings the suggestion along; a PR without a verdict is not posted. ✦ marks the suggestion, recomputed from the live comments: request changes with a blocker, comment with a should-fix or question, approve otherwise (only Comment on the viewer's own PR). Opening a row shows the reason, the routed comments, the summary (empty, with the guide's text as placeholder), "Post only #N" and "Copy as markdown". Above the list: "Approve all clean (N)" (not the viewer's PR, CI not failing, suggestion is approve), "Use the suggested verdicts", "Clear verdicts", "Add N suggestions checked in the code", and "Post N reviews", which asks once and posts each PR with a verdict in order, showing each result on its row.
+- **Since your last review:** when the viewer already reviewed a PR of the stack, the guide shows when and how (the highest PR they reviewed), with "Review what changed". Files changed since carry a "new" mark and a "New N" filter, and the tip lines added since have a highlighted line number. Each row of "Your review" shows the viewer's last verdict on that PR.
+- **Theme:** the toggle is remembered across reloads and runs.
 
 ### Comment states
 

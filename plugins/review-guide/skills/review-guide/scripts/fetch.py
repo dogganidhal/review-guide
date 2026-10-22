@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch a set of pull requests, group them into stacks, and write what the guide agents read.
 
-Usage: fetch.py [--workdir DIR] <pr-url | owner/repo#n>...
+Usage: fetch.py [--workdir DIR] [--effort quick|balanced|deep] <pr-url | owner/repo#n>...
 
 PRs whose base branch is another PR's head form a stack. A stack is reviewed as one change: the diff
 from the bottom PR's base to the top PR's head (the target). Each line the stack changed is attributed
@@ -9,7 +9,7 @@ to the PR that wrote its final version, with its line number in that PR, so a co
 target can be posted on the right PR. A PR on its own is a stack of one.
 
 Writes:
-  run.json                       repo, viewer, checkout, warnings, prs, stacks (bottom PR first)
+  run.json                       repo, viewer, effort, checkout, warnings, prs, stacks (bottom PR first)
   <stack>/target.diff            base..tip
   <stack>/tip/<path>             each changed file at the tip
   <stack>/attribution.json       path -> {tip line: [pr, line in that PR's head]} for lines the stack wrote
@@ -17,6 +17,7 @@ Writes:
   <stack>/brief.md               everything the agents read first: descriptions, numbered diff with owners, symbol uses
   <n>/pr.diff, <n>/hunks.json    the PR's own diff at its review commit, and the lines GitHub accepts comments on
   <n>/existing-comments.json     what reviewers already said
+A stack the viewer reviewed before carries `since`: the commit of their last review and the tip lines changed after it.
 Prints the work directory on the last line.
 """
 
@@ -32,6 +33,7 @@ import time
 from collections import defaultdict
 
 CACHE = pathlib.Path.home() / ".cache" / "review-guide"
+EFFORTS = ("quick", "balanced", "deep")
 GUIDANCE_FILES = ("PR_REVIEWER.md", "AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md", ".github/PULL_REQUEST_TEMPLATE.md", ".github/pull_request_template.md")
 MAX_FILE_BYTES = 400_000
 PR_REF = re.compile(r"(?:https://github\.com/)?([\w.-]+)/([\w.-]+)(?:/pull/|#)(\d+)")
@@ -292,7 +294,7 @@ def references(git: Git, tip: str, parsed: dict, stack_paths: set[str]) -> list[
 
 
 def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: str, files: list[dict],
-                attribution: dict, prs: dict[int, dict], warnings: list[str], local: bool) -> int:
+                attribution: dict, prs: dict[int, dict], warnings: list[str], local: bool, since: dict | None = None) -> int:
     """One file holding what the agents need, so they read once instead of exploring turn by turn."""
     parsed = parse_diff(git("diff", "--no-color", "-M", "-U8", base, tip))
     head = [f"# Brief for stack {sdir.name}", "",
@@ -304,6 +306,11 @@ def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: 
                  (p["body"] or "(no description)").strip()[:2500], ""]
     if relevant := [w for w in warnings if any(f"#{n}" in w for n in chain)]:
         head += ["## Warnings", "", *[f"- {w}" for w in relevant], ""]
+    if since:
+        changed = sorted(since["files"])
+        head += ["## Since the viewer's last review", "",
+                 f"They last reviewed #{since['pr']} ({since['state'].lower()}) at {since['sha'][:8]} on {since['at'][:10]}. "
+                 + (f"{len(changed)} files changed since: " + ", ".join(changed[:60]) + (" ..." if len(changed) > 60 else "") if changed else "Nothing changed since."), ""]
     guidance = sorted(p.name for p in (sdir / "repo-guidance").iterdir())
     head += ["## Repo rules", "", f"In `repo-guidance/`: {', '.join(guidance) or 'none'}.", "",
              "## Changed files", "", "| path | status | +/- | PRs |", "| --- | --- | --- | --- |"]
@@ -333,12 +340,38 @@ def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: 
     return len(text)
 
 
-def existing_comments(repo: str, n: int) -> list[dict]:
+def existing_comments(repo: str, n: int, viewer: str) -> tuple[list[dict], dict | None]:
+    """What reviewers already said, and the viewer's latest submitted review: state, commit and time."""
     inline = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/pulls/{n}/comments", check=False) or "[]")
     reviews = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/pulls/{n}/reviews", check=False) or "[]")
-    out = [{"user": c["user"]["login"], "path": c.get("path"), "line": c.get("line"), "body": c["body"]} for page in inline for c in page]
-    out += [{"user": r["user"]["login"], "state": r["state"], "body": r["body"]} for page in reviews for r in page if r.get("body")]
-    return out
+    login = lambda x: (x.get("user") or {}).get("login")  # noqa: E731
+    out = [{"user": login(c), "path": c.get("path"), "line": c.get("line"), "body": c["body"]} for page in inline for c in page]
+    out += [{"user": login(r), "state": r["state"], "body": r["body"]} for page in reviews for r in page if r.get("body")]
+    mine = [r for page in reviews for r in page if login(r) == viewer and r.get("submitted_at") and r["state"] != "PENDING"]
+    last = max(mine, key=lambda r: r["submitted_at"], default=None)
+    return out, last and {"state": last["state"], "sha": last["commit_id"], "at": last["submitted_at"]}
+
+
+def changed_since(git: Git, since: str, tip: str, paths: set[str]) -> dict[str, list[int]]:
+    """Per stack file changed after `since`: the tip lines added since then."""
+    # ponytail: a plain diff, so a rebase also counts base-branch edits to these files; a range-diff would separate them.
+    if not paths:
+        return {}
+    parsed = parse_diff(git("diff", "--no-color", since, tip, "--", *sorted(paths)))
+    return {p: d["added"] for p, d in parsed.items() if p in paths}
+
+
+def last_seen(git: Git, chain: list[int], last: dict[int, dict | None]) -> tuple[dict | None, str | None]:
+    """The viewer's latest review on the highest PR of the chain they reviewed: what they last saw of the stack."""
+    n = next((n for n in reversed(chain) if last.get(n)), None)
+    if n is None:
+        return None, None
+    seen = {"pr": n, **last[n]}
+    if not git.ok("cat-file", "-e", f"{seen['sha']}^{{commit}}"):
+        git("fetch", "--quiet", "--no-tags", "origin", seen["sha"], check=False)
+    if not git.ok("cat-file", "-e", f"{seen['sha']}^{{commit}}"):
+        return None, f"your last review of #{n} is on {seen['sha'][:8]}, which could not be fetched; showing the whole stack"
+    return seen, None
 
 
 def checks_summary(rollup: list[dict]) -> dict:
@@ -357,6 +390,7 @@ def checks_summary(rollup: list[dict]) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workdir")
+    ap.add_argument("--effort", choices=EFFORTS, default="balanced")
     ap.add_argument("prs", nargs="+")
     args = ap.parse_args()
 
@@ -374,6 +408,7 @@ def main() -> None:
     fields = "number,title,body,author,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,state,additions,deletions,url,statusCheckRollup"
     prs = {n: json.loads(gh("pr", "view", str(n), "-R", repo, "--json", fields)) for n in numbers}
     heads = {n: p["headRefOid"] for n, p in prs.items()}
+    viewer = gh("api", "user", "--jq", ".login").strip()
     run_id = hashlib.sha1(json.dumps(sorted(heads.items())).encode(), usedforsecurity=False).hexdigest()[:10]
     workdir = pathlib.Path(args.workdir or CACHE / f"{repo.replace('/', '-')}-{'-'.join(map(str, numbers))}-{run_id}")
     workdir.mkdir(parents=True, exist_ok=True)
@@ -389,6 +424,7 @@ def main() -> None:
         warnings += lag_warnings
 
     pr_files: dict[int, set[str]] = {}
+    last: dict[int, dict | None] = {}
     for n in numbers:
         prdir = workdir / str(n)
         prdir.mkdir(exist_ok=True)
@@ -398,7 +434,8 @@ def main() -> None:
         pr_files[n] = set(parsed) | {f["old"] for f in parsed.values() if f["old"]}
         (prdir / "pr.diff").write_text(diff)
         (prdir / "hunks.json").write_text(json.dumps({p: {"added": f["added"], "commentable": f["commentable"]} for p, f in parsed.items()}))
-        (prdir / "existing-comments.json").write_text(json.dumps(existing_comments(repo, n), indent=1))
+        existing, last[n] = existing_comments(repo, n, viewer)
+        (prdir / "existing-comments.json").write_text(json.dumps(existing, indent=1))
 
     stacks = []
     for chain in chains:
@@ -437,8 +474,13 @@ def main() -> None:
             text = git.text(tip, name)
             if text is not None:
                 (guidance / name.replace("/", "__")).write_text(text)
-        stacks.append({"id": sid, "prs": chain, "base": base, "tip": tip, "files": files})
-        size = write_brief(git, sdir, chain, base, tip, files, attribution, prs, warnings, checkout is not None)
+        since, problem = last_seen(git, chain, last)
+        if problem:
+            warnings.append(problem)
+        if since:
+            since["files"] = changed_since(git, since["sha"], tip, {f["path"] for f in files if f["status"] != "deleted"})
+        stacks.append({"id": sid, "prs": chain, "base": base, "tip": tip, "files": files, "since": since})
+        size = write_brief(git, sdir, chain, base, tip, files, attribution, prs, warnings, checkout is not None, since)
         print(f"stack {sid}: brief {size // 1000} KB")
 
     stack_of = {n: s["id"] for s in stacks for n in s["prs"]}
@@ -446,9 +488,9 @@ def main() -> None:
         "n": n, "url": p["url"], "title": p["title"], "body": p["body"] or "", "author": p["author"]["login"],
         "base": p["baseRefName"], "head": p["headRefName"], "sha": p["headRefOid"], "review_sha": review[n], "draft": p["isDraft"], "state": p["state"],
         "adds": p["additions"], "dels": p["deletions"], "stack": stack_of[n], "checks": checks_summary(p["statusCheckRollup"]),
+        "last_review": last[n],
     } for n, p in prs.items()]
-    viewer = gh("api", "user", "--jq", ".login").strip()
-    run_data = {"repo": repo, "viewer": viewer, "run_id": run_id, "fetched_at": int(time.time()), "checkout": checkout,
+    run_data = {"repo": repo, "viewer": viewer, "effort": args.effort, "run_id": run_id, "fetched_at": int(time.time()), "checkout": checkout,
                 "warnings": warnings, "prs": out_prs, "stacks": stacks}
     (workdir / "run.json").write_text(json.dumps(run_data, indent=1))
 

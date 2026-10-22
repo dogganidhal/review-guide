@@ -46,6 +46,7 @@ class Stack:
         self.target = parse_diff((self.dir / "target.diff").read_text())
         self.hunks = {n: json.loads((workdir / str(n) / "hunks.json").read_text()) for n in self.prs}
         self.pr_info = {p["n"]: p for p in run["prs"] if p["n"] in self.prs}
+        self.since = stack.get("since")
 
     def tip_lines(self, path) -> list[str] | None:
         f = self.dir / "tip" / path
@@ -325,8 +326,8 @@ def render_stack(st: Stack, repo: str, guide: dict) -> dict:
     for n in st.prs:
         info, g = st.pr_info[n], guide["prs"][str(n)]
         prs.append({**{k: info[k] for k in ("n", "url", "title", "author", "sha", "review_sha", "draft", "checks")},
-                    "verdict": g["verdict"], "review_body": g["review_body"]})
-    return {"id": st.id, "pending": bool(guide.get("pending")), "base": st.base, "tip": st.tip, "compare": compare, "summary": guide["summary"],
+                    "last_review": info.get("last_review"), "verdict": g["verdict"], "review_body": g["review_body"]})
+    return {"id": st.id, "pending": bool(guide.get("pending")), "base": st.base, "tip": st.tip, "since": st.since, "compare": compare, "summary": guide["summary"],
             "key_facts": guide.get("key_facts") or [],
             "map": guide["map"], "flows": guide.get("flows") or [], "prs": prs, "steps": steps, "files": files, "comments": comments}
 
@@ -362,7 +363,7 @@ def main() -> None:
     for st in stacks:
         if not guides[st.id].get("pending"):
             warnings += merge_verification(st, guides[st.id])
-    data = {"repo": run["repo"], "viewer": run["viewer"], "run_id": run["run_id"], "warnings": run.get("warnings") or [],
+    data = {"repo": run["repo"], "viewer": run["viewer"], "effort": run.get("effort", "balanced"), "run_id": run["run_id"], "warnings": run.get("warnings") or [],
             "stacks": [render_stack(st, run["repo"], guides[st.id]) for st in stacks]}
     (args.workdir / "guide.json").write_text(json.dumps(data, indent=1))
     embedded = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")

@@ -6,7 +6,7 @@ The guide is written per **stack**: a chain of PRs where each one's base branch 
 
 | File | Content |
 | --- | --- |
-| `W/run.json` | `repo`, `viewer` (who posts), `checkout` (local clone or `null`), `warnings`, `prs` and `stacks`. Each PR has `n`, `title`, `body`, `author`, `sha`, `review_sha` and `stack`. Each stack has `id`, `prs` (bottom first), `base`, `tip` and `files`, and each file has `path`, `old`, `status`, `adds`, `dels` and `prs` (the PRs that touch it). |
+| `W/run.json` | `repo`, `viewer` (who posts), `effort` (`quick`, `balanced` or `deep`; the prompt's `Effort:` line says the same), `checkout` (local clone or `null`), `warnings`, `prs` and `stacks`. Each PR has `n`, `title`, `body`, `author`, `sha`, `review_sha` and `stack`. Each stack has `id`, `prs` (bottom first), `base`, `tip` and `files`, and each file has `path`, `old`, `status`, `adds`, `dels` and `prs` (the PRs that touch it). A PR also has `last_review` (the viewer's latest review: `state`, `sha`, `at`, or `null`). A stack the viewer reviewed before has `since`: `pr`, `state`, `sha`, `at`, and `files` (path to the tip lines added after that review). |
 | `W/<stack>/brief.md` | Start here. PR descriptions, warnings, the changed-file table, the whole target diff with tip line numbers and the PR that wrote each added line, and where each declared class or function is used. |
 | `W/<stack>/target.diff` | The raw diff, base to tip. |
 | `W/<stack>/tip/<path>` | Each changed file at the tip. All line numbers below refer to these files. |
@@ -14,6 +14,8 @@ The guide is written per **stack**: a chain of PRs where each one's base branch 
 | `W/<stack>/repo-guidance/` | The repo's own review rules at the tip. Any of them may be missing. |
 | `W/<n>/pr.diff` | One PR's own diff. Read it only to judge whether that PR is safe to merge before the PRs above it. |
 | `W/<n>/existing-comments.json` | Review comments already on the PR. |
+
+`review_body` is the page's placeholder for the review summary; nothing is posted unless the reviewer types it.
 
 ## `W/<stack>/guide.json` (guide writer)
 

@@ -6,6 +6,7 @@
 <title>Review guide</title>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>try { const t = localStorage.getItem('review-guide-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <style>
 :root {
   --bg: #ffffff; --surface: #f5f8fb; --surface-2: #eaf1f7; --line: #dbe4ec;
@@ -14,10 +15,13 @@
   --add: #e6f5ea; --add-num: #cdebd6; --del: #ffe5e8; --del-num: #ffd0d7; --hot: #ffcd4d;
   --warn: #8a5a00; --warn-soft: #ffecb2; --danger: #b3123f; --danger-soft: #ffe5e8; --ok: #17663f; --ok-soft: #dff3e7;
   --syn-kw: #004080; --syn-str: #17663f; --syn-com: #6b8299; --syn-num: #9a5b00; --syn-fn: #107aca; --syn-type: #7a3e9d;
+  color-scheme: light;
+  --hot-ink: #00264c;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #101010; --surface: #181818; --surface-2: #202020; --line: #2c2c2c;
     --text: #ececec; --muted: #a0a0a0; --faint: #707070;
     --accent: #00bfff; --accent-ink: #00264c; --accent-soft: #0d2b38;
@@ -27,6 +31,7 @@
   }
 }
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #101010; --surface: #181818; --surface-2: #202020; --line: #2c2c2c;
   --text: #ececec; --muted: #a0a0a0; --faint: #707070;
   --accent: #00bfff; --accent-ink: #00264c; --accent-soft: #0d2b38;
@@ -34,7 +39,8 @@
   --warn: #ffcd4d; --warn-soft: #2b2410; --danger: #ff8aa5; --danger-soft: #2e1820; --ok: #6fd3a0; --ok-soft: #12281b;
   --syn-kw: #7cc4ff; --syn-str: #8fd6a8; --syn-com: #7d7d7d; --syn-num: #ffcd4d; --syn-fn: #00bfff; --syn-type: #d4a5ff;
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: none; }
+::-webkit-scrollbar { display: none; }
 html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--text); font-family: 'Figtree', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif; font-size: 15px; line-height: 1.45; }
 a { color: var(--accent); text-decoration: none; }
@@ -51,15 +57,38 @@ button { font: inherit; color: inherit; }
 .prchip[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .prchip .t { color: var(--muted); max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; display: inline-block; }
+.stackmenu { position: relative; }
+.stackmenu > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 99px; padding: 3px 12px; cursor: pointer; font-size: .85rem; }
+.stackmenu > summary::-webkit-details-marker { display: none; }
+.stackmenu > summary .t { color: var(--muted); max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stackmenu[open] > summary { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.stackmenu .panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: min(760px, calc(100vw - 32px)); max-height: 70vh; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); }
+.stackmenu .fails { display: none; }
+.prrow { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 22px; gap: 2px 10px; align-items: center; padding: 5px 10px; border-top: 1px solid var(--line); font-size: .85rem; }
+.prrow:first-child { border-top: 0; }
+.prrow .i { color: var(--faint); font-size: .75rem; text-align: right; font-variant-numeric: tabular-nums; }
+.prrow .pick { display: flex; align-items: center; gap: 8px; min-width: 0; background: none; border: 0; padding: 2px 6px; border-radius: 6px; cursor: pointer; text-align: left; }
+.prrow .pick:hover { background: var(--surface-2); }
+.prrow .pick[aria-pressed="true"] { background: var(--accent-soft); }
+.prrow .t { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prrow .gh { text-align: center; }
+.prrow .fails { grid-column: 2 / -1; padding: 0 6px 3px 23px; font-size: .76rem; color: var(--danger); }
+.ci { font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.ci.bad { color: var(--danger); }
+.ci.wait { color: var(--warn); }
+.ci.ok { color: var(--ok); }
+.ci.none { color: var(--faint); font-weight: 400; }
+.prlist { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); margin-bottom: 16px; }
+.prlist > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; font-size: .9rem; }
+.prlist[open] > summary { border-bottom: 1px solid var(--line); }
 .tabs { margin-left: auto; display: flex; gap: 4px; }
 .tab { border: 1px solid transparent; background: none; padding: 5px 12px; border-radius: 8px; cursor: pointer; font-weight: 600; color: var(--muted); }
 .tab[aria-selected="true"] { background: var(--accent-soft); color: var(--text); }
 .iconbtn { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 4px 9px; cursor: pointer; color: var(--muted); font-size: .85rem; }
 
 .body { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 0; }
-.side { border-right: 1px solid var(--line); background: var(--surface); overflow-y: auto; overflow-x: hidden; padding: 12px 0 24px; scrollbar-width: none; }
-.side::-webkit-scrollbar, .ftree::-webkit-scrollbar { display: none; }
-.ftree { overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.side { border-right: 1px solid var(--line); background: var(--surface); overflow-y: auto; overflow-x: hidden; padding: 12px 0 24px; }
+.ftree { overflow-x: auto; overscroll-behavior-x: contain; }
 .ftree .rows { width: max-content; min-width: 100%; }
 .side .tools { display: flex; gap: 6px; padding: 0 12px 10px; flex-wrap: wrap; }
 .side input[type=search] { width: 100%; border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 8px; padding: 6px 9px; font: inherit; font-size: .85rem; }
@@ -78,6 +107,13 @@ button { font: inherit; color: inherit; }
 .tfile .tail { position: sticky; right: 0; display: inline-flex; align-items: center; gap: 6px; margin-right: -12px; padding: 0 12px 0 16px; align-self: stretch; background: linear-gradient(to right, transparent, var(--row) 12px); }
 .tfile.viewed .nm { color: var(--faint); text-decoration: line-through; }
 .tfile.dim { opacity: .4; }
+.newmark { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--hot-ink); background: var(--hot); border-radius: 4px; padding: 0 4px; font-family: 'Figtree', sans-serif; }
+.rerunbox { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: .86rem; margin-bottom: 14px; }
+.rerunbox.stale { border-color: var(--warn); background: var(--warn-soft); }
+.rerunbox .msg { flex: 1 1 260px; }
+.rerunbox .err { color: var(--danger); flex-basis: 100%; }
+.meta button { padding: 1px 9px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); font: inherit; cursor: pointer; }
+.sincebox { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--hot); border-radius: 10px; padding: 9px 12px; font-size: .86rem; margin-bottom: 14px; }
 .role { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .role.read { background: var(--accent); }
 .role.skim { background: var(--accent-soft); outline: 1px solid var(--accent); outline-offset: -1px; }
@@ -158,7 +194,7 @@ svg .hopnum { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: 
 .ln.del { background: var(--del); }
 .ln.del .no { background: var(--del-num); }
 .ln.dim { opacity: .35; }
-.ln.mark .src { box-shadow: inset 2px 0 0 var(--hot); }
+.ln.mark .no:not(:empty) { background: var(--hot); color: var(--hot-ink); font-weight: 700; }
 .hunksep { padding: 3px 10px; background: var(--surface); color: var(--faint); font-size: .72rem; border-block: 1px solid var(--line); }
 .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-built_in { color: var(--syn-kw); font-weight: 600; }
 .hljs-string, .hljs-regexp, .hljs-addition { color: var(--syn-str); }
@@ -245,12 +281,37 @@ details.more > summary { cursor: pointer; color: var(--muted); font-size: .84rem
 .filehead label { display: inline-flex; gap: 6px; align-items: center; font-size: .85rem; cursor: pointer; }
 .empty { color: var(--muted); padding: 18px; border: 1px dashed var(--line); border-radius: 10px; }
 
-.send { display: grid; gap: 14px; }
-.prcard { border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
-.prcard h3 { margin: 0; font-size: 1rem; display: flex; gap: 8px; align-items: center; }
-.prcard .verdict { color: var(--muted); font-size: .85rem; margin: 4px 0 10px; }
-.prcard textarea { width: 100%; min-height: 60px; resize: vertical; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
-.prcard .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 6px; }
+.bulk .grow { flex: 1; }
+.hint { color: var(--faint); font-size: .78rem; margin: 0 0 12px; }
+.sendlist { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.srow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; padding: 6px 12px; border-top: 1px solid var(--line); font-size: .86rem; }
+.srow:first-child { border-top: 0; }
+.srow.done .t, .srow.done b { color: var(--faint); }
+.srow .pick { display: flex; align-items: center; gap: 8px; min-width: 0; background: none; border: 0; padding: 3px 6px; border-radius: 6px; cursor: pointer; text-align: left; }
+.srow .pick:hover { background: var(--surface-2); }
+.srow .t { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srow .cnt { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.srow .faint { color: var(--faint); }
+.srow .sline { grid-column: 1 / -1; padding-left: 36px; font-size: .8rem; }
+.srow .sline .status { font-size: .8rem; }
+.status.warn { color: var(--warn); }
+.status.faint { color: var(--faint); }
+.donelist { margin-top: 14px; }
+.donelist > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; font-size: .9rem; color: var(--muted); }
+.donelist[open] > summary { border-bottom: 1px solid var(--line); }
+.donelist .srow:first-of-type { border-top: 0; }
+.sbody { grid-column: 1 / -1; padding: 4px 0 10px 36px; }
+.sbody .verdict { color: var(--muted); font-size: .85rem; margin: 4px 0 10px; }
+.sbody textarea { width: 100%; min-height: 60px; resize: vertical; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+.sbody .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-left: 1px solid var(--line); background: var(--bg); color: var(--muted); padding: 3px 10px; font-size: .78rem; cursor: pointer; white-space: nowrap; }
+.seg button:first-child { border-left: 0; }
+.seg button:disabled { cursor: not-allowed; }
+.seg button[aria-pressed="true"].COMMENT { background: var(--surface-2); color: var(--text); font-weight: 700; }
+.seg button[aria-pressed="true"].APPROVE { background: var(--ok-soft); color: var(--ok); font-weight: 700; }
+.seg button[aria-pressed="true"].REQUEST_CHANGES { background: var(--danger-soft); color: var(--danger); font-weight: 700; }
 .btn { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 13px; cursor: pointer; font-size: .88rem; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -264,6 +325,9 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
   .side { border-right: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
   .step .inner { padding-left: 12px; }
   .code .cm { margin-left: 10px; }
+  .srow { grid-template-columns: minmax(0, 1fr); }
+  .srow .cnt, .srow .seg { justify-self: start; }
+  .sbody, .srow .sline { padding-left: 0; }
 }
 </style>
 </head>
@@ -279,7 +343,8 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
 const DATA = /*DATA*/null;
 const TOKEN = '/*TOKEN*/';
 const KEY = 'review-guide-v2-' + DATA.run_id;
-const PR_COLORS = ['#107aca', '#ffcd4d', '#ff4773', '#00bfff', '#d0e9fb', '#ffecb2'];
+const CHAIN_MAX = 5;
+const PR_COLORS =['#107aca', '#ffcd4d', '#ff4773', '#00bfff', '#d0e9fb', '#ffecb2'];
 const PREFIX = { blocker: 'Blocker: ', should: 'Should fix: ', nit: 'Nit: ', question: '', comment: '' };
 const SEV = { comment: 'comment', question: 'question', nit: 'nit', should: 'should fix', blocker: 'blocker' };
 const STATUS = { verified: '✓ checked in the code', unverified: '? could not confirm', refuted: '✕ disproved', checking: '… being checked' };
@@ -289,7 +354,7 @@ const LANG = { java: 'java', kt: 'kotlin', kts: 'kotlin', py: 'python', ts: 'typ
 
 let state = {};
 try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
-const defaults = { flow: 0, stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, pr: {} };
+const defaults = { flow: 0, stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {} };
 state = { ...defaults, ...state };
 if (!DATA.stacks.some((s) => s.id === state.stack)) state.stack = DATA.stacks[0].id;
 let posted = {};
@@ -322,11 +387,12 @@ const prIndex = (st, n) => st.prs.findIndex((p) => p.n === n);
 const prColor = (st, n) => PR_COLORS[prIndex(st, n) % PR_COLORS.length];
 const prDot = (st, n) => el('span', { class: 'dot', style: `background:${prColor(st, n)}`, title: `#${n}` });
 const fileOf = (st, path) => st.files.find((f) => f.path === path);
+const sinceLines = (st, path) => st.since?.files[path];
+const inFilter = (st, f) => state.filter === 'all' || (state.filter === 'since' ? !!sinceLines(st, f.path) : f.role === state.filter);
 const extras = (st) => (state.extra[st.id] ||= []);
 const comments = (st) => [...st.comments, ...extras(st)];
 const cmState = (c) => (state.cm[c.id] ??= { on: !!c.custom, gone: false, sev: c.severity, text: c.body || '' });
 const postText = (c) => { const cs = cmState(c); return ((PREFIX[cs.sev] ?? '') + cs.text.trim()).trim(); };
-const prState = (st, p) => (state.pr[p.n] ??= { event: p.author === DATA.viewer ? 'COMMENT' : p.verdict.event, body: p.review_body });
 
 function highlight(texts, path) {
   const lang = LANG[(path.split('.').pop() || '').toLowerCase()] || (path.endsWith('pom.xml') ? 'xml' : null);
@@ -353,7 +419,12 @@ function renderTop() {
   const stackPick = DATA.stacks.length > 1 ? el('select', { 'aria-label': 'Stack', onchange: (e) => { state.stack = e.target.value; state.file = null; state.view = 'guide'; state.focus = null; save(); render(); } },
     DATA.stacks.map((s) => el('option', { value: s.id }, s.prs.map((p) => '#' + p.n).join(' → ')))) : null;
   if (stackPick) stackPick.value = st.id;
-  const chain = el('div', { class: 'chain' }, st.prs.map((p, i) => [
+  const fp = st.prs.find((p) => p.n === state.focus);
+  const failingPrs = st.prs.filter((p) => p.checks.failed.length).length;
+  const chain = st.prs.length > CHAIN_MAX ? el('details', { class: 'stackmenu' },
+    el('summary', {}, fp ? [prDot(st, fp.n), `#${fp.n}`, el('span', { class: 't' }, fp.title)] : `All ${st.prs.length} PRs`,
+      failingPrs ? el('span', { class: 'ci bad' }, `✕ ${failingPrs}`) : null, el('span', { class: 'chev' }, '▾')),
+    el('div', { class: 'panel' }, prRows(st))) : el('div', { class: 'chain' }, st.prs.map((p, i) => [
     i ? el('span', { class: 'arrow' }, '→') : null,
     el('button', { class: 'prchip', type: 'button', 'aria-pressed': String(state.focus === p.n), title: `Show only what #${p.n} wrote`,
       onclick: () => { state.focus = state.focus === p.n ? null : p.n; save(); render(); } },
@@ -364,6 +435,25 @@ function renderTop() {
       el('button', { class: 'tab', role: 'tab', type: 'button', 'aria-selected': String(state.view !== 'send'), onclick: () => { state.view = state.file ? 'file' : 'guide'; if (state.view === 'file' && !fileOf(st, state.file)) state.view = 'guide'; save(); render(); } }, 'Guide'),
       el('button', { class: 'tab', role: 'tab', type: 'button', 'aria-selected': String(state.view === 'send'), onclick: () => { state.view = 'send'; save(); render(); } }, `Your review (${n})`)),
     el('button', { class: 'iconbtn', type: 'button', onclick: toggleTheme, title: 'Toggle theme' }, '◐')].filter(Boolean));
+}
+
+document.addEventListener('click', (e) => document.querySelectorAll('.stackmenu[open]').forEach((d) => d.contains(e.target) || d.removeAttribute('open')));
+document.addEventListener('keydown', (e) => e.key === 'Escape' && document.querySelectorAll('.stackmenu[open]').forEach((d) => d.removeAttribute('open')));
+
+function prRows(st) {
+  return st.prs.map((p, i) => {
+    const c = p.checks, on = state.focus === p.n;
+    return el('div', { class: 'prrow' },
+      el('span', { class: 'i' }, i + 1),
+      el('button', { class: 'pick', type: 'button', 'aria-pressed': String(on), title: on ? 'Show the whole stack' : `Show only what #${p.n} wrote`,
+        onclick: () => { state.focus = on ? null : p.n; save(); render(); } },
+        prDot(st, p.n), el('b', {}, `#${p.n}`), el('span', { class: 't', title: p.title }, p.title), posted[p.n] ? el('span', { class: 'st verified' }, '✓') : null),
+      c.failed.length ? el('span', { class: 'ci bad', title: c.failed.join('\n') }, `✕ ${c.failed.length} failing`)
+        : c.pending ? el('span', { class: 'ci wait' }, `${c.pending} pending`)
+        : c.passed ? el('span', { class: 'ci ok' }, '✓ green') : el('span', { class: 'ci none' }, 'no CI'),
+      ext(p.url, '↗', 'gh'),
+      c.failed.length ? el('div', { class: 'fails' }, c.failed.join(' · ')) : null);
+  });
 }
 
 function buildTree(files) {
@@ -387,9 +477,10 @@ function buildTree(files) {
 function renderSide() {
   const st = ST();
   const q = state.q.toLowerCase();
-  const visible = st.files.filter((f) => (state.filter === 'all' || f.role === state.filter) && (!q || f.path.toLowerCase().includes(q)));
+  if (state.filter === 'since' && !st.since) state.filter = 'all';
+  const visible = st.files.filter((f) => inFilter(st, f) && (!q || f.path.toLowerCase().includes(q)));
   const counts = Object.fromEntries(['read', 'skim', 'skip'].map((r) => [r, st.files.filter((f) => f.role === r).length]));
-  if (st.pending && state.filter !== 'all') state.filter = 'all';
+  if (st.pending && !['all', 'since'].includes(state.filter)) state.filter = 'all';
   const byFile = {};
   for (const c of comments(st)) if (c.path) byFile[c.path] = (byFile[c.path] || 0) + 1;
   const { root, compress } = buildTree(visible);
@@ -408,6 +499,7 @@ function renderSide() {
         'aria-current': String(state.view === 'file' && state.file === f.path), title: `${f.path}\n${f.role}: ${f.why}`, tabindex: '0',
         onclick: () => openFile(f.path), onkeydown: (e) => { if (e.key === 'Enter') openFile(f.path); } },
         el('span', { class: 'role ' + f.role }), el('span', { class: 'nm' }, f.path.split('/').pop()),
+        sinceLines(st, f.path) ? el('span', { class: 'newmark', title: 'Changed since your last review' }, 'new') : null,
         el('span', { class: 'tail' },
           byFile[f.path] ? el('span', { class: 'badge', title: 'Drafted comments' }, byFile[f.path]) : null,
           el('span', { class: 'prdots' }, f.prs.map((n) => prDot(st, n))))));
@@ -420,7 +512,7 @@ function renderSide() {
   const viewed = st.files.filter((f) => state.viewed[st.id + f.path]).length;
   document.getElementById('side').replaceChildren(...[
     el('div', { class: 'tools' }, search),
-    el('div', { class: 'tools' }, chip('all', `All ${st.files.length}`), st.pending ? null : [chip('read', `Read ${counts.read}`), chip('skim', `Skim ${counts.skim}`), chip('skip', `Skip ${counts.skip}`)]),
+    el('div', { class: 'tools' }, chip('all', `All ${st.files.length}`), st.since ? chip('since', `New ${Object.keys(st.since.files).length}`) : null, st.pending ? null : [chip('read', `Read ${counts.read}`), chip('skim', `Skim ${counts.skim}`), chip('skip', `Skip ${counts.skip}`)]),
     el('div', { class: 'count' }, `${viewed}/${st.files.length} viewed`, state.focus ? ` · showing #${state.focus}` : ''),
     el('div', { class: 'ftree' }, el('div', { class: 'rows' }, rows))]);
   const tree = document.querySelector('.ftree');
@@ -600,7 +692,8 @@ function codeBlock(st, rows, path, { excerpt, link, title } = {}) {
     const num = el('span', { class: 'no' + (can ? ' go' : ''), title: can ? `Comment on this line (goes to #${r.pr})` : null, onclick: can ? () => addCustom(st, path, r) : null }, r.k === '-' ? '' : r.n);
     const strip = el('span', { style: r.pr ? `background:${prColor(st, r.pr)}` : '', title: r.pr ? `written by #${r.pr}` : null });
     const src = el('span', { class: 'src', html: html.get(r) || ' ' });
-    const cls = `ln${excerpt ? ' excerpt' : ''}${r.k === '+' ? ' add' : r.k === '-' ? ' del' : ''}${dim ? ' dim' : ''}`;
+    const fresh = r.k === '+' && sinceLines(st, path)?.includes(r.n);
+    const cls = `ln${excerpt ? ' excerpt' : ''}${r.k === '+' ? ' add' : r.k === '-' ? ' del' : ''}${dim ? ' dim' : ''}${fresh ? ' mark' : ''}`;
     box.append(excerpt ? el('div', { class: cls }, num, strip, src) : el('div', { class: cls }, el('span', { class: 'no' }, r.k === '+' ? '' : r.o), num, strip, src));
     if (r.k !== '-') for (const c of byLine.get(r.n) || []) box.append(commentCard(st, c));
   });
@@ -680,8 +773,11 @@ function stepCard(st, s, i) {
 }
 
 function guideView(st) {
-  const failing = st.prs.flatMap((p) => p.checks.failed.map((c) => `#${p.n} ${c}`));
+  const failing = st.prs.filter((p) => p.checks.failed.length);
   const pending = st.prs.reduce((t, p) => t + p.checks.pending, 0);
+  const ci = failing.length ? (st.prs.length > 1 ? `CI failing on ${failing.length} of ${st.prs.length} PRs` : `CI failing: ${failing[0].checks.failed.length} checks`)
+    : pending ? `CI: ${pending} pending` : 'CI green';
+  const listKey = 'prs:' + st.id;
   const adds = st.files.reduce((t, f) => t + f.adds, 0), dels = st.files.reduce((t, f) => t + f.dels, 0);
   const done = st.steps.filter((s) => state.done[s.id]).length;
   const warnings = DATA.warnings.filter((w) => st.prs.some((p) => w.includes('#' + p.n)));
@@ -690,9 +786,14 @@ function guideView(st) {
     el('p', { class: 'summary' }, st.summary),
     el('div', { class: 'meta' },
       el('span', {}, `${st.files.length} files · +${adds} −${dels}`),
-      el('span', { class: failing.length ? 'bad' : '' }, failing.length ? `CI failing: ${failing.join(', ')}` : pending ? `CI: ${pending} pending` : 'CI green'),
+      el('span', { class: failing.length ? 'bad' : '' }, ci),
       ext(st.compare, 'Whole stack on GitHub ↗'),
-      st.prs.map((p) => ext(p.url, `#${p.n} ↗`))),
+      el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
+    rerunBox(st),
+    el('details', { class: 'prlist', open: state.open[listKey] ?? st.prs.length <= CHAIN_MAX, ontoggle: (e) => { state.open[listKey] = e.target.open; save(); } },
+      el('summary', {}, st.prs.length > 1 ? `${st.prs.length} PRs in this stack · ` : 'Pull request · ', el('span', { class: 'ci ' + (failing.length ? 'bad' : pending ? 'wait' : 'ok') }, ci)),
+      prRows(st)),
+    st.since ? sinceBox(st) : null,
     warnings.length ? el('details', { class: 'warnbox' }, el('summary', {}, warnings.length === 1 ? 'One thing about this stack' : `${warnings.length} things about this stack`),
       warnings.map((w) => el('p', {}, w))) : null,
     st.pending ? el('div', { class: 'pendingbox' }, el('span', { class: 'spin' }),
@@ -707,9 +808,19 @@ function guideView(st) {
       el('div', { class: 'steps' }, st.steps.map((s, i) => stepCard(st, s, i)))]];
 }
 
+function sinceBox(st) {
+  const s = st.since, n = Object.keys(s.files).length;
+  const verb = { APPROVED: 'approved', CHANGES_REQUESTED: 'requested changes on', COMMENTED: 'commented on', DISMISSED: 'reviewed' }[s.state] || 'reviewed';
+  const lines = Object.values(s.files).reduce((t, l) => t + l.length, 0);
+  return el('div', { class: 'sincebox' },
+    el('span', {}, el('b', {}, 'Since your last review. '), `You ${verb} #${s.pr} at ${s.sha.slice(0, 8)} on ${s.at.slice(0, 10)}. `,
+      n ? `${plural(n, 'file', 'files')} and ${plural(lines, 'line', 'lines')} changed since; they carry a “new” mark.` : 'Nothing in the stack changed since.'),
+    n ? el('button', { class: 'btn', type: 'button', onclick: () => { state.filter = 'since'; save(); const f = st.files.find((x) => sinceLines(st, x.path)); if (f) openFile(f.path); else render(); } }, 'Review what changed →') : null);
+}
+
 function fileView(st) {
   const f = fileOf(st, state.file);
-  const order = st.files.filter((x) => state.filter === 'all' || x.role === state.filter).sort((a, b) => a.path.localeCompare(b.path));
+  const order = st.files.filter((x) => inFilter(st, x)).sort((a, b) => a.path.localeCompare(b.path));
   const i = order.findIndex((x) => x.path === f.path);
   const nav = (d) => order[i + d] ? el('button', { class: 'btn', type: 'button', onclick: () => openFile(order[i + d].path) }, d < 0 ? '← Prev' : 'Next →') : null;
   const key = st.id + f.path;
@@ -722,60 +833,170 @@ function fileView(st) {
       nav(-1), nav(1),
       el('span', { class: 'why' }, el('span', { class: 'role ' + f.role, style: 'display:inline-block;margin-right:6px' }), `${f.role} · ${f.why} · `,
         f.status !== 'modified' ? `${f.status} · ` : '', `+${f.adds} −${f.dels} · `,
-        f.prs.map((n, j) => [j ? ', ' : 'changed by ', ext(f.pr_links[n], `#${n}`)]), ' · ', ext(f.link, 'stack diff ↗'))),
+        f.prs.map((n, j) => [j ? ', ' : 'changed by ', ext(f.pr_links[n], `#${n}`)]), ' · ', ext(f.link, 'stack diff ↗'),
+        sinceLines(st, f.path) ? [' · ', el('span', { class: 'newmark' }, 'new'), ` ${plural(sinceLines(st, f.path).length, 'line', 'lines')} changed since your last review`] : null)),
     general.map((c) => commentCard(st, c)),
     f.hunks.length ? codeBlock(st, f.hunks, f.path) : el('div', { class: 'empty' }, f.status === 'deleted' ? 'Deleted in this stack.' : 'No text diff to show (binary, too large, or rename only). Open it on GitHub.')];
 }
 
-function sendView(st) {
-  return [el('h1', {}, 'Your review'),
-    el('p', { class: 'summary' }, 'Comments you added, grouped by the PR that wrote each line. Nothing is posted until you press Post.'),
-    el('div', { class: 'send' }, st.prs.map((p) => prCard(st, p)))];
+const EFFORTS = [['quick', 'Quick'], ['balanced', 'Balanced'], ['deep', 'Deep']];
+const EFFORT_HINT = { quick: 'blockers only, about 2 minutes', balanced: 'the usual guide, about 7 minutes', deep: 'reads callers and tests, slower' };
+let heads = {}, rerun = { running: false, status: '', error: '' }, rerunOpen = false, effort = DATA.effort || 'balanced';
+const stale = (st) => st.prs.filter((p) => heads[p.n] && heads[p.n] !== p.sha);
+
+async function checkHeads() {
+  try { const r = await fetch('/api/heads', { cache: 'no-store' }); if (r.ok) { heads = (await r.json()).heads || {}; render(); } } catch (e) {}
 }
 
-function prCard(st, p) {
-  const ps = prState(st, p), own = p.author === DATA.viewer;
+async function startRerun() {
+  try {
+    const r = await fetch('/api/rerun', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify({ effort }) });
+    const j = await r.json();
+    rerun = r.ok ? j : { ...rerun, error: j.error || r.statusText };
+  } catch (e) { rerun = { ...rerun, error: e.message }; }
+  render(); if (rerun.running) poll();
+}
+
+function rerunBox(st) {
+  const moved = stale(st);
+  if (!moved.length && !rerun.running && !rerun.error && !rerunOpen) return null;
+  if (rerun.running) return el('div', { class: 'rerunbox' }, el('span', { class: 'spin' }), el('span', { class: 'msg' }, `Rerunning the guide (${effort}). ${rerun.status}…`));
+  const msg = moved.length ? `${moved.length === st.prs.length && moved.length > 1 ? 'Every PR' : moved.map((p) => '#' + p.n).join(', ')} ${moved.length === 1 ? 'has' : 'have'} new commits since this guide was built. Posting is blocked until it is rerun.`
+    : 'Write the guide again, with the same PRs.';
+  return el('div', { class: 'rerunbox' + (moved.length ? ' stale' : '') },
+    el('span', { class: 'msg' }, msg),
+    el('span', { class: 'seg', role: 'group', 'aria-label': 'Effort' }, EFFORTS.map(([k, label]) =>
+      el('button', { type: 'button', class: 'COMMENT', 'aria-pressed': String(effort === k), title: EFFORT_HINT[k], onclick: () => { effort = k; render(); } }, label))),
+    el('button', { class: 'btn primary', type: 'button', onclick: startRerun }, 'Rerun the guide'),
+    !moved.length ? el('button', { class: 'btn', type: 'button', onclick: () => { rerunOpen = false; rerun.error = ''; render(); } }, 'Cancel') : null,
+    rerun.error ? el('span', { class: 'err' }, rerun.error) : null);
+}
+
+const EVENTS = [['COMMENT', 'Comment'], ['APPROVE', 'Approve'], ['REQUEST_CHANGES', 'Changes']];
+const RANK = { blocker: 2, should: 2, question: 1, nit: 0, comment: 0 };
+const VERB = { COMMENT: 'comment', APPROVE: 'approve', REQUEST_CHANGES: 'request changes' };
+let postErr = {}, sending = null;
+const verdictState = (p) => (state.verdict[p.n] ??= { body: '' });
+
+// Recomputed from the live comments, so dismissing the last open point turns the suggestion into an approval.
+function suggested(p, mine) {
+  if (p.author === DATA.viewer) return 'COMMENT';
+  const live = mine.filter((c) => !cmState(c).gone && (cmState(c).on || c.status !== 'refuted'));
+  if (live.some((c) => cmState(c).sev === 'blocker')) return 'REQUEST_CHANGES';
+  return live.some((c) => RANK[cmState(c).sev] >= 1) ? 'COMMENT' : 'APPROVE';
+}
+
+function reviewOf(st, p) {
+  const vs = verdictState(p);
   const mine = comments(st).filter((c) => c.pr === p.n);
-  const picked = () => mine.filter((c) => cmState(c).on && !cmState(c).gone && cmState(c).text.trim());
-  const status = el('div', { class: 'status' + (posted[p.n] ? ' ok' : '') }, posted[p.n] ? ['Posted: ', ext(posted[p.n], 'open on GitHub')] : null);
-  const ev = el('select', { 'aria-label': 'Review type', onchange: (e) => { ps.event = e.target.value; save(); } },
-    (own ? [['COMMENT', 'Comment (your PR)']] : [['COMMENT', 'Comment'], ['APPROVE', 'Approve'], ['REQUEST_CHANGES', 'Request changes']]).map(([v, l]) => el('option', { value: v }, l)));
-  ev.value = ps.event;
-  const body = el('textarea', { 'aria-label': 'Review summary', oninput: (e) => { ps.body = e.target.value; save(); } });
-  body.value = ps.body;
-  const payload = () => {
-    const sel = picked();
-    return { pr: p.n, event: ps.event,
-      body: [ps.body.trim(), ...sel.filter((c) => !c.path).map(postText)].filter(Boolean).join('\n\n'),
-      comments: sel.filter((c) => c.path).map((c) => ({ path: c.path, line: c.pl, start_line: c.ps || null, body: postText(c) })) };
-  };
-  const post = el('button', { class: 'btn primary', type: 'button', disabled: !!posted[p.n] }, posted[p.n] ? 'Posted' : `Post on #${p.n}`);
-  post.addEventListener('click', async () => {
-    const data = payload();
-    if (!confirm(`Post a ${data.event.toLowerCase().replace('_', ' ')} review on #${p.n} as ${DATA.viewer}, with ${data.comments.length} inline comment(s)? The author sees it, and this page cannot edit or delete it.`)) return;
-    post.disabled = true; status.className = 'status'; status.textContent = 'Posting…';
-    try {
-      const r = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(data) });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || r.statusText);
-      posted[p.n] = j.url; render();
-    } catch (e) { post.disabled = false; status.className = 'status err'; status.textContent = e.message; }
-  });
+  const sel = mine.filter((c) => cmState(c).on && !cmState(c).gone && cmState(c).text.trim());
+  const sug = suggested(p, mine);
+  // No verdict until the reviewer picks one, or picks a comment, which brings the suggestion along.
+  const event = vs.event === undefined ? (sel.length ? sug : null) : vs.event;
+  const data = { pr: p.n, event,
+    body: [vs.body.trim(), ...sel.filter((c) => !c.path).map(postText)].filter(Boolean).join('\n\n'),
+    comments: sel.filter((c) => c.path).map((c) => ({ path: c.path, line: c.pl, start_line: c.ps || null, body: postText(c) })) };
+  const waiting = mine.filter((c) => !cmState(c).on && !cmState(c).gone && c.status === 'verified');
+  const own = p.author === DATA.viewer;
+  // GitHub needs a body for request-changes, and a body or an inline comment for a comment review.
+  const ready = event === 'APPROVE' || !!data.body || event === 'COMMENT' && data.comments.length > 0;
+  return { vs, mine, sel, sug, data, waiting, own, ready: !!event && ready, clean: !own && sug === 'APPROVE' && !p.checks.failed.length };
+}
+
+async function sendReview(data) {
+  const r = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(data) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j.url;
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+function describe(list) {
+  const by = (e) => list.filter((x) => x.data.event === e).length;
+  return [by('APPROVE') && plural(by('APPROVE'), 'approval', 'approvals'), by('COMMENT') && plural(by('COMMENT'), 'comment review', 'comment reviews'),
+    by('REQUEST_CHANGES') && plural(by('REQUEST_CHANGES'), 'request for changes', 'requests for changes')].filter(Boolean).join(', ');
+}
+
+async function postMany(list) {
+  const inline = list.reduce((t, x) => t + x.data.comments.length, 0);
+  const where = list.length === 1 ? `on #${list[0].data.pr}` : `on ${list.length} PRs`;
+  if (!confirm(`Post ${describe(list)} ${where} as ${DATA.viewer}, with ${plural(inline, 'inline comment', 'inline comments')}? Authors are notified, and this page cannot edit or delete what it posts.`)) return;
+  for (const x of list) {
+    sending = x.data.pr; postErr[x.data.pr] = null; render();
+    try { posted[x.data.pr] = await sendReview(x.data); } catch (e) { postErr[x.data.pr] = e.message; }
+  }
+  sending = null; render();
+}
+
+function sendView(st) {
+  const rows = st.prs.map((p) => ({ p, ...reviewOf(st, p) }));
+  const open = rows.filter((x) => !posted[x.p.n]), done = rows.filter((x) => posted[x.p.n]);
+  const ready = open.filter((x) => x.ready);
+  const clean = open.filter((x) => x.clean && x.data.event !== 'APPROVE');
+  const unclean = open.filter((x) => !x.clean && !x.own && x.data.event !== 'APPROVE').length;
+  const waiting = open.flatMap((x) => x.waiting);
+  const busy = sending !== null;
+  const setAll = (list, f) => { list.forEach(f); save(); render(); };
+  const undecided = open.filter((x) => !x.data.event).length;
+  return [el('h1', {}, 'Your review'),
+    el('p', { class: 'summary' }, [describe(ready) || 'Nothing to post yet', undecided ? ` · ${undecided} without a verdict` : '', done.length ? ` · ${done.length} posted` : ''].join('')),
+    rerunBox(st),
+    el('div', { class: 'bulk' },
+      el('button', { class: 'btn', type: 'button', disabled: busy || !clean.length, title: 'Not yours, CI not failing, and nothing open: no blocker, should-fix or question',
+        onclick: () => setAll(clean, (x) => { x.vs.event = 'APPROVE'; }) }, clean.length ? `Approve all clean (${clean.length})` : 'No clean PR left to approve'),
+      el('button', { class: 'btn', type: 'button', disabled: busy || !open.length, onclick: () => setAll(open, (x) => { x.vs.event = x.sug; }) }, 'Use the suggested verdicts'),
+      el('button', { class: 'btn', type: 'button', disabled: busy || open.length === undecided, onclick: () => setAll(open, (x) => { x.vs.event = null; }) }, 'Clear verdicts'),
+      waiting.length ? el('button', { class: 'btn', type: 'button', disabled: busy, onclick: () => setAll(waiting, (c) => { cmState(c).on = true; }) },
+        `Add ${plural(waiting.length, 'suggestion', 'suggestions')} checked in the code`) : null,
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn primary', type: 'button', disabled: busy || !ready.length, onclick: () => postMany(ready) },
+        busy ? `Posting #${sending}…` : ready.length ? `Post ${plural(ready.length, 'review', 'reviews')}` : 'Post')),
+    el('p', { class: 'hint' }, `Pick a verdict per PR; a PR without one is not posted. ✦ marks the suggestion: approve when nothing is open.${unclean ? ` ${plural(unclean, 'PR is', 'PRs are')} not clean (failing CI or an open point).` : ''}`),
+    open.length ? el('div', { class: 'sendlist' }, open.map((x) => prRow(st, x, busy))) : el('p', { class: 'empty' }, 'Every PR in this stack is posted.'),
+    done.length ? el('details', { class: 'sendlist donelist', open: !!state.open['send:done'], ontoggle: (e) => { state.open['send:done'] = e.target.open; save(); } },
+      el('summary', {}, `Posted (${done.length})`), done.map((x) => prRow(st, x, busy))) : null];
+}
+
+function prRow(st, x, busy) {
+  const { p, vs, mine, sel, sug, data, waiting, own, ready } = x;
+  const key = 'send:' + p.n, open = !!state.open[key], done = posted[p.n];
+  const toggle = () => { state.open[key] = !open; save(); render(); };
+  const seg = el('span', { class: 'seg', role: 'group', 'aria-label': 'Review type' }, (own ? EVENTS.slice(0, 1) : EVENTS).map(([v, l]) =>
+    el('button', { type: 'button', class: v, 'aria-pressed': String(data.event === v), disabled: busy || !!done, title: v === sug ? 'Suggested' : '',
+      onclick: () => { vs.event = data.event === v ? null : v; save(); render(); } }, l, v === sug && !own ? ' ✦' : '')));
+  const c = p.checks, last = p.last_review;
+  const info = el('span', { class: 'cnt' }, sel.length ? plural(sel.length, 'comment', 'comments') : 'no comment',
+    waiting.length ? el('span', { class: 'faint' }, ` +${waiting.length} suggested`) : null,
+    c.failed.length ? el('span', { class: 'ci bad', title: c.failed.join('\n') }, ' ✕ CI') : null);
+  const status = done ? el('span', { class: 'status ok' }, '✓ ', ext(done, 'posted'))
+    : sending === p.n ? el('span', { class: 'status' }, 'Posting…') : postErr[p.n] ? el('span', { class: 'status err' }, postErr[p.n])
+    : data.event && !ready ? el('span', { class: 'status warn' }, data.event === 'REQUEST_CHANGES' ? 'Request changes needs a summary.' : 'A comment review needs a comment or a summary.')
+    : last ? el('span', { class: 'status faint' }, `Last round you ${VERB[{ APPROVED: 'APPROVE', CHANGES_REQUESTED: 'REQUEST_CHANGES' }[last.state] || 'COMMENT']}${last.state === 'APPROVED' ? 'd' : 'ed'} on ${last.at.slice(0, 10)}.`) : null;
+  const row = el('div', { class: 'srow' + (done ? ' done' : '') },
+    el('button', { class: 'pick', type: 'button', 'aria-expanded': String(open), onclick: toggle },
+      el('span', { class: 'chev' }, open ? '▾' : '▸'), prDot(st, p.n), el('b', {}, `#${p.n}`), el('span', { class: 't', title: p.title }, p.title)),
+    info, done ? el('span') : seg,
+    status ? el('div', { class: 'sline' }, status) : null);
+  if (!open) return row;
+  const body = el('textarea', { 'aria-label': 'Review summary', placeholder: p.review_body || 'Optional summary, posted above the inline comments', disabled: !!done,
+    oninput: (e) => { vs.body = e.target.value; save(); } });
+  body.value = vs.body;
+  const msg = el('span', { class: 'status' });
   const copy = el('button', { class: 'btn', type: 'button', onclick: async () => {
-    const d = payload();
-    const md = [d.body, ...d.comments.map((c) => `**${c.path}:${c.line}**\n${c.body}`)].join('\n\n---\n\n');
-    try { await navigator.clipboard.writeText(md); status.className = 'status ok'; status.textContent = 'Copied.'; } catch (e) { status.className = 'status err'; status.textContent = 'The browser blocked the clipboard.'; }
+    const d = reviewOf(st, p).data;
+    const md = [d.body, ...d.comments.map((m) => `**${m.path}:${m.line}**\n${m.body}`)].join('\n\n---\n\n');
+    try { await navigator.clipboard.writeText(md); msg.className = 'status ok'; msg.textContent = 'Copied.'; } catch (e) { msg.className = 'status err'; msg.textContent = 'The browser blocked the clipboard.'; }
   } }, 'Copy as markdown');
   const lag = p.review_sha !== p.sha ? el('p', { class: 'verdict' }, `Comments land on ${p.review_sha.slice(0, 8)}, the version of #${p.n} the PR above it is built on.`) : null;
-  return el('section', { class: 'prcard' },
-    el('h3', {}, prDot(st, p.n), `#${p.n}`, el('span', { style: 'font-weight:400' }, p.title)),
-    el('p', { class: 'verdict' }, `Suggested ${p.verdict.event.toLowerCase().replace('_', ' ')}: ${p.verdict.why}`), lag,
-    mine.some((c) => !cmState(c).on && !cmState(c).gone && c.status === 'verified')
-      ? el('button', { class: 'btn', type: 'button', onclick: () => { mine.forEach((c) => { const cs = cmState(c); if (!cs.gone && c.status === 'verified') cs.on = true; }); save(); render(); } },
-          `Add all ${mine.filter((c) => !cmState(c).on && !cmState(c).gone && c.status === 'verified').length} suggestions checked in the code`) : null,
-    mine.length ? mine.map((c) => commentCard(st, c)) : el('p', { class: 'verdict' }, 'No comment routed to this PR.'),
+  const why = sug === p.verdict.event && p.verdict.why ? p.verdict.why : sug === 'APPROVE' ? 'Nothing open on this PR.' : p.verdict.why;
+  row.append(el('div', { class: 'sbody' },
+    el('p', { class: 'verdict' }, `Suggested ${VERB[sug]}: ${why}`), lag,
+    mine.length ? mine.map((m) => commentCard(st, m)) : el('p', { class: 'verdict' }, 'No comment routed to this PR.'),
     el('div', { class: 'sec' }, 'Summary posted with the review'), body,
-    el('div', { class: 'actions' }, ev, post, copy, status));
+    el('div', { class: 'actions' },
+      el('button', { class: 'btn', type: 'button', disabled: busy || !!done || !ready, onclick: () => postMany([reviewOf(st, p)]) }, `Post only #${p.n}`),
+      copy, msg)));
+  return row;
 }
 
 function openFile(path) { state.file = path; state.view = 'file'; save(); render(); document.getElementById('main').scrollTo(0, 0); }
@@ -792,6 +1013,7 @@ function toggleTheme() {
   const r = document.documentElement;
   const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   r.dataset.theme = dark ? 'light' : 'dark';
+  try { localStorage.setItem('review-guide-theme', r.dataset.theme); } catch (e) {}
 }
 
 const style = document.createElement('style');
@@ -803,13 +1025,16 @@ async function poll() {
   try {
     const j = await (await fetch('/api/state', { cache: 'no-store' })).json();
     posted = j.posted || {};
+    if (j.rerun) { const was = rerun.running; rerun = j.rerun; if (was && !rerun.running) render(); }
     if (version !== null && j.version !== version) { save(); location.reload(); return; }
     if (version === null) render();
     version = j.version;
   } catch (e) {}
-  if (DATA.stacks.some((s) => s.pending || s.comments.some((c) => c.status === 'checking'))) setTimeout(poll, 3000);
+  if (rerun.running || DATA.stacks.some((s) => s.pending || s.comments.some((c) => c.status === 'checking'))) setTimeout(poll, 3000);
 }
 poll();
+checkHeads();
+document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && checkHeads());
 </script>
 </body>
 </html>

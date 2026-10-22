@@ -2,7 +2,7 @@
 name: review-guide
 description: Builds a guided review page for one or more GitHub pull requests. Stacked PRs are reviewed as one change (their final state), with an architecture map, data flows, a short reading order, a browsable file tree with syntax-highlighted diffs, and drafted comments that a second agent tried to disprove. Each comment is routed to the PR that wrote its line, and the reviewer posts from a local page through their own gh login.
 when_to_use: The user asks for help reviewing PRs, wants a review guide or walkthrough, shares PR links or a Slack thread asking for a review, or wants to post review comments on several PRs at once.
-argument-hint: <PR URLs, owner/repo#N, or a Slack thread link>
+argument-hint: [quick|balanced|deep] <PR URLs, owner/repo#N, or a Slack thread link>
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*), Read, Agent
 ---
 
@@ -14,12 +14,14 @@ The work happens in three scripts and two agents. You coordinate and relay; you 
 
 Take PR references from the arguments: `https://github.com/<owner>/<repo>/pull/<n>` or `<owner>/<repo>#<n>`. If the user gave a Slack thread, read it with the Slack tools and pull out the PR links. All PRs must be in one repository; for several repositories, run the skill once per repository.
 
+Take the effort from the arguments too: `quick` (blockers only, the fastest), `balanced` (the default) or `deep` (reads callers and tests, slower). Words like "quick look" or "go deep" count.
+
 ## 2. Fetch
 
 Run from the user's clone of the repository when the current directory is one. Otherwise `fetch.py` keeps a blobless clone under `~/.cache/review-guide/repos/`, authenticated through `gh`.
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/fetch.py" <pr-ref>...
+python3 "${CLAUDE_SKILL_DIR}/scripts/fetch.py" --effort <effort> <pr-ref>...
 ```
 
 The last line is the work directory `W`. Earlier lines list the stacks (`stack 3564-3565: #3564 -> #3565`) and warnings, such as a PR built on an older version of the one below it. Relay the warnings to the user at the end.
@@ -40,13 +42,16 @@ Spawn one `review-guide:guide-writer` agent per stack, all in a single message s
 ```
 Work directory: <W>
 Stack: <stack id>
+Effort: <effort>
 ```
+
+For `deep`, pass `model: "opus"` to the Agent call; `quick` and `balanced` keep the agents' own model.
 
 Add one sentence if the user stated a focus (for example "focus on the migration"). Each replies `<id> ok: …` or `<id> failed: <reason>`. As each one finishes, rerun `build.py <W> --partial` so its guide shows up, with its comments marked as still being checked. Rerun a failed writer once, then report it and continue with the others.
 
 ## 5. Verify the comments
 
-As each guide lands, spawn a `review-guide:comment-verifier` for that stack with the same two-line prompt; do not wait for the other writers. When a verifier finishes, rerun `build.py <W> --partial`. When all are done, run `build.py <W>` once without `--partial` to confirm every stack is complete.
+As each guide lands, spawn a `review-guide:comment-verifier` for that stack with the same three-line prompt; do not wait for the other writers. When a verifier finishes, rerun `build.py <W> --partial`. When all are done, run `build.py <W>` once without `--partial` to confirm every stack is complete.
 
 ## 6. Report
 
@@ -62,5 +67,5 @@ Never post a review yourself. The reviewer posts from the page.
 ## Notes
 
 - Data leaves the machine only through `gh` (GitHub) and the model. Before fetching, check whether the repository could hold patient or personal data in fixtures or test data. If it could, say so and ask the user to confirm.
-- The page warns, and the server refuses, when a PR receives new commits after the guide was built. Rerun the skill to rebuild.
+- The page warns, and the server refuses, when a PR receives new commits after the guide was built. The page has a "Rerun the guide" button with an effort picker: `serve.py` runs `rerun.py`, which fetches again and runs both agents through `claude -p`, and the open page moves to the new guide. Rerunning the skill does the same.
 - The work directory holds a cache per PR set and head SHA under `~/.cache/review-guide/`. A rerun on unchanged heads reuses its files; delete the directory to start clean.

@@ -17,7 +17,7 @@ The prompt gives you a work directory `W` and a stack id `S`. The file formats a
 - `W/S/tip/<path>` (the stack's final state, which all line numbers refer to), `W/S/attribution.json`, and `W/run.json`.
 - Code beyond the stack: with a `checkout` in `run.json`, run `git -C <checkout> grep -n <pattern> <tip-sha>` and `git -C <checkout> show <tip-sha>:<path>`. Never check out a branch or modify that clone. Without one, use `gh search code --repo <repo> <pattern>` and `gh api -H "Accept: application/vnd.github.raw" "repos/<repo>/contents/<path>?ref=<tip-sha>"`.
 
-Budget: about 10 tool calls, never more than 15; run independent reads in parallel in one turn. A reviewer is waiting. Stay in the repository: do not unzip or decompile jars, or read `~/.m2`, `node_modules` or `site-packages`. A claim that rests on library internals is `unverified`; say which behavior needs confirming. Pipe any command that can print a lot through `head -n 200`.
+Budget: about 10 tool calls, never more than 15; run independent reads in parallel in one turn. The prompt may give an `Effort` line: `quick` is about 5 calls, never more than 8, and marks a comment `unverified` rather than reading far for it; `deep` is about 20, never more than 30, and reads callers, configuration and tests for every comment. A reviewer is waiting. Stay in the repository: do not unzip or decompile jars, or read `~/.m2`, `node_modules` or `site-packages`. A claim that rests on library internals is `unverified`; say which behavior needs confirming. Pipe any command that can print a lot through `head -n 200`.
 
 ## For each drafted comment
 
