@@ -1,6 +1,6 @@
 ---
 name: review-guide
-description: Builds a guided review page for one or more GitHub pull requests. Stacked PRs are reviewed as one change (their final state), with a guide shaped to the change (flows, before and after, tables, a reading order), a browsable file tree with syntax-highlighted diffs, and findings from three reviewers (correctness, standards, spec) that a fourth agent tried to disprove. Each comment is routed to the PR that wrote its line, and the reviewer posts from a local page through their own gh login.
+description: Builds a guided review page for one or more GitHub pull requests. Stacked PRs are reviewed as one change (their final state), with a guide shaped to the change (sequence, flow, state, structure and data diagrams, before and after, tables, a reading order), a browsable file tree with syntax-highlighted diffs, and findings from three reviewers (correctness, standards, spec) that a fourth agent tried to disprove. Each comment is routed to the PR that wrote its line, and the reviewer posts from a local page through their own gh login.
 when_to_use: The user asks for help reviewing PRs, wants a review guide or walkthrough, shares PR links or a Slack thread asking for a review, or wants to post review comments on several PRs at once.
 argument-hint: [quick|balanced|deep] <PR URLs, owner/repo#N, or a Slack thread link>
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*), Read

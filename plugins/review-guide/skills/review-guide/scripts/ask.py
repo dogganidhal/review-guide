@@ -17,7 +17,7 @@ import tempfile
 import threading
 import time
 
-from build import LIMITS, MAX_ANCHOR_LINES, SEVERITIES, Stack, check_section, check_text
+from build import LIMITS, MAX_ANCHOR_LINES, SEVERITIES, GuideCheck, Stack, check_section, check_text
 from rerun import DENY, PLUGIN, describe
 
 MAX_RUNNING = 3
@@ -245,8 +245,20 @@ def validate(rdir: pathlib.Path, run: dict, data: dict, target: dict, act) -> di
             raise ValueError("a guide fix names the thread's target kind and gives a replacement object")
         gs = next(s for s in data["stacks"] if s["id"] == sid)
         st = Stack(rdir, run, next(s for s in run["stacks"] if s["id"] == sid))
-        nodes = {n["id"] for n in (gs.get("components") or {}).get("nodes", [])}
         errs: list[str] = []
+        skip = target["ref"] if kind == "section" else None
+
+        def check(sec: dict, other: set[str]) -> None:
+            # Ids from the components and the other sections' own diagram nodes, so the replacement may reuse its own.
+            g = GuideCheck(st, errs.append, strict=False)
+            g.ids = {n["id"] for n in (gs.get("components") or {}).get("nodes", [])}
+            g.ids |= {n["id"] for i, s in enumerate(gs["sections"]) if i != skip and s.get("type") == "diagram"
+                      and s.get("kind") in ("flowchart", "states", "data") for n in s.get("nodes") or []}
+            step_nodes: list = []
+            check_section(sec, "replacement", g, set(other), step_nodes)
+            for slabel, ns in step_nodes:
+                if bad := [n for n in ns if n not in g.ids]:
+                    errs.append(f"{slabel}: nodes not declared in components or any diagram: {bad}")
         if kind == "fact":
             need("title", rep.get("title"), LIMITS["fact_title"])
             need("text", rep.get("text"), LIMITS["fact_text"])
@@ -256,13 +268,13 @@ def validate(rdir: pathlib.Path, run: dict, data: dict, target: dict, act) -> di
             if rep.get("type") != cur["type"]:
                 raise ValueError(f"the replacement stays a {cur['type']} section")
             other = {s["id"].removeprefix(sid + "-") for i, sec in enumerate(gs["sections"]) if i != target["ref"] and sec["type"] == "steps" for s in sec["steps"]}
-            check_section(rep, "replacement", st, nodes, other, errs.append)
+            check(rep, other)
             canon = {"kind": kind, "stack": sid, "index": target["ref"]}
         else:
             raw = target["ref"].removeprefix(sid + "-")
             rep = {**rep, "id": raw}
             other = {s["id"].removeprefix(sid + "-") for s in steps_of(gs)} - {raw}
-            check_section({"type": "steps", "title": "x", "steps": [rep]}, "replacement", st, nodes, other, errs.append)
+            check({"type": "steps", "title": "x", "steps": [rep]}, other)
             canon = {"kind": kind, "stack": sid, "id": raw}
         if errs:
             raise ValueError("; ".join(errs[:3]))

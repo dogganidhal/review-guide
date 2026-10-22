@@ -36,6 +36,7 @@ def make_repo(root: pathlib.Path) -> dict[str, str]:
     sh(repo, "git", "config", "user.email", "t@t")
     sh(repo, "git", "config", "user.name", "t")
     (repo / "A.java").write_text("class A {\n}\n")
+    (repo / "C.java").write_text("class C {\n  void g() {}\n}\n")  # outside the stack: a diagram may cite it
     sh(repo, "git", "add", ".")
     sh(repo, "git", "commit", "-qm", "base")
     base = sh(repo, "git", "rev-parse", "HEAD")
@@ -395,7 +396,7 @@ def check_ask(w: pathlib.Path, root: pathlib.Path) -> None:
         step = {"kind": "step", "ref": f"{sid}-fields"}
         st = propose(step, {"type": "guide_fix", "ref": {"kind": "step"}, "replacement": {"kind": "read", "title": "Fields", "why": "New state.", "nodes": ["zz"], "test": None,
                                                                                          "anchor": {"path": "A.java", "start": 1, "end": 5}}})
-        assert st["proposal"] is None and "nodes not in components" in st["proposal_error"], st
+        assert st["proposal"] is None and "nodes not declared" in st["proposal_error"], st
 
         # Round 2 (A.java gains a header line, `long y` becomes `short y`): the thread on `void f` follows it one line down, the
         # finding thread stays, the ones on the changed lines are listed as lost, and an unapplied proposal does not carry.
@@ -492,7 +493,7 @@ def main(keep: str | None = None) -> None:
                  for f in changed_files(git, r["base"], r["pr2"])]
         pr = lambda n, author: {"n": n, "url": f"https://github.com/o/r/pull/{n}", "title": f"PR {n}", "body": "", "author": author,  # noqa: E731
                                 "sha": heads[n], "review_sha": heads[n], "draft": False, "stack": sid, "checks": {"failed": [], "pending": 0, "passed": 1}}
-        run = {"repo": "o/r", "viewer": "me", "run_id": "t", "checkout": None, "warnings": [], "prs": [pr(1, "me"), pr(2, "other")],
+        run = {"repo": "o/r", "viewer": "me", "run_id": "t", "checkout": r["repo"], "warnings": [], "prs": [pr(1, "me"), pr(2, "other")],
                "stacks": [{"id": sid, "prs": [1, 2], "base": r["base"], "tip": r["pr2"], "files": files,
                            "since": {"pr": 1, "state": "APPROVED", "sha": r["pr1"], "at": "2026-10-01T00:00:00Z", "files": {"A.java": [3, 4], "B.java": [1]}}}]}
         (w / "run.json").write_text(json.dumps(run))
@@ -500,16 +501,42 @@ def main(keep: str | None = None) -> None:
         guide = {
             "summary": "Adds fields to A and a class B.",
             "key_facts": [{"title": "Nothing reads `x` yet.", "text": "It is written only."}],
-            "components": {"layers": [{"id": "core", "label": "core"}],
-                           "nodes": [{"id": "a", "label": "A", "layer": "core", "state": "changed", "path": "A.java"},
-                                     {"id": "b", "label": "B", "layer": "core", "state": "new", "path": "B.java"}],
-                           "edges": [{"from": "a", "to": "b", "label": "uses", "new": True}]},
+            "components": {"layers": [{"id": "core", "label": "core"}, {"id": "lib", "label": "lib"}],
+                           "nodes": [{"id": "a", "label": "A", "role": "the holder", "layer": "core", "state": "changed", "path": "A.java"},
+                                     {"id": "b", "label": "B", "layer": "core", "state": "new", "path": "B.java"},
+                                     {"id": "c", "label": "C", "layer": "lib", "state": "existing", "path": None, "at": "C.java:2"},
+                                     {"id": "old", "label": "OldA", "layer": "lib", "state": "removed", "path": None}]},
             "sections": [
-                {"type": "flow", "title": "Use B", "steps": [{"from": "a", "to": "b", "label": "calls"}]},
+                {"type": "diagram", "kind": "sequence", "title": "Use B", "participants": ["a", "b", "c"], "messages": [
+                    {"from": "a", "to": "b", "label": "calls", "new": True, "at": "A.java:4"},
+                    {"frame": "alt", "branches": [
+                        {"guard": "x set", "messages": [{"from": "b", "to": "c", "label": "g()", "at": "C.java:2"},
+                                                        {"from": "c", "to": "b", "label": "done", "return": True}]},
+                        {"guard": "otherwise", "messages": [{"note": "nothing to do", "on": "b"}]}]},
+                    {"frame": "loop", "branches": [{"guard": "each field", "messages": [{"from": "a", "to": "a", "label": "f()", "at": "A.java:4"}]}]}]},
+                {"type": "diagram", "kind": "flowchart", "title": "How f decides", "nodes": [
+                    {"id": "in", "label": "f called", "shape": "step", "at": "A.java:4"}, {"id": "q", "label": "y set?", "shape": "decision"},
+                    {"id": "save", "label": "store y", "shape": "store", "state": "new"}, {"id": "out", "label": "done", "shape": "end"}],
+                 "edges": [{"from": "in", "to": "q", "at": "A.java:4"}, {"from": "q", "to": "save", "label": "yes", "at": "A.java:3"},
+                           {"from": "q", "to": "out", "label": "no", "at": "A.java:4"}, {"from": "save", "to": "in", "label": "retry"}]},
+                {"type": "diagram", "kind": "states", "title": "Life of an A", "nodes": [
+                    {"id": "s-new", "label": "new", "initial": True}, {"id": "s-set", "label": "set", "state": "new"}, {"id": "s-done", "label": "done", "terminal": True}],
+                 "edges": [{"from": "s-new", "to": "s-set", "label": "f()", "guard": "y > 0", "at": "A.java:4"},
+                           {"from": "s-set", "to": "s-new", "label": "reset", "at": "A.java:2"}, {"from": "s-set", "to": "s-done", "label": "close", "at": "A.java:5"}]},
+                {"type": "diagram", "kind": "structure", "title": "What depends on what", "nodes": ["a", "b", "c", "old"],
+                 "edges": [{"from": "a", "to": "b", "label": "uses", "new": True, "at": "A.java:4"}, {"from": "b", "to": "c", "at": "C.java:2"},
+                           {"from": "a", "to": "old", "label": "was"}]},
+                {"type": "diagram", "kind": "data", "title": "The A record", "nodes": [
+                    {"id": "rec", "label": "A", "state": "changed", "at": "A.java:1", "fields": [
+                        {"name": "x", "type": "int", "change": "added"}, {"name": "y", "type": "long", "change": "changed"}, {"name": "z", "type": "int", "change": "removed"}]},
+                    {"id": "brec", "label": "B", "state": "new", "fields": [{"name": "a", "type": "A"}]}],
+                 "edges": [{"from": "brec", "to": "rec", "label": "holds", "at": "B.java:1"}]},
+                {"type": "risks", "title": "Risks", "items": [
+                    {"title": "`y` widens", "text": "Readers of `y` as int truncate it.", "status": "open", "at": "A.java:3"},
+                    {"title": "B is empty", "text": "Kept for the next PR.", "status": "accepted"}]},
                 {"type": "before_after", "title": "What changes", "rows": [{"aspect": "`y`", "before": "int", "after": "long"}]},
-                {"type": "table", "title": "Per PR", "columns": ["PR", "Change"], "rows": [["#1", "Fields"], ["#2", "Class B"]]},
                 {"type": "steps", "title": "Read in this order", "steps": [
-                    {"id": "fields", "kind": "read", "title": "Fields", "why": "New state on A.", "nodes": ["a"], "test": None,
+                    {"id": "fields", "kind": "read", "title": "Fields", "why": "New state on A.", "nodes": ["a", "q", "s-set", "rec"], "test": None,
                      "anchor": {"path": "A.java", "start": 1, "end": 5}}]},
             ],
             "files": {"A.java": {"role": "read", "why": "Fields."}, "B.java": {"role": "skim", "why": "Empty class."}},
@@ -522,8 +549,8 @@ def main(keep: str | None = None) -> None:
 
         bad = json.loads(json.dumps(guide))
         bad["summary"] = "x" * 400
-        bad["sections"][1] = {"type": "table", "title": "Per PR", "columns": ["PR", "Change"], "rows": [["#1"]]}
-        bad["sections"].append({"type": "poem", "title": "x"})
+        bad["sections"][6] = {"type": "table", "title": "Per PR", "columns": ["PR", "Change"], "rows": [["#1"]]}
+        bad["sections"][5] = {"type": "poem", "title": "x"}
         (w / sid / "guide.json").write_text(json.dumps(bad))
         bad_review = json.loads(json.dumps(correctness))
         bad_review["findings"][0]["line"] = 1
@@ -532,14 +559,48 @@ def main(keep: str | None = None) -> None:
         out = check()
         assert out.returncode == 1, out.stdout
         for expected in ("line 1 of A.java was not written by this stack", "#2 receives 4 findings", "summary is 400 characters",
-                         "rows[0]: expected 2 cells", "sections[4].type must be one of"):
+                         "rows[0]: expected 2 cells", "sections[5].type must be one of"):
             assert expected in out.stdout, (expected, out.stdout)
         # A reviewer checks its own file, whatever state the guide is in.
         assert "summary" not in check("--only", "correctness").stdout
 
+        # The diagram mistakes a writer makes: an unknown node, too many boxes, a line that is not there, guessed arrows,
+        # an alt with one branch, and a node id used twice.
+        bad = json.loads(json.dumps(guide))
+        seq, flow, states = bad["sections"][0], bad["sections"][1], bad["sections"][2]
+        seq["messages"][1]["branches"].pop()
+        seq["messages"][0]["at"] = "A.java:99"
+        flow["nodes"] += [{"id": f"n{i}", "label": f"n{i}"} for i in range(9)]
+        flow["edges"].append({"from": "q", "to": "ghost", "label": "maybe"})
+        states["nodes"][1]["id"] = "q"
+        states["edges"][0]["from"] = "q"
+        bad["sections"][3]["edges"][1]["at"] = "Nowhere.java:1"
+        for e in flow["edges"] + states["edges"] + bad["sections"][4]["edges"]:
+            e.pop("at", None)
+        bad["sections"][7]["steps"][0]["nodes"].append("nope")
+        (w / sid / "guide.json").write_text(json.dumps(bad))
+        out = check("--only", "guide")
+        assert out.returncode == 1, out.stdout
+        for expected in ("an `alt` frame needs 2 to 4 branches", "at 'A.java:99' is outside A.java (1..5)", "13 nodes; the limit is 12. Split",
+                         "'q'->'ghost' must join nodes of this diagram", "id 'q' missing or used twice", "Nowhere.java is neither a changed file",
+                         "nodes not declared in components or any diagram: ['s-set', 'nope']", "arrows cite no line; give each arrow `at`"):
+            assert expected in out.stdout, (expected, out.stdout)
+        # A guide from before the diagram kinds still builds (an earlier round), but --check no longer takes it.
+        legacy = {**guide, "sections": [{"type": "flow", "title": "Use B", "steps": [{"from": "a", "to": "b", "label": "calls"}]},
+                                        {"type": "map", "title": "Components"}, guide["sections"][-1]]}
+        legacy["sections"][2]["steps"][0]["nodes"] = ["a"]
+        (w / sid / "guide.json").write_text(json.dumps(legacy))
+        (w / sid / "review-correctness.json").write_text(json.dumps(correctness))
+        assert "type must be one of" in check("--only", "guide").stdout
+        out = subprocess.run([sys.executable, str(HERE / "build.py"), str(w), "--partial"], capture_output=True, text=True)
+        assert out.returncode == 0, out.stdout + out.stderr
+        kinds = [(x["type"], x.get("kind")) for x in json.loads((w / "guide.json").read_text())["stacks"][0]["sections"]]
+        assert kinds == [("diagram", "sequence"), ("diagram", "structure"), ("steps", None)], kinds
+
         (w / sid / "guide.json").write_text(json.dumps(guide))
         (w / sid / "review-correctness.json").write_text(json.dumps(correctness))
-        assert check("--only", "guide").stdout.strip() == "ok"
+        out = check("--only", "guide")
+        assert out.stdout.splitlines() == ["ok", "stack 1-2: 2 of 14 arrows cite no line"], out.stdout
         out = subprocess.run([sys.executable, str(HERE / "build.py"), str(w), "--partial"], capture_output=True, text=True)
         assert out.returncode == 0, out.stdout + out.stderr
         data = json.loads((w / "guide.json").read_text())
@@ -568,8 +629,8 @@ def main(keep: str | None = None) -> None:
         assert (cms["x"]["pr"], cms["x"]["pl"], cms["x"]["status"], cms["x"]["axis"]) == (1, 2, "verified", "correctness"), cms["x"]
         assert (cms["f"]["pr"], cms["f"]["pl"], cms["f"]["status"]) == (2, 4, "unverified"), cms["f"]
         assert st0["reviewing"] == [] and st0["skipped"] == {"spec": "No ticket and an empty description."}
-        assert [x["type"] for x in st0["sections"]] == ["flow", "before_after", "table", "steps"]
-        assert st0["sections"][3]["steps"][0]["lines"][1]["pr"] == 1
+        assert [x.get("kind", x["type"]) for x in st0["sections"]] == ["sequence", "flowchart", "states", "structure", "data", "risks", "before_after", "steps"]
+        assert st0["sections"][7]["steps"][0]["lines"][1]["pr"] == 1
         assert data["stacks"][0]["since"]["files"] == {"A.java": [3, 4], "B.java": [1]}
         assert data["effort"] == "balanced"
         page = (w / "index.html").read_text()

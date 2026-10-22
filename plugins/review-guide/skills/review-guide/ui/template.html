@@ -204,30 +204,103 @@ h1 { font-size: 1.35rem; line-height: 1.2; margin: 0 0 6px; }
 .sec { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 22px 0 8px; font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; }
 .sec .aside { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
 
-.mapbox { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--bg); }
-.mapbox svg { display: block; width: 100%; height: auto; }
-.mapbox .legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: .75rem; color: var(--muted); }
-.legend i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
-svg .band { fill: var(--surface); }
-svg .band.alt { fill: var(--bg); }
-svg .lname { fill: var(--faint); font: 600 11px 'Figtree', sans-serif; letter-spacing: .04em; text-transform: uppercase; }
-svg .node rect { stroke-width: 1.5; }
-svg .node text { font: 600 12.5px 'Figtree', sans-serif; dominant-baseline: middle; text-anchor: middle; pointer-events: none; }
-svg .node.new rect { fill: var(--accent); stroke: var(--accent); }
-svg .node.new text { fill: var(--accent-ink); }
-svg .node.changed rect { fill: var(--accent-soft); stroke: var(--accent); }
-svg .node.changed text, svg .node.existing text, svg .node.external text { fill: var(--text); }
-svg .node.existing rect { fill: var(--bg); stroke: var(--line); }
-svg .node.external rect { fill: var(--surface-2); stroke: var(--faint); stroke-dasharray: 4 3; }
-svg .node.link { cursor: pointer; }
-svg .node.hot rect { stroke: var(--hot); stroke-width: 3; }
-svg .edge path { fill: none; stroke: var(--faint); stroke-width: 1.4; }
-svg .edge.new path { stroke: var(--accent); stroke-width: 2; }
-svg .edge.hot path { stroke: var(--hot); stroke-width: 3; }
-svg .edge text { font: 11px 'Figtree', sans-serif; fill: var(--muted); text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
-svg .edge.new text { fill: var(--text); }
-svg .hopnum { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: middle; dominant-baseline: middle; }
-
+/* Diagrams: one frame for every kind, the SVG scaled to the content width (see dgFit). */
+.dgm { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.dgm .dgs { overflow: auto; padding: 4px 0; }
+.dgm .dgs svg { display: block; margin: 0 auto; }
+.dgx { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 8px; padding: 1px 10px; font-size: .78rem; cursor: pointer; }
+.dgx[hidden] { display: none; }
+.dgl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: .75rem; color: var(--muted); }
+.dgl .hint { color: var(--faint); margin-left: auto; }
+.dgl .sw { display: inline-block; width: 14px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 1.5px solid var(--line); }
+.dgl .sw.new { background: var(--accent); border-color: var(--accent); }
+.dgl .sw.changed { background: var(--accent-soft); border-color: var(--accent); }
+.dgl .sw.existing { background: var(--bg); border-color: var(--faint); }
+.dgl .sw.external { background: var(--surface-2); border: 1.5px dashed var(--faint); }
+.dgl .sw.removed { background: var(--danger-soft); border: 1.5px dashed var(--danger); }
+.dgl .swl { display: inline-block; width: 22px; vertical-align: 3px; margin-right: 5px; border-top: 1.5px dashed var(--faint); }
+.dgl .swl.guess { opacity: .7; border-top-style: dotted; border-top-width: 2px; }
+.dgfull { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; }
+.dgfull .bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.dgfull .dgs { flex: 1; overflow: auto; padding: 16px; }
+.dgfull .dgs svg { display: block; margin: 0 auto; }
+svg.dg { font-family: 'Figtree', sans-serif; overflow: visible; }
+svg.dg text { dominant-baseline: central; text-anchor: middle; pointer-events: none; }
+svg.dg text.st { text-anchor: start; }
+svg.dg text.en { text-anchor: end; }
+svg.dg .nt { font: 600 12.5px 'Figtree', sans-serif; fill: var(--text); }
+svg.dg .nc { font: 11px 'JetBrains Mono', monospace; fill: var(--muted); }
+svg.dg .dl { font: 11.5px 'Figtree', sans-serif; fill: var(--muted); }
+svg.dg .dn .box { fill: var(--bg); stroke: var(--faint); stroke-width: 1.5; }
+svg.dg .dn .lid, svg.dg .dn .inner { fill: none; stroke: inherit; stroke-width: 1.2; }
+svg.dg .dn.new .box { fill: var(--accent); stroke: var(--accent); }
+svg.dg .dn.new .lid, svg.dg .dn.new .inner { stroke: var(--accent-ink); }
+svg.dg .dn.new > text, svg.dg .dn.new .nc { fill: var(--accent-ink); }
+svg.dg .dn.changed .box { fill: var(--accent-soft); stroke: var(--accent); }
+svg.dg .dn.changed .lid, svg.dg .dn.changed .inner { stroke: var(--accent); }
+svg.dg .dn.existing .lid, svg.dg .dn.existing .inner { stroke: var(--faint); }
+svg.dg .dn.external .box { fill: var(--surface-2); stroke-dasharray: 4 3; }
+svg.dg .dn.external .lid { stroke: var(--faint); }
+svg.dg .dn.removed .box { fill: var(--danger-soft); stroke: var(--danger); stroke-dasharray: 5 3; }
+svg.dg .dn.removed > text { fill: var(--danger); text-decoration: line-through; }
+svg.dg .dn.removed .nc { fill: var(--danger); }
+svg.dg .dn.end .box { stroke-width: 2.5; }
+svg.dg .dn.card .box { fill: var(--bg); }
+svg.dg .dn.card .cardhead { fill: var(--surface-2); }
+svg.dg .dn.card > text { fill: var(--text); }
+svg.dg .dn.card.new .box { fill: var(--bg); stroke: var(--accent); stroke-width: 2; } svg.dg .dn.card.new .cardhead { fill: var(--accent); } svg.dg .dn.card.new > text { fill: var(--accent-ink); }
+svg.dg .dn.card.changed .box { fill: var(--bg); } svg.dg .dn.card.changed .cardhead { fill: var(--accent-soft); } svg.dg .dn.card.changed > text { fill: var(--text); }
+svg.dg .dn.card.removed .cardhead { fill: var(--danger-soft); }
+svg.dg .fld text { font: 11.5px 'JetBrains Mono', monospace; fill: var(--text); }
+svg.dg .fld .ft { fill: var(--muted); }
+svg.dg .fld .fm { font-weight: 700; }
+svg.dg .fld.added .fbg { fill: var(--add); } svg.dg .fld.added .fm { fill: var(--ok); }
+svg.dg .fld.removed .fbg { fill: var(--del); } svg.dg .fld.removed .fm { fill: var(--danger); } svg.dg .fld.removed .fn, svg.dg .fld.removed .ft { text-decoration: line-through; fill: var(--danger); }
+svg.dg .fld.changed .fbg { fill: var(--warn-soft); } svg.dg .fld.changed .fm { fill: var(--warn); }
+svg.dg .dn.link { cursor: pointer; }
+svg.dg .dn.link:hover .box { stroke-width: 2.5; }
+svg.dg .dn.hot .box, svg.dg .dn.lit .box { stroke: var(--hot); stroke-width: 3; }
+svg.dg .cl rect { fill: var(--surface); stroke: var(--line); }
+svg.dg .cl text { font: 700 10.5px 'Figtree', sans-serif; letter-spacing: .06em; fill: var(--faint); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+svg.dg .de .line { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+svg.dg .de .hit { fill: none; stroke: transparent; stroke-width: 12; }
+svg.dg .de.link { cursor: pointer; }
+svg.dg .de.new .line { stroke: var(--accent); stroke-width: 2; }
+svg.dg .de.new .dl { fill: var(--text); }
+svg.dg .de.ret .line { stroke-dasharray: 6 4; stroke-width: 1.5; }
+svg.dg .de.guess .line { stroke-dasharray: 2 4; opacity: .65; }
+svg.dg .de.guess .dl { font-style: italic; }
+svg.dg .de.removed .line { stroke: var(--danger); stroke-dasharray: 5 3; }
+svg.dg .de.removed .dl { fill: var(--danger); text-decoration: line-through; }
+svg.dg .de .lbg { fill: var(--bg); }
+svg.dg .de.link:hover .line { stroke-width: 3; }
+svg.dg .de.link:hover .dl { fill: var(--text); }
+svg.dg.focus .de:not(.lit), svg.dg.focus .dn:not(.lit) { opacity: .35; }
+svg.dg .de.lit .line { stroke: var(--hot); stroke-width: 2.5; opacity: 1; }
+svg.dg .mk { fill: var(--faint); } svg.dg .mk.new { fill: var(--accent); } svg.dg .mk.removed { fill: var(--danger); } svg.dg .mk.guess { fill: var(--faint); opacity: .65; }
+svg.dg .mk.ret { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+svg.dg .init circle { fill: var(--text); } svg.dg .init path { fill: none; stroke: var(--faint); stroke-width: 1.5; }
+svg.dg .life { stroke: var(--line); stroke-dasharray: 3 4; stroke-width: 1.2; }
+svg.dg .num { fill: var(--hot); } svg.dg .numt { font: 700 10px 'Figtree', sans-serif; fill: #00264c; }
+svg.dg .frame rect { fill: none; stroke: var(--faint); stroke-width: 1.2; }
+svg.dg .frame .tab { fill: var(--surface-2); stroke: var(--faint); stroke-width: 1.2; }
+svg.dg .frame .tabt { font: 700 10.5px 'Figtree', sans-serif; fill: var(--text); }
+svg.dg .frame .div { stroke: var(--faint); stroke-dasharray: 5 4; }
+svg.dg .fg { font-weight: 600; fill: var(--text); }
+svg.dg .dnote .box { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1; }
+svg.dg .dnote .nl { font: 11.5px 'Figtree', sans-serif; fill: var(--text); }
+svg.dg .dnote.link { cursor: pointer; }
+.risks { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; }
+.risk { border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 10px; padding: 9px 12px; background: var(--bg); font-size: .86rem; }
+.risk.decided { border-left-color: var(--ok); }
+.risk.accepted { border-left-color: var(--faint); }
+.risk .rh { display: flex; gap: 8px; align-items: baseline; }
+.risk .rs { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 7px; border-radius: 99px; background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
+.risk.decided .rs { background: var(--ok-soft); color: var(--ok); }
+.risk.accepted .rs { background: var(--surface-2); color: var(--muted); }
+.risk p { margin: 4px 0 0; color: var(--muted); }
+.risk .at { display: inline-block; margin-top: 4px; font-family: var(--mono); font-size: .74rem; }
+.risk code { font-family: var(--mono); font-size: .82em; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
 
 .steps { display: flex; flex-direction: column; gap: 8px; }
 .step { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
@@ -338,22 +411,6 @@ svg .hopnum { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: 
 .ftabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .ftab { border: 1px solid var(--line); background: var(--bg); border-radius: 99px; padding: 4px 12px; cursor: pointer; font-size: .84rem; font-weight: 600; color: var(--muted); }
 .ftab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.seq { border: 1px solid var(--line); border-radius: 12px; overflow: auto; background: var(--bg); }
-.seq svg { display: block; }
-svg .ph rect { stroke-width: 1.5; }
-svg .ph .r { font: 700 12.5px 'Figtree', sans-serif; text-anchor: middle; }
-svg .ph .c { font: 11px 'JetBrains Mono', monospace; text-anchor: middle; }
-svg .ph.new rect { fill: var(--accent); stroke: var(--accent); } svg .ph.new text { fill: var(--accent-ink); }
-svg .ph.changed rect { fill: var(--accent-soft); stroke: var(--accent); } svg .ph.changed text { fill: var(--text); }
-svg .ph.existing rect { fill: var(--bg); stroke: var(--line); } svg .ph.existing text { fill: var(--text); }
-svg .ph.external rect { fill: var(--surface-2); stroke: var(--faint); stroke-dasharray: 4 3; } svg .ph.external text { fill: var(--text); }
-svg .ph.link { cursor: pointer; }
-svg .life { stroke: var(--line); stroke-dasharray: 3 4; stroke-width: 1.2; }
-svg .msg path { fill: none; stroke: var(--faint); stroke-width: 1.5; }
-svg .msg.new path { stroke: var(--accent); stroke-width: 2; }
-svg .msg .lbl { font: 12px 'Figtree', sans-serif; fill: var(--muted); text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 5px; stroke-linejoin: round; }
-svg .msg.new .lbl { fill: var(--text); font-weight: 600; }
-svg .msg .num { fill: var(--hot); } svg .msg .numt { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: middle; dominant-baseline: middle; }
 details.more { margin-top: 10px; }
 details.more > summary { cursor: pointer; color: var(--muted); font-size: .84rem; padding: 4px 0; }
 .testline { font-size: .8rem; margin: 8px 0 0; color: var(--muted); }
@@ -478,7 +535,6 @@ const defaults = { stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 
 let state = { ...defaults, ...(BOOT.ui || {}) };
 if (!DATA.stacks.some((s) => s.id === state.stack)) state.stack = DATA.stacks[0].id;
 let posted = {};
-let hot = { nodes: new Set(), edges: new Set(), hops: new Map() };
 // Saved on the server, next to the round, a moment after the last change; earlier rounds are read-only.
 let saveTimer = null, saveErr = '';
 const putState = (keepalive) => fetch(`${API}/ui`, { method: 'PUT', keepalive, headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(state) })
@@ -504,7 +560,7 @@ function el(tag, attrs, ...kids) {
 const svg = (tag, attrs, ...kids) => {
   const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [k, v] of Object.entries(attrs || {})) if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
-  for (const kid of kids.flat()) if (kid != null) e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
   return e;
 };
 const ext = (href, label, cls) => el('a', { href, target: '_blank', rel: 'noopener', class: cls }, label);
@@ -803,157 +859,566 @@ function goOutline(id) {
 }
 const goStage = (id) => (id === 'send' ? go('send') : go('guide', stageTargets[id]));
 
-function mapView(st) {
-  const m = st.components, MINW = 980, ROW = 112, TOP = 30, LEFT = 150, NH = 32, GAP = 28;
-  const layerOf = Object.fromEntries(m.nodes.map((n) => [n.id, m.layers.findIndex((l) => l.id === n.layer)]));
-  const rows = m.layers.map((l) => m.nodes.filter((n) => n.layer === l.id).map((n) => n.id));
-  const nbrs = {};
-  for (const e of m.edges || []) { (nbrs[e.from] ||= []).push(e.to); (nbrs[e.to] ||= []).push(e.from); }
-  const width = (id) => Math.max(84, m.nodes.find((n) => n.id === id).label.length * 7.3 + 26);
-  const pos = {};
-  const place = () => {
-    const total = Math.max(MINW, ...rows.map((r) => LEFT + 16 + r.reduce((t, id) => t + width(id) + GAP, -GAP)));
-    rows.forEach((r, li) => {
-      const used = r.reduce((t, id) => t + width(id) + GAP, -GAP);
-      let x = LEFT + Math.max(0, (total - LEFT - 16 - used) / 2);
-      for (const id of r) { pos[id] = { x, y: TOP + li * ROW + (ROW - NH) / 2, w: width(id) }; x += width(id) + GAP; }
-    });
-    return total;
-  };
-  let W = place();
-  for (let pass = 0; pass < 6; pass++) {
-    // Barycenter ordering: put each node under the average x of its neighbours, which removes most crossings.
-    rows.forEach((r) => {
-      const key = (id) => { const ns = nbrs[id] || []; return ns.length ? ns.reduce((t, n) => t + pos[n].x + pos[n].w / 2, 0) / ns.length : pos[id].x + pos[id].w / 2; };
-      const keys = Object.fromEntries(r.map((id) => [id, key(id)]));
-      r.sort((a, b) => keys[a] - keys[b]);
-    });
-    W = place();
+// ---- Diagrams ------------------------------------------------------------------------------------------------------
+// Each `diagram` section is our own SVG. flowchart, states, structure and data share `layered`: ranks by longest path
+// (cycles broken by a depth-first search, back edges drawn reversed), order within a rank by barycenter sweeps,
+// positions by isotonic regression toward the neighbours, and a slot for each edge's label in its own row between
+// ranks, so a label never sits on a box. `sequence` has its own renderer. Node ids are unique across the guide, so a
+// step lights up its nodes in whichever diagram holds them.
+const DG_MIN = 0.8; // 12.5 px text never shows below 10 px: past that the frame scrolls and offers Expand
+const DGF = { node: '600 12.5px Figtree', code: "11px 'JetBrains Mono'", label: '11.5px Figtree', tab: '700 10.5px Figtree', field: "11.5px 'JetBrains Mono'" };
+const AT_RE = /^(.+?):(\d+)(?:-(\d+))?$/;
+const DG_STATES = ['new', 'changed', 'existing', 'external', 'removed'];
+let dgSeq = 0;
+const dgCtx = document.createElement('canvas').getContext('2d'), dgCache = new Map();
+const dgW = (s, font) => {
+  const k = font + '\n' + s;
+  if (!dgCache.has(k)) { dgCtx.font = `${font}, sans-serif`; dgCache.set(k, Math.ceil(dgCtx.measureText(String(s)).width)); }
+  return dgCache.get(k);
+};
+const plain = (s) => String(s ?? '').replace(/`/g, '');
+function dgWrap(s, font, max) {
+  const lines = [''];
+  for (const w of plain(s).split(/\s+/)) {
+    const t = (lines.at(-1) + ' ' + w).trim();
+    if (lines.at(-1) && dgW(t, font) > max) lines.push(w); else lines[lines.length - 1] = t;
   }
-  const H = TOP + rows.length * ROW + 8;
-  // Ports: spread the edges meeting one side of a node along its width, ordered by where the other end sits.
-  const ports = {};
-  const side = (e, end) => {
-    const me = end === 'from' ? e.from : e.to, other = end === 'from' ? e.to : e.from;
-    return layerOf[me] === layerOf[other] ? 'top' : layerOf[other] > layerOf[me] ? 'bottom' : 'top';
-  };
-  for (const e of m.edges || []) for (const end of ['from', 'to']) {
-    if (!pos[e.from] || !pos[e.to]) continue;
-    const id = e[end], k = id + ':' + side(e, end), other = end === 'from' ? e.to : e.from;
-    (ports[k] ||= []).push({ e, end, ox: pos[other].x + pos[other].w / 2 });
+  return lines;
+}
+const dgText = (lines, x, y, cls, lh = 16) => lines.map((l, i) => svg('text', { class: cls, x, y: y + (i - (lines.length - 1) / 2) * lh }, l));
+const dgComps = (st) => Object.fromEntries((st.components?.nodes || []).map((n) => [n.id, n]));
+
+// Where a node or an arrow points: the file view at that line for a file the stack changed, GitHub at the tip otherwise.
+function dgTarget(st, at, path) {
+  const m = at && AT_RE.exec(at), p = m ? m[1] : path;
+  if (!p) return null;
+  const f = fileOf(st, p);
+  if (f && f.status !== 'deleted') return { open: () => openFile(p, { line: m ? +m[2] : null, from: 'diagram' }), where: at || p };
+  if (!m || SELF) return null;
+  return { open: () => window.open(`https://github.com/${DATA.repo}/blob/${f ? st.base : st.tip}/${p}#L${m[2]}${m[3] ? `-L${m[3]}` : ''}`, '_blank', 'noopener'), where: at };
+}
+const dgClick = (t) => (t ? (ev) => { ev.stopPropagation(); document.querySelector('.dgfull')?.remove(); t.open(); } : null);
+
+// A box: its size and how to draw it at (x, y). `shape` picks the outline.
+function dgNode(kind, n) {
+  const shape = kind === 'flowchart' ? (n.shape && n.shape !== 'step' ? n.shape : 'proc') : kind === 'states' ? (n.terminal ? 'terminal' : 'state') : kind === 'data' ? 'card' : 'comp';
+  if (shape === 'card') {
+    const fields = n.fields || [], head = plain(n.label);
+    const nw = Math.max(0, ...fields.map((f) => dgW(f.name, DGF.field))), tw = Math.max(0, ...fields.map((f) => (f.type ? dgW(f.type, DGF.field) : 0)));
+    const w = Math.max(160, dgW(head, DGF.node) + 30, nw + tw + 52), h = 32 + fields.length * 20 + 6;
+    return { shape, w, h, draw: (x, y) => [
+      svg('rect', { class: 'box', x, y, width: w, height: h, rx: 8 }),
+      svg('path', { class: 'cardhead', d: `M${x},${y + 32} V${y + 8} a8,8 0 0 1 8,-8 H${x + w - 8} a8,8 0 0 1 8,8 V${y + 32} Z` }),
+      svg('text', { class: 'nt', x: x + w / 2, y: y + 16 }, head),
+      fields.map((f, i) => {
+        const fy = y + 32 + 3 + i * 20, mark = { added: '+', removed: '−', changed: '~' }[f.change] || '';
+        return svg('g', { class: 'fld' + (f.change ? ' ' + f.change : '') },
+          f.change ? svg('rect', { class: 'fbg', x: x + 1, y: fy, width: w - 2, height: 20 }) : null,
+          svg('text', { class: 'fm', x: x + 12, y: fy + 10 }, mark),
+          svg('text', { class: 'fn st', x: x + 22, y: fy + 10 }, f.name),
+          f.type ? svg('text', { class: 'ft en', x: x + w - 12, y: fy + 10 }, f.type) : null);
+      })] };
   }
-  const portX = new Map();
-  for (const [k, list] of Object.entries(ports)) {
-    const p = pos[k.split(':')[0]];
-    list.sort((a, b) => a.ox - b.ox).forEach((it, i) => portX.set(it.e, { ...(portX.get(it.e) || {}), [it.end]: p.x + (p.w * (i + 1)) / (list.length + 1) }));
+  if (shape === 'comp') {
+    const role = n.role ? plain(n.role) : '', label = plain(n.label);
+    const w = Math.max(120, role ? dgW(role, DGF.node) : 0, dgW(label, role ? DGF.code : DGF.node)) + 28, h = role ? 46 : 34;
+    return { shape, w, h, draw: (x, y) => [svg('rect', { class: 'box', x, y, width: w, height: h, rx: 8 }),
+      role ? [svg('text', { class: 'nt', x: x + w / 2, y: y + 16 }, role), svg('text', { class: 'nc', x: x + w / 2, y: y + 32 }, label)]
+        : svg('text', { class: 'nt', x: x + w / 2, y: y + h / 2 }, label)] };
   }
-  const bez = (p0, p1, p2, p3, t) => { const u = 1 - t; return [0, 1].map((i) => u * u * u * p0[i] + 3 * u * u * t * p1[i] + 3 * u * t * t * p2[i] + t * t * t * p3[i]); };
-  const boxes = m.nodes.filter((n) => pos[n.id]).map((n) => ({ x: pos[n.id].x - 4, y: pos[n.id].y - 4, w: pos[n.id].w + 8, h: NH + 8 }));
-  const hits = (b) => boxes.some((o) => b.x < o.x + o.w && o.x < b.x + b.w && b.y < o.y + o.h && o.y < b.y + b.h);
-  const marker = (id, cls) => svg('marker', { id, viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' },
-    svg('path', { d: 'M0,0 L10,5 L0,10 z', class: cls }));
-  const defs = svg('defs', {}, marker('arr', 'arr'), marker('arrnew', 'arrnew'), marker('arrhot', 'arrhot'));
-  const wrap = (label) => {
-    const words = label.split(/\s+/), lines = [''];
-    for (const w of words) { if ((lines.at(-1) + ' ' + w).trim().length > 20 && lines.at(-1)) lines.push(w); else lines[lines.length - 1] = (lines.at(-1) + ' ' + w).trim(); }
-    return lines.slice(0, 3);
-  };
-  const bands = m.layers.map((layer, i) => {
-    const lines = wrap(layer.label), y0 = TOP + i * ROW + ROW / 2 - (lines.length - 1) * 7 + 4;
-    return svg('g', {}, svg('rect', { class: 'band' + (i % 2 ? ' alt' : ''), x: 0, y: TOP + i * ROW, width: W, height: ROW }),
-      svg('text', { class: 'lname', x: 12, y: y0 }, svg('title', {}, layer.label), lines.map((l, j) => svg('tspan', { x: 12, dy: j ? 14 : 0 }, l))));
-  });
-  const top = svg('rect', { class: 'band alt', x: 0, y: 0, width: W, height: TOP });
-  const labels = [], paths = [];
-  for (const e of m.edges || []) {
-    const a = pos[e.from], b = pos[e.to];
-    if (!a || !b) continue;
-    const px = portX.get(e) || {}, ax = px.from ?? a.x + a.w / 2, bx = px.to ?? b.x + b.w / 2;
-    let p0, p1, p2, p3;
-    if (layerOf[e.from] === layerOf[e.to]) {
-      const lift = 26 + Math.min(30, Math.abs(ax - bx) / 12);
-      p0 = [ax, a.y]; p1 = [ax, a.y - lift]; p2 = [bx, b.y - lift]; p3 = [bx, b.y];
-    } else {
-      const down = b.y > a.y, y1 = down ? a.y + NH : a.y, y2 = down ? b.y : b.y + NH, my = (y1 + y2) / 2;
-      p0 = [ax, y1]; p1 = [ax, my]; p2 = [bx, my]; p3 = [bx, y2];
-    }
-    const key = e.from + '>' + e.to, isHot = hot.edges.has(key);
-    paths.push(svg('g', { class: `edge${e.new ? ' new' : ''}${isHot ? ' hot' : ''}` },
-      svg('path', { d: `M${p0} C${p1} ${p2} ${p3}`, 'marker-end': `url(#${isHot ? 'arrhot' : e.new ? 'arrnew' : 'arr'})` })));
-    if (!e.label && !hot.hops.has(key)) continue;
-    const text = e.label || '', w = text.length * 6.1 + 10, hop = hot.hops.get(key);
-    let at = bez(p0, p1, p2, p3, 0.5);
-    for (const t of [0.5, 0.38, 0.62, 0.28, 0.72, 0.2, 0.8]) {
-      const c = bez(p0, p1, p2, p3, t), b2 = { x: c[0] - w / 2 - (hop ? 20 : 0), y: c[1] - 9, w: w + (hop ? 20 : 0), h: 18 };
-      if (!hits(b2)) { at = c; boxes.push(b2); break; }
-    }
-    labels.push(svg('g', { class: `edge${e.new ? ' new' : ''}${isHot ? ' hot' : ''}` },
-      text ? svg('text', { x: at[0], y: at[1] + 4 }, text) : null,
-      hop ? [svg('circle', { cx: at[0] - w / 2 - 6, cy: at[1], r: 8, fill: 'var(--hot)' }), svg('text', { class: 'hopnum', x: at[0] - w / 2 - 6, y: at[1] + 1 }, hop)] : null));
-  }
-  const nodes = m.nodes.filter((n) => pos[n.id]).map((n) => {
-    const p = pos[n.id], f = n.path && fileOf(st, n.path);
-    return svg('g', { class: `node ${n.state}${f ? ' link' : ''}${hot.nodes.has(n.id) ? ' hot' : ''}`, transform: `translate(${p.x},${p.y})`, onclick: f ? () => openFile(n.path) : null },
-      svg('title', {}, `${n.label} (${n.state})${n.path ? '\n' + n.path : ''}`),
-      svg('rect', { width: p.w, height: NH, rx: 8 }), svg('text', { x: p.w / 2, y: NH / 2 + 1 }, n.label));
-  });
-  const box = el('div', { class: 'mapbox' });
-  box.append(svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Components the stack touches, by layer' }, defs, top, bands, paths, nodes, labels),
-    el('div', { class: 'legend' },
-      el('span', {}, el('i', { style: 'background:var(--accent)' }), 'new'),
-      el('span', {}, el('i', { style: 'background:var(--accent-soft);outline:1.5px solid var(--accent)' }), 'changed'),
-      el('span', {}, el('i', { style: 'background:var(--bg);outline:1.5px solid var(--line)' }), 'existing'),
-      el('span', {}, el('i', { style: 'background:var(--surface-2);outline:1.5px dashed var(--faint)' }), 'external'),
-      el('span', {}, 'Click a component to open its file')));
-  return box;
+  const lines = dgWrap(n.label, DGF.node, shape === 'decision' ? 130 : 170), tw = Math.max(...lines.map((l) => dgW(l, DGF.node))), th = lines.length * 16;
+  let w, h;
+  if (shape === 'decision') { const b = tw / 4.4 + th / 2 + 8; w = Math.round(4.4 * b); h = Math.round(2 * b); }
+  else if (shape === 'store') { w = tw + 32; h = th + 30; }
+  else if (shape === 'end') { w = tw + 36; h = th + 14; }
+  else if (shape === 'state' || shape === 'terminal') { w = Math.max(80, tw + 30); h = th + 20; }
+  else { w = Math.max(90, tw + 26); h = th + 16; }
+  const text = (x, y) => dgText(lines, x + w / 2, y + h / 2 + (shape === 'store' ? 4 : 0), 'nt');
+  const outline = {
+    proc: (x, y) => svg('rect', { class: 'box', x, y, width: w, height: h, rx: 8 }),
+    decision: (x, y) => svg('polygon', { class: 'box', points: `${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}` }),
+    store: (x, y) => [svg('path', { class: 'box', d: `M${x},${y + 7} a${w / 2},7 0 0 1 ${w},0 V${y + h - 7} a${w / 2},7 0 0 1 ${-w},0 Z` }),
+      svg('path', { class: 'lid', d: `M${x},${y + 7} a${w / 2},7 0 0 0 ${w},0` })],
+    end: (x, y) => svg('rect', { class: 'box', x, y, width: w, height: h, rx: h / 2 }),
+    state: (x, y) => svg('rect', { class: 'box', x, y, width: w, height: h, rx: 12 }),
+    terminal: (x, y) => [svg('rect', { class: 'box', x, y, width: w, height: h, rx: 12 }), svg('rect', { class: 'inner', x: x + 4, y: y + 4, width: w - 8, height: h - 8, rx: 9 })],
+  }[shape] || ((x, y) => svg('rect', { class: 'box', x, y, width: w, height: h, rx: 8 }));
+  return { shape, w, h, draw: (x, y) => [outline(x, y), text(x, y)] };
 }
 
-function setHot(nodes, edges, hops) {
-  hot = { nodes: new Set(nodes), edges: new Set(edges), hops: hops || new Map() };
-  const old = document.querySelector('.mapbox');
-  if (old) old.replaceWith(mapView(ST()));
+// Nondecreasing least-squares fit (pool adjacent violators): places a rank's boxes as near their targets as their order
+// and spacing allow.
+function pava(t) {
+  const b = [];
+  for (const v of t) {
+    b.push([v, 1]);
+    while (b.length > 1 && b.at(-2)[0] / b.at(-2)[1] > b.at(-1)[0] / b.at(-1)[1]) { const [s, n] = b.pop(); b.at(-1)[0] += s; b.at(-1)[1] += n; }
+  }
+  return b.flatMap(([s, n]) => Array(n).fill(s / n));
 }
 
-function seqDiagram(st, f) {
-  const byId = Object.fromEntries((st.components?.nodes || []).map((n) => [n.id, n]));
-  const parts = [];
-  for (const h of f.steps) for (const id of [h.from, h.to]) if (!parts.includes(id)) parts.push(id);
-  const info = parts.map((id) => byId[id] || { id, label: id, state: 'existing' });
-  const widths = info.map((n) => Math.max(168, (n.role || '').length * 7.8 + 28, n.label.length * 6.9 + 28));
-  const xs = []; let x = 16;
-  widths.forEach((w) => { xs.push(x + w / 2); x += w + 26; });
-  const W = x - 10, HEAD = n => (n.role ? 46 : 34), HH = Math.max(...info.map(HEAD)), ROW = 48, TOP = 16 + HH + 26;
-  const H = TOP + f.steps.length * ROW + 10;
-  const mk = (id, cls) => svg('marker', { id, viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' }, svg('path', { d: 'M0,0 L10,5 L0,10 z', class: cls }));
-  const g = [svg('defs', {}, mk('sa', 'arr'), mk('san', 'arrnew'))];
-  info.forEach((n, i) => {
-    const f2 = n.path && fileOf(st, n.path), w = widths[i], hh = HEAD(n);
-    g.push(svg('line', { class: 'life', x1: xs[i], y1: 16 + hh, x2: xs[i], y2: H - 6 }));
-    g.push(svg('g', { class: `ph ${n.state}${f2 ? ' link' : ''}`, transform: `translate(${xs[i] - w / 2},16)`, onclick: f2 ? () => openFile(n.path) : null },
-      svg('title', {}, `${n.label}${n.path ? '\n' + n.path : ''}`), svg('rect', { width: w, height: hh, rx: 8 }),
-      n.role ? [svg('text', { class: 'r', x: w / 2, y: 19 }, n.role), svg('text', { class: 'c', x: w / 2, y: 35 }, n.label)] : svg('text', { class: 'r', x: w / 2, y: 21 }, n.label)));
-  });
-  f.steps.forEach((h, k) => {
-    const a = xs[parts.indexOf(h.from)], b = xs[parts.indexOf(h.to)], y = TOP + k * ROW;
-    const cls = 'msg' + (h.new ? ' new' : ''), m = `url(#${h.new ? 'san' : 'sa'})`;
-    if (a === b) {
-      g.push(svg('g', { class: cls }, svg('path', { d: `M${a},${y - 8} h34 v16 h-32`, 'marker-end': m }),
-        svg('circle', { class: 'num', cx: a - 14, cy: y - 8, r: 9 }), svg('text', { class: 'numt', x: a - 14, y: y - 7 }, k + 1),
-        svg('text', { class: 'lbl', x: a + 40, y: y + 4, style: 'text-anchor:start' }, h.label)));
-    } else {
-      const dir = b > a ? 1 : -1;
-      g.push(svg('g', { class: cls }, svg('path', { d: `M${a + dir * 2},${y} L${b - dir * 3},${y}`, 'marker-end': m }),
-        svg('circle', { class: 'num', cx: a + dir * 15, cy: y, r: 9 }), svg('text', { class: 'numt', x: a + dir * 15, y: y + 1 }, k + 1),
-        svg('text', { class: 'lbl', x: (a + b) / 2, y: y - 8 }, h.label)));
+// The layered layout. Works in (c, m): c across the ranks, m along them; `LR` maps m to x. Ranks are doubled so each
+// edge gets a slot between its ends: a dummy box the size of its label, which the ordering and spacing treat like any box.
+function layered(nodes, edges, o = {}) {
+  const LR = !!o.LR, GC = o.gapC ?? 30, GM = o.gapM ?? 22;
+  const V = new Map(nodes.map((n) => [n.id, { c: LR ? n.h : n.w, m: LR ? n.w : n.h, shape: n.shape, self: 0 }]));
+  const E = edges.filter((e) => V.has(e.from) && V.has(e.to)).map((e, i) => ({ e, i, from: e.from, to: e.to, lc: LR ? e.lh : e.lw, lm: LR ? e.lw : e.lh }));
+  const ids = [...V.keys()], first = o.first || [], rank = new Map(ids.map((id) => [id, 0])), order0 = [];
+  if (o.rankOf) {
+    ids.forEach((id) => { rank.set(id, o.rankOf(id)); order0.push(id); });
+    E.forEach((x) => { x.rev = rank.get(x.from) > rank.get(x.to); });
+  } else {
+    const out = new Map(ids.map((id) => [id, []])), indeg = new Map(ids.map((id) => [id, 0])), seen = new Map();
+    for (const x of E) if (x.from !== x.to) { out.get(x.from).push(x); indeg.set(x.to, indeg.get(x.to) + 1); }
+    const dfs = (u) => { seen.set(u, 1); order0.push(u); for (const x of out.get(u)) { const s = seen.get(x.to); if (s === 1) x.rev = true; else if (!s) dfs(x.to); } seen.set(u, 2); };
+    for (const r of [...first, ...ids.filter((id) => !indeg.get(id)), ...ids]) if (!seen.get(r)) dfs(r);
+    const succ = new Map(ids.map((id) => [id, []])), pred = new Map(ids.map((id) => [id, []]));
+    for (const x of E) if (x.from !== x.to) { const [a, b] = x.rev ? [x.to, x.from] : [x.from, x.to]; succ.get(a).push(b); pred.get(b).push(a); }
+    const deg = new Map(ids.map((id) => [id, pred.get(id).length])), q = ids.filter((id) => !deg.get(id)), topo = [];
+    while (q.length) {
+      const u = q.shift(); topo.push(u);
+      for (const v of succ.get(u)) { rank.set(v, Math.max(rank.get(v), rank.get(u) + 1)); deg.set(v, deg.get(v) - 1); if (!deg.get(v)) q.push(v); }
     }
+    // A source that feeds a deep box sits just above it, so its edge stays short.
+    for (const u of topo.reverse()) if (!pred.get(u).length && succ.get(u).length && !first.includes(u)) rank.set(u, Math.min(...succ.get(u).map((v) => rank.get(v))) - 1);
+    const low = Math.min(...ids.map((id) => rank.get(id)));
+    ids.forEach((id) => rank.set(id, rank.get(id) - low));
+  }
+  let layers = [];
+  const R = new Map(), put = (id, r) => { R.set(id, r); (layers[r] ||= []).push(id); };
+  order0.forEach((id) => put(id, 2 * rank.get(id)));
+  const flat = [], selfs = [];
+  for (const x of E) {
+    if (x.from === x.to) { selfs.push(x); continue; }
+    const [a, b] = x.rev ? [x.to, x.from] : [x.from, x.to], ra = R.get(a), rb = R.get(b);
+    if (ra === rb) { flat.push(x); continue; }
+    // A back edge over more than one rank (a retry, a reset) goes around the side instead of through the boxes.
+    if (x.rev && rb - ra > 2) { x.around = true; continue; }
+    const mid = ra + 1 + 2 * Math.floor((rb - ra - 2) / 4);
+    x.chain = [a];
+    for (let r = ra + 1; r < rb; r++) {
+      const d = `\u0000${x.i}:${r}`;
+      V.set(d, { dummy: true, c: r === mid ? x.lc : 0, m: r === mid ? x.lm : 0, self: 0 });
+      put(d, r); x.chain.push(d);
+      if (r === mid) x.slot = d;
+    }
+    x.chain.push(b);
+  }
+  for (const x of selfs) V.get(x.from).self = Math.max(V.get(x.from).self, 30 + x.lc + 10);
+  const top = layers.length - 1;
+  for (let r = 0; r <= top; r++) layers[r] ||= [];
+  const up = new Map([...V.keys()].map((id) => [id, []])), dn = new Map([...V.keys()].map((id) => [id, []]));
+  for (const x of E) if (x.chain) for (let k = 1; k < x.chain.length; k++) { dn.get(x.chain[k - 1]).push(x.chain[k]); up.get(x.chain[k]).push(x.chain[k - 1]); }
+
+  // Order: barycenter sweeps, keeping the order with the fewest crossings. Boxes joined inside a rank stay together.
+  const root = new Map(), find = (a) => (root.has(a) ? find(root.get(a)) : a), gpos = new Map();
+  for (const x of flat) { if (find(x.from) !== find(x.to)) root.set(find(x.from), find(x.to)); for (const id of [x.from, x.to]) if (!gpos.has(id)) gpos.set(id, gpos.size); }
+  const idx = new Map(), reindex = () => layers.forEach((L) => L.forEach((id, i) => idx.set(id, i)));
+  const sortLayer = (L, bc) => {
+    const key = new Map(L.map((id) => [id, bc.get(id)]));
+    if (flat.length) {
+      const sum = new Map();
+      for (const id of L) { const s = sum.get(find(id)) || [0, 0]; s[0] += bc.get(id); s[1]++; sum.set(find(id), s); }
+      for (const id of L) { const s = sum.get(find(id)); key.set(id, s[0] / s[1] + (gpos.get(id) ?? 0) * 1e-6); }
+    }
+    L.sort((a, b) => key.get(a) - key.get(b));
+  };
+  const crossings = () => {
+    let n = 0;
+    for (let r = 0; r < top; r++) {
+      const es = layers[r].flatMap((id) => dn.get(id).map((t) => [idx.get(id), idx.get(t)]));
+      for (let i = 0; i < es.length; i++) for (let j = i + 1; j < es.length; j++) if ((es[i][0] - es[j][0]) * (es[i][1] - es[j][1]) < 0) n++;
+    }
+    return n;
+  };
+  reindex();
+  let best = layers.map((L) => [...L]), bestX = crossings();
+  for (let it = 0; it < 24 && bestX; it++) {
+    const down = it % 2 === 0;
+    for (let k = 1; k <= top; k++) {
+      const r = down ? k : top - k, nb = down ? up : dn;
+      sortLayer(layers[r], new Map(layers[r].map((id) => { const ns = nb.get(id); return [id, ns.length ? ns.reduce((t, n) => t + idx.get(n), 0) / ns.length : idx.get(id)]; })));
+      layers[r].forEach((id, i) => idx.set(id, i));
+    }
+    const x = crossings();
+    if (x < bestX) { bestX = x; best = layers.map((L) => [...L]); }
+  }
+  layers = best;
+  reindex();
+  // Then swap neighbours while it removes a crossing (boxes joined inside a rank stay put).
+  for (let improved = bestX > 0, pass = 0; improved && pass < 8; pass++) {
+    improved = false;
+    for (const L of layers) for (let i = 0; i + 1 < L.length; i++) {
+      if (gpos.has(L[i]) || gpos.has(L[i + 1])) continue;
+      [L[i], L[i + 1]] = [L[i + 1], L[i]]; reindex();
+      const x = crossings();
+      if (x < bestX) { bestX = x; improved = true; } else { [L[i], L[i + 1]] = [L[i + 1], L[i]]; reindex(); }
+    }
+  }
+
+  // Positions across the ranks: each box pulled toward the boxes it connects to, without breaking order or spacing.
+  const flatGap = new Map();
+  for (const x of flat) if (Math.abs(idx.get(x.from) - idx.get(x.to)) === 1) { const k = [x.from, x.to].sort().join('\n'); flatGap.set(k, Math.max(flatGap.get(k) || 0, x.lc + 30)); }
+  const sep = (a, b) => {
+    const A = V.get(a), B = V.get(b), base = (A.c + B.c) / 2 + A.self;
+    if (A.dummy && B.dummy) return base + 10;
+    if (A.dummy || B.dummy) return base + 16;
+    return base + Math.max(GC, flatGap.get([a, b].sort().join('\n')) || 0);
+  };
+  const X = new Map(), seps = (L) => { const S = [0]; for (let i = 1; i < L.length; i++) S.push(S[i - 1] + sep(L[i - 1], L[i])); return S; };
+  layers.forEach((L) => { const S = seps(L); L.forEach((id, i) => X.set(id, S[i])); });
+  const avg = (ns, id) => (ns.length ? ns.reduce((t, n) => t + X.get(n), 0) / ns.length : X.get(id));
+  const place = (L, want) => { if (!L.length) return; const S = seps(L), y = pava(L.map((id, i) => want(id) - S[i])); L.forEach((id, i) => X.set(id, y[i] + S[i])); };
+  for (let it = 0; it < 12; it++) {
+    for (let r = 1; r <= top; r++) place(layers[r], (id) => avg(up.get(id), id));
+    for (let r = top - 1; r >= 0; r--) place(layers[r], (id) => avg(dn.get(id), id));
+  }
+  for (let it = 0; it < 4; it++) layers.forEach((L) => place(L, (id) => avg([...up.get(id), ...dn.get(id)], id)));
+
+  // Positions along the ranks. A rank holding an arc between boxes that are not side by side gets room above it.
+  const thick = layers.map((L) => Math.max(0, ...L.map((id) => V.get(id).m)));
+  const arcs = new Set(flat.filter((x) => Math.abs(idx.get(x.from) - idx.get(x.to)) > 1).map((x) => R.get(x.from)));
+  const M = [];
+  let y = o.pad0 || 0;
+  layers.forEach((L, r) => { const [p0, p1] = (o.padRank && o.padRank(r)) || [0, 0]; y += p0 + (arcs.has(r) ? 32 : 0); M[r] = y + thick[r] / 2; y += thick[r] + p1 + GM; });
+  const pt = (c, m) => (LR ? [m, c] : [c, m]);
+  const half = (id, off) => { const v = V.get(id); return v.shape === 'decision' ? (v.m / 2) * (1 - Math.min(1, Math.abs(off) / (v.c / 2))) : v.m / 2; };
+  const halfC = (id, off) => { const v = V.get(id); return v.shape === 'decision' ? (v.c / 2) * (1 - Math.min(1, Math.abs(off) / (v.m / 2))) : v.c / 2; };
+
+  // Ports: the edges meeting one side of a box spread along it, in the order of their other ends.
+  const ports = new Map(), portAt = new Map();
+  const addPort = (id, side, key, oc) => { const k = id + '\u0000' + side; (ports.get(k) || ports.set(k, []).get(k)).push({ key, oc }); };
+  for (const x of E) if (x.chain) { addPort(x.chain[0], 'out', x.i + ':0', X.get(x.chain[1])); addPort(x.chain.at(-1), 'in', x.i + ':1', X.get(x.chain.at(-2))); }
+  for (const x of flat) if (!flatGap.has([x.from, x.to].sort().join('\n')) || Math.abs(idx.get(x.from) - idx.get(x.to)) > 1) { addPort(x.from, 'in', x.i + ':f', X.get(x.to)); addPort(x.to, 'in', x.i + ':t', X.get(x.from)); }
+  for (const [k, list] of ports) {
+    const [id, side] = k.split('\u0000'), v = V.get(id), C = X.get(id), mm = M[R.get(id)];
+    list.sort((a, b) => a.oc - b.oc);
+    const span = Math.min(v.c * 0.7, (list.length - 1) * 24);
+    list.forEach((p, i) => {
+      const off = list.length > 1 ? -span / 2 + (span * i) / (list.length - 1) : 0;
+      portAt.set(p.key, [C + off, side === 'out' ? mm + half(id, off) : mm - half(id, off)]);
+    });
+  }
+  // A chain is one smooth curve through its slots (Catmull-Rom), leaving and entering its boxes along the rank axis.
+  const spline = (P) => {
+    const T = P.map((p, i) => (i === 0 || i === P.length - 1 ? [0, (P[Math.min(i + 1, P.length - 1)][1] - P[Math.max(i - 1, 0)][1]) / (P.length > 2 ? 2 : 1)]
+      : [(P[i + 1][0] - P[i - 1][0]) / 2, (P[i + 1][1] - P[i - 1][1]) / 2]));
+    return `M${pt(...P[0])}` + P.slice(1).map((p, k) => `C${pt(P[k][0] + T[k][0] / 3, P[k][1] + T[k][1] / 3)} ${pt(p[0] - T[k + 1][0] / 3, p[1] - T[k + 1][1] / 3)} ${pt(...p)}`).join('');
+  };
+  const extra = [];
+  let corridor = null;
+  const routes = E.map((x) => {
+    let d, label = null;
+    if (x.around) {
+      const ra = R.get(x.to), rb = R.get(x.from), far = Math.max(...layers.slice(ra, rb + 1).flat().map((id) => X.get(id) + V.get(id).c / 2 + V.get(id).self));
+      const cor = Math.max(far + 22 + x.lc / 2, corridor ?? -Infinity);
+      corridor = cor + x.lc / 2 + 16;
+      // Leave and enter from the side facing the corridor; a box beside it in its rank sends the edge out along the rank
+      // axis instead (below the source, above the target), so it never runs through a neighbour.
+      const r = 10, side = (id) => !layers[R.get(id)].some((o) => o !== id && X.get(o) > X.get(id) && !V.get(o).dummy);
+      const sideS = side(x.from), sideT = side(x.to);
+      const s = sideS ? [X.get(x.from) + halfC(x.from, 0), M[rb]] : [X.get(x.from), M[rb] + V.get(x.from).m / 2];
+      const t = sideT ? [X.get(x.to) + halfC(x.to, 0), M[ra]] : [X.get(x.to), M[ra] - V.get(x.to).m / 2];
+      const gS = sideS ? s[1] : s[1] + 14, gT = sideT ? t[1] : t[1] - 14;
+      d = `M${pt(...s)}` + (sideS ? '' : ` L${pt(s[0], gS)}`) + ` L${pt(cor - r, gS)} Q${pt(cor, gS)} ${pt(cor, gS - r)} L${pt(cor, gT + r)} Q${pt(cor, gT)} ${pt(cor - r, gT)}`
+        + (sideT ? ` L${pt(...t)}` : ` L${pt(t[0], gT)} L${pt(...t)}`);
+      const [ex, ey] = pt(cor - 1, gT), [fx, fy] = pt(cor + 1, gS);
+      extra.push({ x: Math.min(ex, fx), y: Math.min(ey, fy), w: Math.abs(fx - ex), h: Math.abs(fy - ey) });
+      if (x.lc) label = pt(cor, (s[1] + t[1]) / 2);
+    } else if (x.chain) {
+      const P = [portAt.get(x.i + ':0'), ...x.chain.slice(1, -1).map((id) => [X.get(id), M[R.get(id)]]), portAt.get(x.i + ':1')];
+      if (x.rev) P.reverse();
+      d = spline(P);
+      if (x.lc) label = pt(X.get(x.slot), M[R.get(x.slot)]);
+    } else if (x.from === x.to) {
+      const v = V.get(x.from), C = X.get(x.from), mm = M[R.get(x.from)];
+      const s = [C + halfC(x.from, v.m / 4), mm - v.m / 4], t = [C + halfC(x.from, v.m / 4), mm + v.m / 4];
+      d = `M${pt(...s)} C${pt(s[0] + 36, s[1] - 8)} ${pt(t[0] + 36, t[1] + 8)} ${pt(...t)}`;
+      if (x.lc) label = pt(C + v.c / 2 + 30 + x.lc / 2, mm);
+    } else if (portAt.has(x.i + ':f')) {
+      const p0 = portAt.get(x.i + ':f'), p1 = portAt.get(x.i + ':t'), r = R.get(x.from), apex = M[r] - thick[r] / 2 - 24;
+      const ctl = (apex - 0.25 * Math.min(p0[1], p1[1])) / 0.75;
+      d = `M${pt(...p0)} C${pt(p0[0], ctl)} ${pt(p1[0], ctl)} ${pt(...p1)}`;
+      if (x.lc) label = pt((p0[0] + p1[0]) / 2, apex);
+    } else {
+      const [a, b] = X.get(x.from) < X.get(x.to) ? [x.from, x.to] : [x.to, x.from], mm = M[R.get(a)];
+      const P = [[X.get(a) + halfC(a, 0), mm], [X.get(b) - halfC(b, 0), mm]];
+      if (a !== x.from) P.reverse();
+      d = `M${pt(...P[0])} L${pt(...P[1])}`;
+      if (x.lc) label = pt((P[0][0] + P[1][0]) / 2, mm - x.lm / 2 - 4);
+    }
+    return { e: x.e, d, label, rev: !!x.rev };
   });
-  return el('div', { class: 'seq' }, svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': f.title }, g));
+  const pos = new Map(nodes.map((n) => { const v = V.get(n.id), [x, y2] = pt(X.get(n.id) - v.c / 2, M[R.get(n.id)] - v.m / 2); return [n.id, { x, y: y2, w: n.w, h: n.h, rank: R.get(n.id) / 2 }]; }));
+  return { pos, routes, extra };
 }
+
+const dgMarkers = (id) => svg('defs', {}, ['def', 'new', 'removed', 'guess', 'ret'].map((k) => svg('marker', {
+  id: `dg${id}-${k}`, viewBox: '0 0 10 10', refX: 9.5, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: 'userSpaceOnUse', orient: 'auto-start-reverse' },
+svg('path', { class: 'mk ' + k, d: k === 'ret' ? 'M1,1 L9.5,5 L1,9' : 'M0,0.5 L10,5 L0,9.5 z' }))));
+const dgEdgeClass = (e, gone, link) => `de${e.new ? ' new' : ''}${gone ? ' removed' : ''}${e.return ? ' ret' : ''}${e.at || e.return ? '' : ' guess'}${link ? ' link' : ''}`;
+const dgMarker = (id, e, gone) => `url(#dg${id}-${gone ? 'removed' : e.return ? 'ret' : e.new ? 'new' : e.at ? 'def' : 'guess'})`;
+const dgTitle = (text, t) => svg('title', {}, text + (t ? `\n${t.where}` : ''));
+
+function dgBounds(boxes, pad = 14) {
+  const x0 = Math.min(...boxes.map((b) => b.x)) - pad, y0 = Math.min(...boxes.map((b) => b.y)) - pad;
+  const x1 = Math.max(...boxes.map((b) => b.x + b.w)) + pad, y1 = Math.max(...boxes.map((b) => b.y + b.h)) + pad;
+  return [x0, y0, x1 - x0, y1 - y0].map((v) => Math.round(v));
+}
+function dgSvg(kind, title, box, kids) {
+  const s = svg('svg', { class: 'dg', 'data-kind': kind, viewBox: box.join(' '), role: 'img', 'aria-label': title }, kids);
+  s.dataset.w = box[2]; s.dataset.h = box[3];
+  // Hovering a box lights its arrows and dims the rest.
+  const clear = () => { s.classList.remove('focus'); s.querySelectorAll('.lit').forEach((x) => x.classList.remove('lit')); };
+  s.addEventListener('mouseover', (ev) => {
+    clear();
+    const n = ev.target.closest('.dn[data-id]');
+    if (!n) return;
+    s.classList.add('focus'); n.classList.add('lit');
+    s.querySelectorAll(`[data-n~="${CSS.escape(n.dataset.id)}"]`).forEach((x) => x.classList.add('lit'));
+  });
+  s.addEventListener('mouseleave', clear);
+  return s;
+}
+
+function graphSvg(st, sec) {
+  const kind = sec.kind, comps = dgComps(st), id = ++dgSeq;
+  const LR = (sec.direction || (kind === 'states' || kind === 'data' ? 'LR' : 'TB')) === 'LR';
+  const items = (kind === 'structure' ? sec.nodes.map((nid) => comps[nid] || { id: nid, label: nid }) : sec.nodes).map((n) => ({ ...n, state: n.state || 'existing' }));
+  const byId = new Map(items.map((n) => [n.id, n]));
+  const specs = items.map((n) => ({ id: n.id, ...dgNode(kind, n) }));
+  const edges = (sec.edges || []).map((e) => {
+    const lines = e.label || e.guard ? dgWrap([e.label, e.guard && `[${e.guard}]`].filter(Boolean).join(' '), DGF.label, 160) : [];
+    return { ...e, lines, lw: lines.length ? Math.max(...lines.map((l) => dgW(l, DGF.label))) + 10 : 0, lh: lines.length ? lines.length * 14 + 4 : 0 };
+  });
+  const layers = kind === 'structure' ? (st.components?.layers || []).filter((l) => items.some((n) => n.layer === l.id)) : null;
+  // structure: one band per layer, and inside a layer the edges between its boxes stack them (up to three rows), so a
+  // busy module grows down instead of into one long row.
+  let rankOf = null, padRank = null;
+  if (layers) {
+    const lay = (nid) => Math.max(0, layers.findIndex((l) => l.id === byId.get(nid).layer)), sub = new Map(items.map((n) => [n.id, 0]));
+    const inner = (sec.edges || []).filter((e) => byId.has(e.from) && byId.has(e.to) && e.from !== e.to && lay(e.from) === lay(e.to));
+    for (let k = 0; k < items.length; k++) for (const e of inner) sub.set(e.to, Math.max(sub.get(e.to), Math.min(sub.get(e.from) + 1, 2)));
+    const depth = layers.map((_, i) => Math.max(0, ...items.filter((n) => lay(n.id) === i).map((n) => sub.get(n.id))) + 1);
+    const base = depth.map((_, i) => depth.slice(0, i).reduce((t, d) => t + d, 0));
+    const starts = new Set(base.map((b) => 2 * b)), ends = new Set(base.map((b, i) => 2 * (b + depth[i] - 1)));
+    rankOf = (nid) => base[lay(nid)] + sub.get(nid);
+    padRank = (r) => (r % 2 ? [0, 0] : [starts.has(r) ? (LR ? 16 : 30) : 0, ends.has(r) ? (LR ? 16 : 14) : 0]);
+  }
+  const { pos, routes, extra } = layered(specs, edges, {
+    LR, first: items.filter((n) => n.initial).map((n) => n.id), gapC: kind === 'data' ? 40 : 30, gapM: layers ? 26 : 22, pad0: kind === 'states' ? 28 : 0, rankOf, padRank,
+  });
+  const boxes = [...pos.values(), ...extra], out = [dgMarkers(id)], labels = [];
+  if (layers) layers.forEach((l, r) => {
+    const mine = items.filter((n) => n.layer === l.id).map((n) => pos.get(n.id));
+    const b = dgBounds(mine, 0), lw = dgW(plain(l.label).toUpperCase(), DGF.tab) + 20;
+    const x = b[0] - 16, y = b[1] - (LR ? 34 : 28), w = Math.max(b[2] + 32, lw), h = b[3] + (LR ? 50 : 42);
+    boxes.push({ x, y, w, h });
+    out.push(svg('g', { class: 'cl' }, svg('rect', { x, y, width: w, height: h, rx: 12 })));
+    labels.push(svg('g', { class: 'cl' }, svg('text', { class: 'st', x: x + 12, y: y + 14 }, plain(l.label).toUpperCase())));
+  });
+  const gone = (e) => byId.get(e.from)?.state === 'removed' || byId.get(e.to)?.state === 'removed';
+  routes.forEach(({ e, d, label }) => {
+    const t = dgTarget(st, e.at), cls = dgEdgeClass(e, gone(e), t), text = e.lines.join(' ');
+    out.push(svg('g', { class: cls, 'data-n': `${e.from} ${e.to}`, onclick: dgClick(t) }, dgTitle(text || `${e.from} → ${e.to}`, t),
+      svg('path', { class: 'hit', d }), svg('path', { class: 'line', d, 'marker-end': dgMarker(id, e, gone(e)) })));
+    if (!label) return;
+    const [lx, ly] = label;
+    boxes.push({ x: lx - e.lw / 2, y: ly - e.lh / 2, w: e.lw, h: e.lh });
+    labels.push(svg('g', { class: cls + ' dlg', 'data-n': `${e.from} ${e.to}`, onclick: dgClick(t) }, dgTitle(text, t),
+      svg('rect', { class: 'lbg', x: lx - e.lw / 2, y: ly - e.lh / 2, width: e.lw, height: e.lh, rx: 4 }), dgText(e.lines, lx, ly, 'dl', 14)));
+  });
+  for (const s of specs) {
+    const n = byId.get(s.id), p = pos.get(s.id), t = dgTarget(st, n.at, n.path);
+    out.push(svg('g', { class: `dn ${n.state} ${s.shape}${t ? ' link' : ''}`, 'data-id': s.id, onclick: dgClick(t) },
+      dgTitle(`${plain(n.label)} (${n.state})`, t), s.draw(p.x, p.y)));
+    if (n.initial) {
+      const [cx, cy] = LR ? [p.x - 22, p.y + p.h / 2] : [p.x + p.w / 2, p.y - 22];
+      boxes.push({ x: cx - 6, y: cy - 6, w: 12, h: 12 });
+      out.push(svg('g', { class: 'init' }, svg('circle', { cx, cy, r: 6 }),
+        svg('path', { d: LR ? `M${cx + 6},${cy} H${p.x}` : `M${cx},${cy + 6} V${p.y}`, 'marker-end': `url(#dg${id}-def)` })));
+    }
+  }
+  return dgSvg(kind, sec.title, dgBounds(boxes), [...out, ...labels]);
+}
+
+// Sequence: participants as columns, calls solid and returns dashed, self-calls, notes, and alt/opt/loop frames.
+function sequenceSvg(st, sec) {
+  const comps = dgComps(st), id = ++dgSeq;
+  const parts = sec.participants.map((p) => ({ state: 'existing', ...(comps[p] || { id: p, label: p }) })), col = new Map(parts.map((p, i) => [p.id, i]));
+  const heads = parts.map((p) => dgNode('structure', p));
+  const rows = [], open = [];
+  let num = 0, depth = 0;
+  const walk = (items, d) => {
+    for (const it of items || []) {
+      if (it.frame) {
+        const fr = { type: 'open', it, d, rows: [], kids: [] };
+        open.at(-1)?.kids.push(fr); rows.push(fr); open.push(fr); depth = Math.max(depth, d + 1);
+        (it.branches || []).forEach((b, k) => { if (k) rows.push({ type: 'branch', fr, guard: b.guard }); walk(b.messages, d + 1); });
+        open.pop(); rows.push({ type: 'close', fr });
+        continue;
+      }
+      const r = 'note' in it ? { type: 'note', it, a: col.get(it.on), lines: dgWrap(it.note, DGF.label, 190) }
+        : { type: 'msg', it, a: col.get(it.from), b: col.get(it.to), n: it.return ? null : ++num, label: plain(it.label) };
+      if (r.a === undefined || (r.type === 'msg' && r.b === undefined)) continue;
+      open.forEach((fr) => fr.rows.push(r));
+      rows.push(r);
+    }
+  };
+  walk(sec.messages, 0);
+  // Columns: far enough apart for the heads, then for each label between them.
+  const C = parts.slice(1).map((_, i) => [i, i + 1, (heads[i].w + heads[i + 1].w) / 2 + 24]);
+  for (const r of rows) {
+    if (r.type === 'msg') {
+      r.lw = dgW(r.label, DGF.label);
+      if (r.a === r.b) { if (r.a + 1 < parts.length) C.push([r.a, r.a + 1, 46 + r.lw + 24]); }
+      else C.push([Math.min(r.a, r.b), Math.max(r.a, r.b), r.lw + (r.n ? 64 : 36)]);
+    } else if (r.type === 'note') {
+      r.w = Math.max(...r.lines.map((l) => dgW(l, DGF.label))) + 18;
+      if (r.a > 0) C.push([r.a - 1, r.a, r.w / 2 + 24]);
+      if (r.a + 1 < parts.length) C.push([r.a, r.a + 1, r.w / 2 + 24]);
+    }
+  }
+  const xs = parts.map(() => 0);
+  for (const [i, j, d] of C.sort((p, q) => p[1] - q[1])) if (xs[j] - xs[i] < d) for (let k = j; k < xs.length; k++) xs[k] += d - (xs[j] - xs[i]) + (k > j ? 0 : 0);
+  const HH = Math.max(...heads.map((h) => h.h));
+  let y = 12 + HH + 18;
+  for (const r of rows) {
+    if (r.type === 'msg') { if (r.a === r.b) { r.y = y + 16; y += 50; } else { r.y = y + 26; y += 38; } }
+    else if (r.type === 'note') { r.h = r.lines.length * 15 + 12; r.y = y + 6; y += r.h + 14; }
+    else if (r.type === 'open') { r.y = y + 4; y += 30; }
+    else if (r.type === 'branch') { r.y = y + 4; y += 28; }
+    else { r.fr.bottom = y + 8; y += 16; }
+  }
+  const H = y + 10;
+  // Frames: around what they hold, inner ones first so an outer frame always contains them.
+  const ext = (r) => (r.type === 'note' ? [xs[r.a] - r.w / 2, xs[r.a] + r.w / 2] : r.a === r.b ? [xs[r.a], xs[r.a] + 46 + r.lw] : [Math.min(xs[r.a], xs[r.b]), Math.max(xs[r.a], xs[r.b])]);
+  const frames = rows.filter((r) => r.type === 'open').reverse();
+  for (const fr of frames) {
+    const pad = 18 + (depth - 1 - fr.d) * 12, e = fr.rows.map(ext);
+    fr.left = Math.min(...e.map((v) => v[0]), ...fr.kids.map((k) => k.left - 10)) - pad;
+    fr.right = Math.max(...e.map((v) => v[1]), ...fr.kids.map((k) => k.right + 10)) + pad;
+    fr.tab = dgW(fr.it.frame, DGF.tab) + 16;
+    const guards = (fr.it.branches || []).map((b, k) => dgW(`[${plain(b.guard)}]`, DGF.label) + (k ? 16 : fr.tab + 16));
+    fr.right = Math.max(fr.right, fr.left + Math.max(...guards) + 12);
+  }
+  const out = [dgMarkers(id)], boxes = [];
+  parts.forEach((p, i) => {
+    const h = heads[i], x = xs[i] - h.w / 2, t = dgTarget(st, p.at, p.path);
+    boxes.push({ x, y: 12, w: h.w, h: h.h });
+    out.push(svg('line', { class: 'life', 'data-life': p.id, x1: xs[i], y1: 12 + h.h, x2: xs[i], y2: H - 6 }));
+    out.push(svg('g', { class: `dn ${p.state} comp${t ? ' link' : ''}`, 'data-id': p.id, onclick: dgClick(t) }, dgTitle(`${plain(p.label)} (${p.state})`, t), h.draw(x, 12)));
+  });
+  for (const fr of frames) {
+    boxes.push({ x: fr.left, y: fr.y, w: fr.right - fr.left, h: fr.bottom - fr.y });
+    out.push(svg('g', { class: 'frame' }, svg('rect', { x: fr.left, y: fr.y, width: fr.right - fr.left, height: fr.bottom - fr.y, rx: 4 }),
+      svg('path', { class: 'tab', d: `M${fr.left},${fr.y} h${fr.tab} v12 l-6,6 H${fr.left} Z` }),
+      svg('text', { class: 'tabt st', x: fr.left + 7, y: fr.y + 9 }, fr.it.frame),
+      svg('text', { class: 'dl fg st', x: fr.left + fr.tab + 8, y: fr.y + 9 }, `[${plain(fr.it.branches?.[0]?.guard)}]`)));
+  }
+  for (const r of rows) {
+    if (r.type === 'branch') {
+      out.push(svg('g', { class: 'frame' }, svg('line', { class: 'div', x1: r.fr.left, y1: r.y, x2: r.fr.right, y2: r.y }),
+        svg('text', { class: 'dl fg st', x: r.fr.left + 8, y: r.y + 11 }, `[${plain(r.guard)}]`)));
+    } else if (r.type === 'note') {
+      const x = xs[r.a] - r.w / 2, t = dgTarget(st, r.it.at);
+      boxes.push({ x, y: r.y, w: r.w, h: r.h });
+      out.push(svg('g', { class: `dnote${t ? ' link' : ''}`, onclick: dgClick(t) }, dgTitle(plain(r.it.note), t),
+        svg('rect', { class: 'box', x, y: r.y, width: r.w, height: r.h, rx: 4 }), dgText(r.lines, xs[r.a], r.y + r.h / 2, 'nl', 15)));
+    } else if (r.type === 'msg') {
+      const it = r.it, a = xs[r.a], b = xs[r.b], t = dgTarget(st, it.at), from = parts[r.a].id, to = parts[r.b].id;
+      const g = svg('g', { class: dgEdgeClass(it, false, t) + ' seq', 'data-n': `${from} ${to}`, 'data-from': from, 'data-to': to, onclick: dgClick(t) },
+        dgTitle(r.label, t));
+      if (r.a === r.b) {
+        const d = `M${a + 1},${r.y} H${a + 32} V${r.y + 18} H${a + 1}`;
+        g.append(svg('path', { class: 'hit', d }), svg('path', { class: 'line', d, 'marker-end': dgMarker(id, it) }),
+          svg('text', { class: 'dl st', x: a + 40, y: r.y + 9 }, r.label));
+        boxes.push({ x: a, y: r.y - 4, w: 46 + r.lw, h: 26 });
+        if (r.n) g.append(svg('circle', { class: 'num', cx: a - 13, cy: r.y, r: 8 }), svg('text', { class: 'numt', x: a - 13, y: r.y }, r.n));
+      } else {
+        const dir = b > a ? 1 : -1, d = `M${a + dir},${r.y} L${b - dir},${r.y}`;
+        g.append(svg('path', { class: 'hit', d }), svg('path', { class: 'line', d, 'marker-end': dgMarker(id, it) }),
+          svg('text', { class: 'dl', x: (a + b) / 2 + (r.n ? dir * 10 : 0), y: r.y - 10 }, r.label));
+        if (r.n) g.append(svg('circle', { class: 'num', cx: a + dir * 14, cy: r.y, r: 8 }), svg('text', { class: 'numt', x: a + dir * 14, y: r.y }, r.n));
+      }
+      out.push(g);
+    }
+  }
+  return dgSvg('sequence', sec.title, dgBounds([...boxes, { x: xs[0], y: 0, w: 1, h: H }]), out);
+}
+
+// The frame: fills the content width, scales down to DG_MIN, then scrolls and offers Expand (full screen, Esc closes).
+const dgFits = new WeakMap(), dgRO = new ResizeObserver((es) => es.forEach((e) => dgFits.get(e.target)?.()));
+function dgFit(sv, box, btn) {
+  const fit = () => {
+    const C = box.clientWidth, W = +sv.dataset.w, H = +sv.dataset.h;
+    if (!C) return;
+    const s = Math.max(DG_MIN, Math.min(1, (C - 2) / W));
+    sv.style.width = `${W * s}px`; sv.style.height = `${H * s}px`;
+    if (btn) btn.hidden = W * s <= C;
+  };
+  dgFits.set(box, fit); dgRO.observe(box);
+}
+function dgExpand(build, title) {
+  document.querySelector('.dgfull')?.remove();
+  const sv = build(), body = el('div', { class: 'dgs' }, sv);
+  const close = () => { wrap.remove(); removeEventListener('keydown', esc); };
+  const esc = (e) => e.key === 'Escape' && close();
+  const wrap = el('div', { class: 'dgfull', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+    el('div', { class: 'bar' }, el('b', {}, title), el('button', { class: 'btn', type: 'button', onclick: close }, 'Close')), body);
+  addEventListener('keydown', esc);
+  document.body.append(wrap);
+  dgFit(sv, body);
+}
+function diagramView(st, sec) {
+  // states and data read left to right; when that runs wider than the column and the writer set no direction, top to
+  // bottom wins if it shows at a larger scale.
+  const fitAt = (s) => Math.min(1, 1100 / +s.dataset.w);
+  const build = () => {
+    if (sec.kind === 'sequence') return sequenceSvg(st, sec);
+    const lr = graphSvg(st, sec);
+    if (sec.direction || !['states', 'data'].includes(sec.kind) || +lr.dataset.w <= 1100) return lr;
+    const tb = graphSvg(st, { ...sec, direction: 'TB' });
+    return fitAt(tb) > fitAt(lr) + 0.05 ? tb : lr;
+  };
+  const sv = build(), body = el('div', { class: 'dgs' }, sv);
+  const btn = el('button', { class: 'dgx', type: 'button', hidden: true, onclick: () => dgExpand(build, sec.title) }, 'Expand');
+  const has = (q) => !!sv.querySelector(q);
+  const sw = (cls, text) => el('span', {}, el('i', { class: 'sw ' + cls }), text);
+  const legend = el('div', { class: 'dgl' },
+    DG_STATES.filter((s) => has(`.dn.${s}`)).map((s) => sw(s, s)),
+    has('.de.guess') ? el('span', {}, el('i', { class: 'swl guess' }), 'no line cited') : null,
+    has('.de.ret') ? el('span', {}, el('i', { class: 'swl ret' }), 'return') : null,
+    has('.link') ? el('span', { class: 'hint' }, 'click a box or an arrow to open its code') : null, btn);
+  dgFit(sv, body, btn);
+  return el('div', { class: 'dgm' }, body, legend);
+}
+
+const RISK = { open: 'open', decided: 'decided', accepted: 'accepted limit' };
+function risksView(st, sec) {
+  return el('div', { class: 'risks' }, sec.items.map((r) => {
+    const t = dgTarget(st, r.at), m = r.at && AT_RE.exec(r.at);
+    return el('div', { class: 'risk ' + r.status }, el('div', { class: 'rh' }, el('span', { class: 'rs' }, RISK[r.status] || r.status), el('b', {}, rich(r.title))),
+      el('p', {}, rich(r.text)),
+      m ? (t ? el('a', { href: '#', class: 'at', onclick: (e) => { e.preventDefault(); t.open(); } }, `${m[1].split('/').pop()}:${m[2]}`) : el('span', { class: 'at' }, `${m[1].split('/').pop()}:${m[2]}`)) : null);
+  }));
+}
+
+// A step lights up its nodes in every diagram, by class, without redrawing.
+function setHot(nodes) {
+  const on = new Set(nodes);
+  document.querySelectorAll('.dg .dn[data-id]').forEach((g) => g.classList.toggle('hot', on.has(g.dataset.id)));
+}
+// Text widths come from the fonts; once Figtree and JetBrains Mono load, diagrams drawn before are redrawn.
+if (document.fonts && !document.fonts.check(DGF.node)) {
+  Promise.all([DGF.node, DGF.code, DGF.label].map((f) => document.fonts.load(f))).then(() => { dgCache.clear(); if (document.querySelector('.dgm')) render(); }).catch(() => {});
+}
+// ---- End of diagrams -----------------------------------------------------------------------------------------------
 
 function sectionView(st, sec) {
   const head = (aside) => el('div', { class: 'sec' }, sec.title, aside ? el('span', { class: 'aside' }, aside) : null);
-  if (sec.type === 'flow') return [head('blue = added by the stack · click a box to open its file'), seqDiagram(st, sec)];
-  if (sec.type === 'map') return [head('click a component to open its file'), mapView(st)];
+  if (sec.type === 'diagram') return [head(), diagramView(st, sec)];
+  if (sec.type === 'risks') return [head(), risksView(st, sec)];
   if (sec.type === 'before_after') return [head(), el('div', { class: 'tscroll' }, el('table', { class: 'gtable' },
     el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, 'Before'), el('th', {}, 'After'))),
     el('tbody', {}, sec.rows.map((r) => el('tr', {}, el('td', { class: 'aspect' }, rich(r.aspect)), el('td', { class: 'before' }, rich(r.before)), el('td', {}, rich(r.after)))))))];
@@ -1087,7 +1552,7 @@ function stepCard(st, s, i) {
   const open = !!state.open[s.id], done = !!state.done[s.id];
   const mine = comments(st).filter((c) => c.path === s.path && c.line >= s.start && c.line <= s.end && !cmState(c).gone);
   const card = el('section', { class: `step${open ? ' open' : ''}${done ? ' done' : ''}`, id: s.id,
-    onmouseenter: () => setHot(s.nodes, []), onmouseleave: () => setHot([], []) });
+    onmouseenter: () => setHot(s.nodes), onmouseleave: () => setHot([]) });
   card.append(el('div', { class: 'row', onclick: () => { state.open[s.id] = !open; save(); render(); } },
     el('span', { class: 'num' }, done ? '✓' : i + 1),
     el('span', { class: 'ttl' }, el('b', {}, s.title), ' ', s.kind === 'decide' ? el('span', { class: 'kind' }, 'decide') : null, el('span', { class: 'why' }, s.why)),
@@ -1557,7 +2022,7 @@ function prRow(st, x, busy) {
 let lastCtx = null, pendingLine = null;
 document.addEventListener('click', (e) => {
   const t = e.target.closest ? e.target : e.target.parentElement, step = t.closest('.step[id]'), cm = t.closest('[data-cid]'), g = t.closest('.gsec');
-  lastCtx = cm ? { kind: 'finding', id: cm.dataset.cid } : step ? { kind: 'step', id: step.id } : g && t.closest('.seq, .mapbox') ? { kind: 'diagram', si: +g.id.slice(4) } : null;
+  lastCtx = cm ? { kind: 'finding', id: cm.dataset.cid } : step ? { kind: 'step', id: step.id } : g && t.closest('.dgm') ? { kind: 'diagram', si: +g.id.slice(4) } : null;
 }, true);
 
 function openFile(path, o = {}) {
@@ -1600,9 +2065,6 @@ function toggleTheme() {
   fetch('/api/prefs', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify({ theme: r.dataset.theme }) }).catch(() => {});
 }
 
-const style = document.createElement('style');
-style.textContent = '.arr{fill:var(--faint)}.arrnew{fill:var(--accent)}.arrhot{fill:var(--hot)}';
-document.head.append(style);
 render();
 let version = null;
 async function poll() {
