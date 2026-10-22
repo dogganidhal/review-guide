@@ -196,6 +196,7 @@ Then the Playwright check on the fixture home, and screenshots of a real review 
 
 ## State
 
-- Phase: plan, waiting for review.
-- Settled: the four decisions above, from the questions answered on 2026-10-22.
-- Next: on approval, M1 and M2 in parallel, then M3, then M4 with you.
+- Phase: done.
+- M1 to M3 merged and installed. M4 tooling is in `dev/` (`replay.py`, `compare.py`).
+- Result: on 11 saved stacks the new guide won every vote (2026-10-22). The one note, oversized diagrams on cleanup PRs, led to a prompt rule that sizes the guide to the change; the four cleanup stacks were replayed and judged better.
+- Left open: a writer takes 1 to 5 minutes on Opus against 0.5 to 4 before; it runs beside the reviewers.
