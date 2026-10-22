@@ -34,8 +34,9 @@ TIMINGS = pathlib.Path.home() / ".cache" / "review-guide" / "timings.json"
 EFFORTS = ("quick", "balanced", "deep")
 AXES = ("correctness", "standards", "spec")
 VERIFIERS = 6
-# balanced keeps each agent's own model and effort from its frontmatter.
-MODELS = {"quick": ["--effort", "low"], "balanced": [], "deep": ["--model", "opus", "--effort", "high"]}
+# balanced keeps each agent's own model and effort from its frontmatter: opus for the guide writer, sonnet for the
+# reviewers and verifiers. --model overrides the frontmatter, so quick puts the writer back on sonnet.
+MODELS = {"quick": ["--model", "sonnet", "--effort", "low"], "balanced": [], "deep": ["--model", "opus", "--effort", "high"]}
 HEADLESS = ("You run without a person to approve tools. Write files only with the Write tool, inside the work directory. "
             "Bash runs only these commands, one per call, with no pipes, heredocs or redirections: "
             "python3 <build.py> W --check --stack S --only X (with W as an absolute path), and git -C <checkout> show|grep|log <tip> (the checkout holds the whole repository at the tip). Anything else is denied.")

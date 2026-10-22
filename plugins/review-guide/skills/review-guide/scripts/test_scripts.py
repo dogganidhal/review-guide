@@ -366,6 +366,18 @@ def main(keep: str | None = None) -> None:
         (w / sid / "review-spec.json").write_text(json.dumps({"skipped": "No ticket and an empty description.", "findings": []}))
         sys.path.insert(0, str(HERE))
         from build import stages  # noqa: E402
+        from rerun import PLUGIN, agent_cmd  # noqa: E402
+
+        # The model each agent runs on: --model when rerun.py passes one, else the agent's frontmatter.
+        def model(agent: str, effort: str) -> str:
+            cmd = agent_cmd(agent, w, "p", effort, str(root))
+            if "--model" in cmd:
+                return cmd[cmd.index("--model") + 1]
+            return next(ln.split()[1] for ln in (PLUGIN / "agents" / f"{agent}.md").read_text().splitlines() if ln.startswith("model:"))
+        assert {(a, e): model(a, e) for a in ("guide-writer", "reviewer", "comment-verifier") for e in ("quick", "balanced", "deep")} == {
+            ("guide-writer", "quick"): "sonnet", ("guide-writer", "balanced"): "opus", ("guide-writer", "deep"): "opus",
+            ("reviewer", "quick"): "sonnet", ("reviewer", "balanced"): "sonnet", ("reviewer", "deep"): "opus",
+            ("comment-verifier", "quick"): "sonnet", ("comment-verifier", "balanced"): "sonnet", ("comment-verifier", "deep"): "opus"}
         (w / "progress.json").write_text(json.dumps({"agents": {f"{sid}/verify/correctness-f": {"state": "running", "calls": 3, "last": "reading A.java"}}}))
         (w / sid / "verify").mkdir()
         (w / sid / "verify" / "correctness-x.json").write_text(json.dumps({"status": "verified", "note": "No reader."}))
