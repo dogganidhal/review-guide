@@ -34,12 +34,15 @@ import re
 import secrets
 import subprocess
 import sys
+import shutil
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 
+import share
 from ask import Asker, carry_threads
 from build import stages
 from fetch import PR_REF
@@ -109,6 +112,23 @@ def review_id(refs: list[str]) -> str:
     slug = re.sub(r"[^\w.-]", "-", "-".join(repos) + "-" + "-".join(r.split("#")[1] for r in refs))[:80]
     key = "\n".join(refs).lower().encode()
     return f"{slug}-{hashlib.sha1(key, usedforsecurity=False).hexdigest()[:8]}"
+
+
+def review_payload(pr: dict, req: dict, hunks: dict) -> dict:
+    """The body posted as the review of one PR: the page's request checked against the lines the PR's diff accepts. The page's
+    "copy the post command" builds the same JSON for `gh api`. Raises ValueError for a line outside the diff."""
+    comments = []
+    for c in req["comments"]:
+        commentable = set(hunks.get(c["path"], {}).get("commentable", []))
+        span = range(c.get("start_line") or c["line"], c["line"] + 1)
+        if not span or any(i not in commentable for i in span):
+            raise ValueError(f"{c['path']}:{c['line']} is outside the diff")
+        comment = {"path": c["path"], "line": c["line"], "side": "RIGHT", "body": c["body"]}
+        if c.get("start_line"):
+            comment |= {"start_line": c["start_line"], "start_side": "RIGHT"}
+        comments.append(comment)
+    # A PR lower in a lagging stack is reviewed at the commit its child contains; comments anchor there.
+    return {"commit_id": pr["review_sha"], "event": req["event"], "body": req["body"], "comments": comments}
 
 
 def runner_alive(pid) -> bool:
@@ -561,22 +581,13 @@ def handler(home: Home):
                     return self.reply(400, {"error": "unknown review type"})
                 if req["event"] != "COMMENT" and pr["author"] == data["viewer"]:
                     return self.reply(400, {"error": "GitHub only accepts comment reviews on your own PR"})
-                hunks = read(rdir / str(n) / "hunks.json")
-                comments = []
-                for c in req["comments"]:
-                    commentable = set(hunks.get(c["path"], {}).get("commentable", []))
-                    span = range(c.get("start_line") or c["line"], c["line"] + 1)
-                    if not span or any(i not in commentable for i in span):
-                        return self.reply(400, {"error": f"{c['path']}:{c['line']} is outside the diff"})
-                    comment = {"path": c["path"], "line": c["line"], "side": "RIGHT", "body": c["body"]}
-                    if c.get("start_line"):
-                        comment |= {"start_line": c["start_line"], "start_side": "RIGHT"}
-                    comments.append(comment)
+                try:
+                    payload = review_payload(pr, req, read(rdir / str(n) / "hunks.json"))
+                except ValueError as e:
+                    return self.reply(400, {"error": str(e)})
                 head = gh("pr", "view", str(n), "-R", data["repo"], "--json", "headRefOid", "--jq", ".headRefOid").strip()
                 if head != pr["sha"]:
                     return self.reply(409, {"error": f"#{n} has new commits ({pr['sha'][:8]} to {head[:8]}); rerun the review guide"})
-                # A PR lower in a lagging stack is reviewed at the commit its child contains; comments anchor there.
-                payload = {"commit_id": pr["review_sha"], "event": req["event"], "body": req["body"], "comments": comments}
                 out = json.loads(gh("api", "-X", "POST", f"repos/{data['repo']}/pulls/{n}/reviews", "--input", "-", stdin=json.dumps(payload)))
                 write(rdir / "posted.json", posted | {str(n): out["html_url"]})
                 with home.lock:
