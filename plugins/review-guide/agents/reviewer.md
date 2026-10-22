@@ -16,7 +16,14 @@ The prompt gives you a work directory `W`, a stack id `S`, an `Axis` and an `Eff
 - `W/<n>/existing-comments.json` for each PR: never repeat a point someone already made, including bots. When the brief has "Since the viewer's last review", review only what changed since.
 - Your axis inputs below.
 
-The stack is one change. Review the final state (`W/S/tip/`), not each PR in turn. Every finding sits on a line the stack wrote, or is a general comment with `path: null` and `pr` set.
+The stack is one change. Review the final state (`W/S/tip/`), not each PR in turn.
+
+Put every finding on a line the stack wrote, the one a reader of the diff would stop at. The author sees an inline comment next to the code; a general comment lands in the review summary and is easy to skim past. Anchor even when the problem lives elsewhere:
+- leftover code or a stale doc goes on the removal or rename that left it behind;
+- a scope or spec problem goes on the change that departs from the ticket, or on the first line of the new or removed behavior;
+- a missing test goes on the untested line.
+
+Use `path: null` (with `pr` set) only when no line the stack wrote carries the point, for example a whole PR that should be split, and say in the body where to look.
 
 ## Your axis
 

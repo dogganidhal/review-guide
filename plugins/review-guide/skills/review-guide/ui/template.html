@@ -259,6 +259,8 @@ svg .hopnum { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: 
 .cm .proof { margin: 8px 0 0; padding: 7px 9px; border-radius: 6px; background: var(--surface-2); font-size: .8rem; color: var(--muted); }
 .cm .proof b { color: var(--text); }
 .cm .ev { font-family: var(--mono); font-size: .72rem; color: var(--faint); margin-top: 4px; overflow-wrap: anywhere; }
+.cm .cites { font-size: .8rem; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+.cm .cites a, .cm .ev a { font-family: var(--mono); font-size: .76rem; }
 .types { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .types button { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 99px; padding: 1px 9px; font-size: .74rem; cursor: pointer; }
 .types button[aria-pressed="true"] { border-color: transparent; font-weight: 700; }
@@ -463,7 +465,25 @@ const comments = (st) => [...st.comments, ...extras(st)];
 const cmState = (c) => (state.cm[c.id] ??= { on: !!c.custom, gone: false, sev: c.severity, text: c.body || '' });
 // Backticked names in guide text render as code.
 const rich = (text) => String(text).split('`').map((part, i) => (i % 2 ? el('code', {}, part) : part));
-const postText = (c) => { const cs = cmState(c); return ((PREFIX[cs.sev] ?? '') + cs.text.trim()).trim(); };
+// A finding's `path:line` references: opens the file view when the stack changed the file, GitHub at the tip otherwise.
+function evRefs(st, c) {
+  return (c.evidence || []).map((e) => {
+    const m = /^(.*?):(\d+)(?:-(\d+))?$/.exec(e);
+    const path = m ? m[1] : e, f = fileOf(st, path);
+    const sha = f?.status === 'deleted' ? st.base : st.tip;
+    const url = `https://github.com/${DATA.repo}/blob/${sha}/${path}` + (m ? `#L${m[2]}${m[3] ? `-L${m[3]}` : ''}` : '');
+    return { e, label: `${path.split('/').pop()}${m ? `:${m[2]}${m[3] ? `-${m[3]}` : ''}` : ''}`, url, inStack: !!f && f.status !== 'deleted', path };
+  });
+}
+const evLinks = (st, c) => evRefs(st, c).map((r, i) => [i ? ' · ' : '', r.inStack
+  ? el('a', { href: '#', title: r.e, onclick: (ev) => { ev.preventDefault(); openFile(r.path); } }, r.label) : ext(r.url, r.label + ' ↗')]);
+// A comment with no line goes in the review summary; it carries links to the code it cites, since the author reads it without the page.
+const postText = (c) => {
+  const cs = cmState(c), text = ((PREFIX[cs.sev] ?? '') + cs.text.trim()).trim();
+  const st = DATA.stacks.find((s) => comments(s).includes(c));
+  const refs = !c.path && st && !c.custom ? evRefs(st, c) : [];
+  return refs.length ? `${text}\n\n${refs.map((r) => `[\`${r.label}\`](${r.url})`).join(' · ')}` : text;
+};
 
 function highlight(texts, path) {
   const lang = LANG[(path.split('.').pop() || '').toLowerCase()] || (path.endsWith('pom.xml') ? 'xml' : null);
@@ -839,9 +859,11 @@ function commentCard(st, c) {
   const cs = cmState(c);
   const rerender = () => { save(); render(); };
   const where = c.path ? `${c.path.split('/').pop()}:${c.line}` : 'review summary';
-  const target = el('span', { class: 'to', title: `Posted on #${c.pr}` }, '→', prDot(st, c.pr), `#${c.pr}`, ' · ', c.link ? ext(c.link, where) : where);
+  const target = el('span', { class: 'to', title: c.path ? `Posted on #${c.pr}` : `Posted on #${c.pr}, in the review summary: no line the stack changed carries it` }, '→', prDot(st, c.pr), `#${c.pr}`, ' · ', c.link ? ext(c.link, where) : where);
+  // General comments show the code they cite up front; line comments sit on their line already.
+  const cites = !c.path && c.evidence?.length ? el('div', { class: 'cites' }, 'In ', evLinks(st, c)) : null;
   const proof = c.status ? el('div', { class: 'proof' }, el('b', { class: 'st ' + c.status }, STATUS[c.status]), c.note ? [' ', c.note] : null,
-    c.evidence?.length ? el('div', { class: 'ev' }, c.evidence.map((e) => e.split('/').pop()).join(' · ')) : null) : null;
+    c.evidence?.length ? el('div', { class: 'ev' }, evLinks(st, c)) : null) : null;
   if (cs.gone) {
     return el('div', { class: 'cm gone' }, el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Dismissed suggestion'),
       el('span', { class: 'grow' }), el('button', { class: 'linkish', type: 'button', onclick: () => { cs.gone = false; rerender(); } }, 'Undo')),
@@ -853,7 +875,7 @@ function commentCard(st, c) {
       el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Suggested comment'),
         el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.axis ? el('span', { class: 'axtag' }, c.axis) : null, c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null,
         el('span', { class: 'grow' }), target),
-      el('div', { class: 'ttl' }, c.title),
+      el('div', { class: 'ttl' }, c.title), cites,
       open ? el('div', { class: 'cmb' }, el('p', { class: 'preview' }, cs.text), proof) : null,
       el('div', { class: 'acts' },
         el('button', { class: 'btn primary', type: 'button', onclick: () => { cs.on = true; state.cmOpen[c.id] = true; rerender(); } }, 'Add to my review'),
@@ -867,7 +889,7 @@ function commentCard(st, c) {
   return el('div', { class: 'cm mine' },
     el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, DATA.viewer.slice(0, 1).toUpperCase()), c.custom ? 'Your comment' : 'In your review'),
       types, el('span', { class: 'grow' }), target),
-    el('div', { class: 'cmb' }, ta, PREFIX[cs.sev] ? el('div', { class: 'ev' }, `Posted as “${PREFIX[cs.sev]}…”`) : null, c.custom ? null : proof),
+    el('div', { class: 'cmb' }, ta, PREFIX[cs.sev] ? el('div', { class: 'ev' }, `Posted as “${PREFIX[cs.sev]}…”`) : null, cites && el('div', { class: 'ev' }, 'Posted with links to the code it cites.'), c.custom ? null : proof),
     el('div', { class: 'acts' },
       c.custom
         ? el('button', { class: 'btn', type: 'button', onclick: () => { state.extra[st.id] = extras(st).filter((x) => x.id !== c.id); rerender(); } }, 'Delete')

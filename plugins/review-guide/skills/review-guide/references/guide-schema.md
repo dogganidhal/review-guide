@@ -87,7 +87,7 @@ One file per axis: `correctness`, `standards`, `spec`.
 Rules `build.py --check --only <axis>` enforces:
 
 - `severity` is `blocker`, `should`, `question` or `nit`. `title` up to 90 characters, `body` up to 700. `evidence` lists `path:line` references.
-- An inline finding's `line` (and `start_line` through `line`) must be lines the stack wrote, meaning they appear in `attribution.json`. A range must come from one PR. A finding that cannot sit on such a line uses `path: null` and names its PR with `"pr": 3564`.
+- An inline finding's `line` (and `start_line` through `line`) must be lines the stack wrote, meaning they appear in `attribution.json`. A range must come from one PR. A finding that cannot sit on such a line uses `path: null` and names its PR with `"pr": 3564`. That should be rare: the page shows such findings in the review summary, with links to their `evidence`, and an inline comment on the change that caused the problem reads better.
 - At most 3 findings per PR per axis.
 - `skipped` is `null`, or one sentence on why the axis could not be reviewed (for example, no spec).
 
