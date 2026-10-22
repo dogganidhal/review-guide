@@ -366,6 +366,14 @@ def check_ask(w: pathlib.Path, root: pathlib.Path) -> None:
         lt = req(f"/1/threads/{ids[0]}")[1]["target"]
         assert lt["label"] == "A.java:3-4" and lt["text"] == "  long y;\n  void f() {}", lt
 
+        # Diagram targets: a component, a flowchart's own box, an arrow of a structure diagram and a message of a sequence.
+        for tgt, label in (({"kind": "node", "ref": "a", "section": 3}, "A"), ({"kind": "node", "ref": "q"}, "y set?"), ({"kind": "node", "ref": "in>q"}, "f called to y set?"),
+                           ({"kind": "node", "ref": "a>b"}, "A to B"), ({"kind": "node", "ref": "b>c"}, "B to C")):
+            code, out = ask(1, target=tgt, q="What is this?")
+            assert code == 202, (tgt, out)
+            assert wait(1, out["thread"])["target"]["label"] == label, tgt
+        assert ask(1, target={"kind": "node", "ref": "a>q"}, q="x")[0] == 400 and ask(1, target={"kind": "node", "ref": "nope"}, q="x")[0] == 400
+
         # Proposals: a comment on a line the stack wrote, a re-judge that does not belong on a line thread, one that does, a guide fix.
         def propose(tid_or_target, action, q="Settle it"):
             reply.write_text("It does. " + "```action\n" + json.dumps(action) + "\n```")
