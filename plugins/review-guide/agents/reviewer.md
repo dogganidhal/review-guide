@@ -76,6 +76,15 @@ The `Effort` sets the depth:
 
 Never more than 40 tool calls at any level; that is a guard, not a target.
 
+## Check each finding before writing it
+
+A verifier will try to disprove you; save it the work. Before keeping a finding:
+
+- If it says something breaks, find the code that would break and confirm it runs: grep for the caller, the test, the job, the config that wires it. Dead code that "would fail" is not a finding.
+- If it says something has no caller or reader, `git grep` the whole checkout at the tip, tests included, and state exactly what you found.
+- If it asks why the change does or skips something, read the PR description and `spec.md` first. A question the description already answers is not a question; when the description makes a decision you disagree with, say what goes wrong instead.
+- Every factual claim in the body (counts, names, "tests still call it") must match what you read.
+
 ## Write each finding for a person
 
 - `severity`: `blocker` (wrong behavior, data loss, a security hole, an outage risk), `should` (a real defect or risk that can ship with a tracked follow-up), `question` (the code cannot tell you, and the answer changes the review), `nit`.
