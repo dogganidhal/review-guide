@@ -488,6 +488,14 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
 .gsec.askable { position: relative; }
 .gsec.askable > .askbtn { position: absolute; top: 20px; right: 0; z-index: 3; }
 .gsec.askable > .sec { padding-right: 56px; }
+.risk.askable, .glist li.askable, .gtable tr.askable { position: relative; }
+.risk.askable > .askbtn { position: absolute; top: 8px; right: 8px; }
+.risk.askable > .rh { padding-right: 56px; }
+.glist li.askable > .askbtn, .gtable td > .askbtn { margin-left: 8px; vertical-align: 1px; }
+.gtable tr.qrow > td { padding: 0; }
+.gtable tr.qrow .thr, .gtable tr.qrow .askbox { margin: 8px 10px; }
+.risk > .thr, .risk > .askbox, .glist li > .thr, .glist li > .askbox { margin: 8px 0 2px; }
+.risk.askable:hover > .askbtn, .glist li.askable:hover > .askbtn, .gtable tr.askable:hover .askbtn { opacity: 1; }
 .facts li { position: relative; }
 .facts li > .askbtn { position: absolute; top: -2px; right: 0; }
 .facts li > span:not(.n) { padding-right: 44px; }
@@ -1542,12 +1550,15 @@ function diagramView(st, sec) {
 }
 
 const RISK = { open: 'open', decided: 'decided', accepted: 'accepted limit' };
-function risksView(st, sec) {
-  return el('div', { class: 'risks' }, sec.items.map((r) => {
+const ROWS = { risks: 'items', list: 'items', table: 'rows', before_after: 'rows' };
+// What a row is called in a thread's chip; the same rule as `row_label` in ask.py, which finds the row again in a later round.
+const itemLabel = (sec, j) => { const r = sec[ROWS[sec.type]][j]; return plain(String(sec.type === 'risks' ? r.title : sec.type === 'before_after' ? r.aspect : sec.type === 'table' ? r[0] : r)).slice(0, 80); };
+function risksView(st, sec, ask, mine) {
+  return el('div', { class: 'risks' }, sec.items.map((r, j) => {
     const t = dgTarget(st, r.at), m = r.at && AT_RE.exec(r.at);
-    return el('div', { class: 'risk ' + r.status }, el('div', { class: 'rh' }, el('span', { class: 'rs' }, RISK[r.status] || r.status), el('b', {}, rich(r.title))),
+    return el('div', { class: 'risk askable ' + r.status }, ask(j), el('div', { class: 'rh' }, el('span', { class: 'rs' }, RISK[r.status] || r.status), el('b', {}, rich(r.title))),
       el('p', {}, rich(r.text)),
-      m ? (t ? el('a', { href: '#', class: 'at', onclick: (e) => { e.preventDefault(); t.open(); } }, `${m[1].split('/').pop()}:${m[2]}`) : el('span', { class: 'at' }, `${m[1].split('/').pop()}:${m[2]}`)) : null);
+      m ? (t ? el('a', { href: '#', class: 'at', onclick: (e) => { e.preventDefault(); t.open(); } }, `${m[1].split('/').pop()}:${m[2]}`) : el('span', { class: 'at' }, `${m[1].split('/').pop()}:${m[2]}`)) : null, mine(j));
   }));
 }
 
@@ -1562,17 +1573,25 @@ if (document.fonts && !document.fonts.check(DGF.node)) {
 }
 // ---- End of diagrams -----------------------------------------------------------------------------------------------
 
-function sectionView(st, sec) {
+function sectionView(st, sec, si) {
   const head = (aside) => el('div', { class: 'sec' }, sec.title, aside ? el('span', { class: 'aside' }, aside) : null);
   if (sec.type === 'diagram') return [head(), diagramView(st, sec)];
-  if (sec.type === 'risks') return [head(), risksView(st, sec)];
+  // Each risk, row and item can be asked about on its own: a button, and the threads about it right under it.
+  const mine = (j) => qs(st, (g) => g.kind === 'item' && g.ref === si && g.item === j);
+  const ask = (j) => askBtn(`${sec.title}: ${itemLabel(sec, j)}`, () => openAsk(TG.item(st, si, j)));
+  const rows = (cols, cells) => sec[ROWS[sec.type]].flatMap((r, j) => {
+    const q = mine(j);
+    return [el('tr', { class: 'askable' }, cells(r).map((c, k) => (k === cols - 1 ? el('td', {}, c, ask(j)) : c))),
+      q.length ? el('tr', { class: 'qrow' }, el('td', { colspan: cols }, q)) : null];
+  });
+  if (sec.type === 'risks') return [head(), risksView(st, sec, ask, mine)];
   if (sec.type === 'before_after') return [head(), el('div', { class: 'tscroll' }, el('table', { class: 'gtable' },
     el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, 'Before'), el('th', {}, 'After'))),
-    el('tbody', {}, sec.rows.map((r) => el('tr', {}, el('td', { class: 'aspect' }, rich(r.aspect)), el('td', { class: 'before' }, rich(r.before)), el('td', {}, rich(r.after)))))))];
+    el('tbody', {}, rows(3, (r) => [el('td', { class: 'aspect' }, rich(r.aspect)), el('td', { class: 'before' }, rich(r.before)), el('td', {}, rich(r.after))]))))];
   if (sec.type === 'table') return [head(), el('div', { class: 'tscroll' }, el('table', { class: 'gtable' },
     el('thead', {}, el('tr', {}, sec.columns.map((c) => el('th', {}, c)))),
-    el('tbody', {}, sec.rows.map((r) => el('tr', {}, r.map((c) => el('td', {}, rich(c))))))))];
-  if (sec.type === 'list') return [head(), el('ul', { class: 'glist' }, sec.items.map((it) => el('li', {}, rich(it))))];
+    el('tbody', {}, rows(sec.columns.length, (r) => r.map((c) => el('td', {}, rich(c)))))))];
+  if (sec.type === 'list') return [head(), el('ul', { class: 'glist' }, sec.items.map((it, j) => el('li', { class: 'askable' }, rich(it), ask(j), mine(j))))];
   if (sec.type === 'steps') {
     const done = sec.steps.filter((s) => state.done[s.id]).length;
     return [head(`${done}/${sec.steps.length} reviewed`), el('div', { class: 'steps' }, sec.steps.map((s, i) => stepCard(st, s, i)))];
@@ -1598,7 +1617,7 @@ function findingsView(st) {
     })];
 }
 
-function codeBlock(st, rows, path, { excerpt, link, title, bare, onOpen, oldNums } = {}) {
+function codeBlock(st, rows, path, { excerpt, link, title, bare, onOpen, oldNums, ask } = {}) {
   const flat = Array.isArray(rows[0]) ? rows.flat() : rows;
   const texts = (k) => flat.filter((r) => (k === '-') === (r.k === '-'));
   const nw = texts('+'), od = texts('-');
@@ -1608,26 +1627,26 @@ function codeBlock(st, rows, path, { excerpt, link, title, bare, onOpen, oldNums
   if (!bare) for (const c of comments(st)) if (c.path === path) (byLine.get(c.line) || byLine.set(c.line, []).get(c.line)).push(c);
   const box = el('div', { class: 'code' });
   if (title || link) box.append(el('div', { class: 'head' }, onOpen ? el('button', { type: 'button', onclick: onOpen, title: 'Open the file' }, title || path) : el('span', {}, title || path), link ? ext(link, 'GitHub ↗') : null));
-  const full = !excerpt && !bare;
+  const full = !excerpt && !bare, pickable = full || (!!ask && CAN_ASK);
   const hunkRows = (list) => list.forEach((r) => {
     const can = r.k === '+' && r.pr;
     const dim = state.focus && r.k === '+' && r.pr !== state.focus;
-    const pick = full && r.k !== '-' ? (e) => (CAN_ASK ? pickLine(st, path, box, r, e.shiftKey) : can && addCustom(st, path, r)) : can ? () => addCustom(st, path, r) : null;
+    const pick = pickable && r.k !== '-' ? (e) => (CAN_ASK ? pickLine(st, path, box, r, e.shiftKey) : can && addCustom(st, path, r)) : can ? () => addCustom(st, path, r) : null;
     const num = el('span', { class: 'no' + (pick ? ' go' : ''), title: pick ? (CAN_ASK ? `Pick this line to comment or ask (shift-click for a range)` : `Comment on this line (goes to ${tag(r.pr)})`) : null, onclick: pick }, r.k === '-' ? '' : r.n);
     const strip = el('span', { style: r.pr ? `background:${prColor(st, r.pr)}` : '', title: r.pr ? `written by ${tag(r.pr)}` : null });
     const src = el('span', { class: 'src', html: html.get(r) || ' ' });
     const fresh = r.k === '+' && sinceLines(st, path)?.includes(r.n);
     const cls = `ln${excerpt ? ' excerpt' : ''}${r.k === '+' ? ' add' : r.k === '-' ? ' del' : ''}${dim ? ' dim' : ''}${fresh ? ' mark' : ''}`;
     if (excerpt && r.k === '-' && oldNums) num.textContent = r.o;
-    const row = excerpt ? el('div', { class: cls }, num, strip, src) : el('div', { class: cls, 'data-n': r.k === '-' ? null : r.n }, el('span', { class: 'no' }, r.k === '+' ? '' : r.o), num, strip, src);
+    const row = excerpt ? el('div', { class: cls, 'data-n': pickable && r.k !== '-' ? r.n : null }, num, strip, src) : el('div', { class: cls, 'data-n': r.k === '-' ? null : r.n }, el('span', { class: 'no' }, r.k === '+' ? '' : r.o), num, strip, src);
     rowData.set(row, r);
     box.append(row);
-    if (r.k !== '-') for (const c of byLine.get(r.n) || []) box.append(commentCard(st, c, { inDiff: true, ask: full }), ...qs(st, (g) => g.kind === 'finding' && g.ref === c.id));
-    if (full && r.k !== '-') box.append(...qs(st, (g) => g.kind === 'line' && g.path === path && g.end === r.n));
+    if (r.k !== '-') for (const c of byLine.get(r.n) || []) box.append(commentCard(st, c, { inDiff: true, ask: pickable }), ...qs(st, (g) => g.kind === 'finding' && g.ref === c.id));
+    if (pickable && r.k !== '-') box.append(...qs(st, (g) => g.kind === 'line' && g.path === path && g.end === r.n));
   });
   if (Array.isArray(rows[0])) rows.forEach((h, i) => { box.append(el('div', { class: 'hunksep' }, i ? '⋯' : `@@ ${h[0]?.n ?? h[0]?.o}`)); hunkRows(h); });
   else hunkRows(rows);
-  if (full && CAN_ASK) {
+  if (pickable && CAN_ASK) {
     box.addEventListener('mouseup', (e) => {
       const g = getSelection(), end = (n) => (n && (n.nodeType === 1 ? n : n.parentElement)?.closest('.ln[data-n]'));
       if (!g || g.isCollapsed || e.target.closest('.cm, .thr, .askbox, .selbar')) return;
@@ -1728,7 +1747,7 @@ function stepCard(st, s, i) {
   if (open) {
     const f = fileOf(st, s.path);
     card.append(el('div', { class: 'inner' },
-      codeBlock(st, s.lines, s.path, { excerpt: true, link: s.link, title: `${s.path}:${s.start}-${s.end}` }),
+      codeBlock(st, s.lines, s.path, { excerpt: true, ask: true, link: s.link, title: `${s.path}:${s.start}-${s.end}` }),
       s.test === false ? null : el('p', { class: 'testline' }, 'Test: ', s.test ? el('code', {}, s.test) : el('span', { class: 'none' }, 'none covers this')),
       el('div', { class: 'bar' },
         el('label', {}, el('input', { type: 'checkbox', checked: done, onchange: (e) => { state.done[s.id] = e.target.checked; save(); render(); } }), 'Reviewed'),
@@ -1818,7 +1837,7 @@ function guideView(st) {
         askBtn(`key fact ${i + 1}`, () => openAsk(TG.fact(st, i))), qs(st, (g) => g.kind === 'fact' && g.ref === i))))),
     qs(st, (g) => g.kind === 'free' || (g.kind === 'node' && g.section == null)),
     st.sections.map((sec, i) => {
-      const v = sectionView(st, sec);
+      const v = sectionView(st, sec, i);
       if (!v) return null;
       if (sec._fixed) v[0].append(el('span', { class: 'fixed' }, 'corrected after a question'));
       const own = qs(st, (g) => g.kind === 'section' && g.ref === i), nodes = qs(st, (g) => g.kind === 'node' && g.section === i);
@@ -2118,7 +2137,7 @@ function selfSendView(st) {
         oninput: (e) => { vs.body = e.target.value; save(); } });
       body.value = vs.body;
       row.append(el('div', { class: 'sbody' },
-        mine.length ? mine.map((m) => commentCard(st, m)) : el('p', { class: 'verdict' }, 'No comment on this layer.'),
+        mine.length ? mine.map((m) => [commentCard(st, m, { ask: true }), qs(st, (g) => g.kind === 'finding' && g.ref === m.id)]) : el('p', { class: 'verdict' }, 'No comment on this layer.'),
         el('div', { class: 'sec' }, 'Summary for the agent'), body));
       return row;
     }))];
@@ -2203,7 +2222,7 @@ function prRow(st, x, busy) {
     : `${plural(openPts.length, 'open point', 'open points')}: ${openPts.slice(0, 2).map((c) => c.title).join('; ')}${openPts.length > 2 ? '…' : ''}`;
   row.append(el('div', { class: 'sbody' },
     el('p', { class: 'verdict' }, own ? why : `Suggested ${VERB[sug]}: ${why}`), lag,
-    mine.length ? mine.map((m) => commentCard(st, m)) : el('p', { class: 'verdict' }, 'No comment routed to this PR.'),
+    mine.length ? mine.map((m) => [commentCard(st, m, { ask: true }), qs(st, (g) => g.kind === 'finding' && g.ref === m.id)]) : el('p', { class: 'verdict' }, 'No comment routed to this PR.'),
     el('div', { class: 'sec' }, 'Summary posted with the review'), body,
     el('div', { class: 'actions' },
       el('button', { class: 'btn', type: 'button', disabled: busy || !!done || !ready, onclick: () => postMany([reviewOf(st, p)]) }, `Post only #${p.n}`),
@@ -2231,6 +2250,7 @@ const base = (p) => p.split('/').pop();
 const TG = {
   line: (st, path, start, end) => ({ kind: 'line', stack: st.id, path, start, end, label: `${base(path)}:${start}${end > start ? `-${end}` : ''}` }),
   section: (st, i) => ({ kind: 'section', stack: st.id, ref: i, label: st.sections[i].title }),
+  item: (st, i, j) => ({ kind: 'item', stack: st.id, ref: i, item: j, section_title: st.sections[i].title, label: itemLabel(st.sections[i], j) }),
   fact: (st, i) => ({ kind: 'fact', stack: st.id, ref: i, label: st.key_facts[i].title }),
   step: (st, s) => ({ kind: 'step', stack: st.id, ref: s.id, label: s.title }),
   finding: (st, c) => ({ kind: 'finding', stack: st.id, ref: c.id, label: c.title }),
@@ -2246,12 +2266,12 @@ const TG = {
 function chipText(g) {
   const st = DATA.stacks.find((s) => s.id === g.stack) || ST(), l = plain(g.label || '');
   if (g.kind === 'step') { const e = allSteps(st).find((x) => x.s.id === g.ref); return e ? `Step ${e.n}: ${l}` : l; }
-  const pre = { finding: 'Finding: ', fact: 'Fact: ', section: 'Section: ', node: String(g.ref).includes('>') ? 'Arrow: ' : 'Box: ' }[g.kind] || '';
+  const pre = { finding: 'Finding: ', fact: 'Fact: ', section: 'Section: ', item: `${plain(g.section_title || 'Row')}: `, node: String(g.ref).includes('>') ? 'Arrow: ' : 'Box: ' }[g.kind] || '';
   return pre + l;
 }
 const STARTERS = {
   line: ['Why this way?', 'What calls this?', 'What breaks if…', 'Is this tested?'], step: ['Why this way?', 'What calls this?', 'What breaks if…', 'Is this tested?'],
-  section: ['Why this way?', 'What breaks if…', 'Is this tested?'], fact: ['Why is this true?', 'What breaks if…', 'Is this tested?'],
+  section: ['Why this way?', 'What breaks if…', 'Is this tested?'], item: ['Why is this true?', 'What breaks if…', 'Is this tested?'], fact: ['Why is this true?', 'What breaks if…', 'Is this tested?'],
   node: ['What calls this?', 'Why this way?', 'What breaks if…'], finding: ['Is this real?', 'Show me the caller', 'What breaks if…', 'Is this tested?'],
   free: ['Why this way?', 'What calls this?'],
 };
@@ -2278,10 +2298,12 @@ function openAsk(g, o = {}) {
   asking = { target: g, text: '', rail: !!o.rail, busy: false, err: '' };
   lineSel = null;
   if (o.rail) document.body.classList.add('rail-open');
-  render();
-  requestAnimationFrame(() => { const ta = document.querySelector('[data-asktext]'); if (ta) { ta.focus({ preventScroll: true }); ta.scrollIntoView({ block: 'nearest' }); } });
+  const top = $main().scrollTop;
+  render(); settleScroll(top);
+  // The box is brought into view only once the page has settled at the old position; before that the diagrams are still short.
+  setTimeout(() => { const ta = document.querySelector('[data-asktext]'); if (ta) { ta.focus({ preventScroll: true }); ta.scrollIntoView({ block: 'nearest' }); } }, 280);
 }
-const closeAsk = () => { asking = null; render(); };
+const closeAsk = () => { const top = $main().scrollTop; asking = null; render(); settleScroll(top); };
 const rebox = () => document.querySelector('.askbox')?.replaceWith(askBox(asking.target, { rail: asking.rail }));
 const MAC = /Mac|iPhone|iPad/.test(navigator.platform || '');
 
@@ -2680,7 +2702,7 @@ function paintSel(box) {
     el('button', { class: 'linkish', type: 'button', 'aria-label': 'Clear the selection', onclick: () => { lineSel = null; paintSel(box); } }, '✕'));
   rows.at(-1).after(bar);
 }
-const clearSel = () => { if (lineSel) { lineSel = null; paintSel(document.querySelector('#content > .code')); } };
+const clearSel = () => { if (lineSel) { lineSel = null; document.querySelectorAll('#content .code').forEach(paintSel); } };
 
 document.addEventListener('keydown', (e) => {
   const t = e.target, typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable;

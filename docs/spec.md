@@ -247,7 +247,7 @@ Single self-contained HTML file. Figtree from Google Fonts and highlight.js 11.9
 - **Questions:** on the latest round, anything on the page can be asked about (server side under "Questions" below). An earlier round hides every Ask but still shows its threads.
   - **Where to ask:**
     - **Diff:** clicking a line number picks that line, shift-click or a drag over the code picks a range. A bar under the selection offers "Comment" (the old behavior, on the last line) and "Ask". Without questions (an earlier round) the click comments at once, as before.
-    - **Guide:** an "Ask" button at the top right of each section, key fact and step, shown on hover or focus (always on touch screens).
+    - **Guide:** an "Ask" button (with the agent sparkle) at the top right of each section, key fact and step, and on each risk, table row, before/after row and list item, shown on hover or focus (always on touch screens). The diff lines of a reading step are pickable like the diff view. Suggested comments in "Your review" can be asked about too. Opening an ask box keeps the scroll position.
     - **Diagrams:** clicking or pressing Enter on a box or an arrow opens a popover with "Open the code" (when it has `at`, or a file) and "Ask about this" (kind `node`, `ref` the box id or `a>b`, and `section` the diagram, so a flowchart's own boxes resolve).
     - **Findings:** "Ask" next to "Add to my review" and "Dismiss", and next to "Remove from my review".
     - **Anywhere:** `?` or the "Ask a question" button at the top of the rail opens a box in the rail, attached to the selected lines, else the section or step on screen, with "Remove" to ask a free question.

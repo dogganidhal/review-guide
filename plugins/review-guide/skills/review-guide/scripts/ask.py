@@ -23,7 +23,7 @@ from rerun import DENY, PLUGIN, describe
 MAX_RUNNING = 3
 TURN_TIMEOUT = 900
 SAVE_EVERY = 0.15
-KINDS = ("line", "section", "fact", "step", "node", "finding", "free")
+KINDS = ("line", "section", "fact", "step", "node", "finding", "item", "free")
 BUSY = ("queued", "running")
 THREAD = re.compile(r"[\w-]{1,40}")
 ACTION = re.compile(r"```action[ \t]*\r?\n(.*?)\r?\n?```[ \t]*\Z", re.S)
@@ -79,6 +79,15 @@ def index(ref, items: list, what: str) -> int:
     return ref
 
 
+ROWS = {"risks": "items", "list": "items", "table": "rows", "before_after": "rows"}
+
+
+def row_label(sec: dict, row) -> str:
+    """What a row is called in a thread's chip: a risk's title, a table row's first cell, a list item's text."""
+    first = row["title"] if sec["type"] == "risks" else row["aspect"] if sec["type"] == "before_after" else row[0] if sec["type"] == "table" else row
+    return str(first)[:80]
+
+
 def resolve(data: dict, rdir: pathlib.Path, t) -> tuple[dict, dict | None, str]:
     """Check a target against the round's guide.json and fetch what it points at: (the target as stored, its stack in
     guide.json, the text the agent is given). Raises ValueError for a target that is not in this round."""
@@ -114,6 +123,15 @@ def resolve(data: dict, rdir: pathlib.Path, t) -> tuple[dict, dict | None, str]:
         i = index(ref, st["sections"], "section")
         sec = st["sections"][i]
         return out | {"ref": i, "label": sec["title"]}, st, json.dumps(source_section(sec, sid), ensure_ascii=False)
+    if kind == "item":
+        i = index(ref, st["sections"], "section")
+        sec = st["sections"][i]
+        if sec["type"] not in ROWS:
+            raise ValueError("target.ref is a section without rows")
+        j = index(t.get("item"), sec[ROWS[sec["type"]]], "row")
+        row = sec[ROWS[sec["type"]]][j]
+        body = {"section": sec["title"], "type": sec["type"], **({"columns": sec["columns"]} if sec["type"] == "table" else {}), "row": row}
+        return out | {"ref": i, "item": j, "label": row_label(sec, row), "section_title": sec["title"]}, st, json.dumps(body, ensure_ascii=False)
     if kind == "fact":
         i = index(ref, st["key_facts"], "key fact")
         return out | {"ref": i, "label": st["key_facts"][i]["title"]}, st, json.dumps(st["key_facts"][i], ensure_ascii=False)
@@ -200,6 +218,16 @@ def move_target(t: dict, dst: pathlib.Path, new: dict) -> dict | None:
         if i is None:
             return None
         t["ref"] = i
+    elif t["kind"] == "item":
+        st = next((s for s in new["stacks"] if s["id"] == t.get("stack")), None)
+        i = next((i for i, x in enumerate(st["sections"] if st else []) if x["title"] == t.get("section_title") and x["type"] in ROWS), None)
+        if i is None:
+            return None
+        sec = st["sections"][i]
+        j = next((j for j, r in enumerate(sec[ROWS[sec["type"]]]) if row_label(sec, r) == t["label"]), None)
+        if j is None:
+            return None
+        t |= {"ref": i, "item": j}
     try:
         return resolve(new, dst, t)[0]
     except ValueError:

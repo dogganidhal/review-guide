@@ -318,7 +318,17 @@ def check_ask(w: pathlib.Path, root: pathlib.Path) -> None:
         for bad in ({"kind": "line", "path": "A.java", "start": 3, "end": 99}, {"kind": "line", "path": "Z.java", "start": 1}, {"kind": "finding", "ref": "nope"},
                     {"kind": "section", "ref": 9}, {"kind": "step", "ref": "nope"}, {"kind": "poem"}, "x"):
             assert ask(1, target=bad)[0] == 400, bad
+        secs = json.loads((r1 / "guide.json").read_text())["stacks"][0]["sections"]
+        ri, ba = (next(i for i, x in enumerate(secs) if x["type"] == t) for t in ("risks", "before_after"))
+        for bad in ({"kind": "item", "ref": ri, "item": 99}, {"kind": "item", "ref": ri}, {"kind": "item", "ref": 0, "item": 0}):
+            assert ask(1, target=bad)[0] == 400, bad
         assert ask(1, target=finding, q="  ")[0] == 400 and ask(1, tid="nope")[0] == 404 and not argv_log.exists()
+        import ask as askmod
+        data = json.loads((r1 / "guide.json").read_text())
+        got = askmod.resolve(data, r1, {"kind": "item", "stack": sid, "ref": ba, "item": 0})[0]
+        assert got["label"] == secs[ba]["rows"][0]["aspect"][:80] and got["section_title"] == secs[ba]["title"], got
+        moved = askmod.move_target(got, r1, data)
+        assert moved and moved["item"] == 0, moved
 
         # A finding: the streamed answer grows, the session id is stored, the text and target are in the prompt.
         gate.touch()
