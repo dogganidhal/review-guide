@@ -19,9 +19,11 @@ plugins/review-guide/
     scripts/serve.py                       the one server: inbox, rounds, saved page state, posting
     scripts/ask.py                         questions from the page: threads, the answering agent, proposed actions
     scripts/rerun.py                       one round: fetch, then the agents headless
+    scripts/share.py                       share a guide as one file: export, secret check, import bundle checks, checkout for an import
     scripts/test_scripts.py                offline test
     ui/template.html                       the review page (data injected at /*DATA*/null)
     ui/inbox.html                          the server's home: every review
+    ui/vendor/                             Figtree, JetBrains Mono, highlight.js 11.9.0 and their licenses, inlined into shared files
   skills/self-review/SKILL.md              self-review of local work; feedback goes back to the session
 docs/spec.md, docs/status.md
 ```
