@@ -34,12 +34,15 @@ import re
 import secrets
 import subprocess
 import sys
+import shutil
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 
+import share
 from ask import Asker, carry_threads
 from build import stages
 from fetch import PR_REF
@@ -109,6 +112,23 @@ def review_id(refs: list[str]) -> str:
     slug = re.sub(r"[^\w.-]", "-", "-".join(repos) + "-" + "-".join(r.split("#")[1] for r in refs))[:80]
     key = "\n".join(refs).lower().encode()
     return f"{slug}-{hashlib.sha1(key, usedforsecurity=False).hexdigest()[:8]}"
+
+
+def review_payload(pr: dict, req: dict, hunks: dict) -> dict:
+    """The body posted as the review of one PR: the page's request checked against the lines the PR's diff accepts. The page's
+    "copy the post command" builds the same JSON for `gh api`. Raises ValueError for a line outside the diff."""
+    comments = []
+    for c in req["comments"]:
+        commentable = set(hunks.get(c["path"], {}).get("commentable", []))
+        span = range(c.get("start_line") or c["line"], c["line"] + 1)
+        if not span or any(i not in commentable for i in span):
+            raise ValueError(f"{c['path']}:{c['line']} is outside the diff")
+        comment = {"path": c["path"], "line": c["line"], "side": "RIGHT", "body": c["body"]}
+        if c.get("start_line"):
+            comment |= {"start_line": c["start_line"], "start_side": "RIGHT"}
+        comments.append(comment)
+    # A PR lower in a lagging stack is reviewed at the commit its child contains; comments anchor there.
+    return {"commit_id": pr["review_sha"], "event": req["event"], "body": req["body"], "comments": comments}
 
 
 def runner_alive(pid) -> bool:
@@ -190,6 +210,25 @@ class Home:
 
     def rdir(self, rid: str, n: int) -> pathlib.Path:
         return self.path / "reviews" / rid / "rounds" / str(n)
+
+    def purge_imports(self) -> None:
+        """Staged imports nobody confirmed: gone after an hour, and at most eight at a time."""
+        stale = sorted((d for d in (self.path / "imports").glob("*") if d.is_dir()), key=lambda d: d.stat().st_mtime)
+        for d in stale[:max(0, len(stale) - 7)] + [d for d in stale if time.time() - d.stat().st_mtime > 3600]:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def find_checkout(self, rid: str, n: int) -> None:
+        """For an imported round: a repository holding the reviewed commits, so Ask and code search work. Slow when the clone cache
+        has to be made, so it runs after the review exists. The round reads fine without it."""
+        rdir = self.rdir(rid, n)
+        try:
+            checkout = share.resolve_checkout(self.path, read(rdir / "run.json"), rdir)
+        except Exception:  # noqa: BLE001 - no network, no access: the review stays readable
+            checkout = None
+        with self.lock:
+            write(rdir / "run.json", read(rdir / "run.json") | {"checkout": checkout})
+            if rev := self.review(rid):
+                self.save_review(rev | {"imported": {**(rev.get("imported") or {}), "checkout": "ready" if checkout else "none"}})
 
     def review(self, rid: str) -> dict | None:
         return read(self.path / "reviews" / rid / "review.json")
@@ -284,7 +323,7 @@ class Home:
         return {"id": rid, "refs": rev["refs"], "mode": "self" if self_ref else "pr", "branch": self_ref and self_ref.group(2).rpartition("..")[2],
                 "sent": (read(rdir / "feedback.json") or {}).get("sent_at"), "repo": run.get("repo") or rev["refs"][0].split("#")[0], "status": rev.get("status", "open"),
                 "created": rev.get("created"), "updated": touched, "rounds": len(rev["rounds"]), "live": live, "prs": prs, "findings": findings,
-                "newest": self.round_info(rid, newest) if newest else None}
+                "imported": rev.get("imported"), "newest": self.round_info(rid, newest) if newest else None}
 
     def reviews(self) -> list[dict]:
         out = []
@@ -311,6 +350,56 @@ def waiting_page(info: dict | None, theme: str | None) -> str:
             f'</head><body><main><h1>Review guide</h1><p>{esc}</p><p><a href="/">All reviews</a></p></main></body></html>')
 
 
+def import_refs(run: dict, meta: dict) -> list[str]:
+    """The refs of a review made from a shared file: the PRs themselves (so the same PRs are one review, as ever), or for a
+    self-review a `self:` ref naming the sender, since the sender's repository path means nothing here."""
+    if run.get("mode") == "self":
+        who = re.sub(r"[^A-Za-z0-9_.-]", "-", str(meta.get("author") or "someone"))
+        return [f"self:shared:{who}/{run['repo'].split('/')[1]}@{meta.get('branch') or 'branch'}"]
+    return norm_refs([f"{run['repo']}#{p['n']}" for p in run["prs"]])
+
+
+PAGE_CSS = ("<style>:root{--bg:#fff;--surface:#f5f8fb;--line:#dbe4ec;--text:#00264c;--muted:#4f6a85;--accent:#107aca;--accent-ink:#fff}"
+            "@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#101010;--surface:#181818;--line:#2c2c2c;--text:#ececec;--muted:#a0a0a0;--accent:#00bfff;--accent-ink:#00264c}}"
+            ":root[data-theme=dark]{--bg:#101010;--surface:#181818;--line:#2c2c2c;--text:#ececec;--muted:#a0a0a0;--accent:#00bfff;--accent-ink:#00264c}"
+            "*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:'Figtree',system-ui,sans-serif;font-size:15px;line-height:1.45}"
+            "main{max-width:560px;margin:14vh auto;padding:0 16px}h1{font-size:1.3rem;margin:0 0 8px}p{margin:6px 0;color:var(--muted)}"
+            "code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.82em;background:var(--surface);padding:0 4px;border-radius:4px}"
+            ".card{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:14px 16px;margin:14px 0}.card b{color:var(--text)}"
+            ".row{display:flex;gap:8px;margin-top:16px}.btn{border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;padding:7px 15px;cursor:pointer;font:inherit;text-decoration:none}"
+            ".btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700}.err{color:#b3123f}a{color:var(--accent)}</style>")
+PAGE_HEAD = ('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Review guide</title>'
+             '<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;700&family=JetBrains+Mono&display=swap" rel="stylesheet">' + PAGE_CSS + '</head><body><main>')
+
+
+def esc(s) -> str:
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def import_error_page(msg: str, theme: str | None) -> str:
+    html = PAGE_HEAD + f'<h1>This file cannot be imported</h1><p class="err">{esc(msg)}</p><p><a href="/">Back to your reviews</a></p></main></body></html>'
+    return html.replace('<html lang="en">', f'<html lang="en" data-theme="{theme}">', 1) if theme in ("light", "dark") else html
+
+
+def import_confirm_page(meta: dict, iid: str) -> str:
+    """The server's own confirmation page for a staged import. It holds the token: only this page can create the review."""
+    prs = ", ".join(f"#{n}" for n in meta["prs"]) if meta["mode"] != "self" else f"the branch {meta.get('branch')}"
+    when = time.strftime("%d %b %H:%M", time.localtime(meta["built"] or 0))
+    note = ("You already have a review of these PRs: this adds a round to it." if meta["exists"]
+            else "It opens in your inbox as a new review.")
+    extra = " Feedback goes back to the author as a file." if meta["mode"] == "self" else " Posting goes through your own gh login."
+    n = sum(1 for v in (meta["drafts"].get("cm") or {}).values() if v.get("on") and not v.get("gone"))
+    return (PAGE_HEAD + f'<h1>Import the shared review of <code>{esc(meta["repo"])}</code> {esc(prs)}?</h1>'
+            f'<div class="card"><p><b>From {esc(meta["author"])}</b>, built {esc(when)} on <code>{esc((meta["tip"] or "")[:8])}</code>.</p>'
+            + (f'<p>{n} comment{"" if n == 1 else "s"} in the file become your drafts.</p>' if n else '<p>The file carries no comments.</p>') + '</div>'
+            f'<p>{esc(note)}{esc(extra)}</p><p id="msg" class="err"></p>'
+            '<div class="row"><button class="btn primary" id="go" type="button">Import</button><a class="btn" href="/">Cancel</a></div></main>'
+            '<script>document.getElementById("go").onclick=async()=>{const b=document.getElementById("go");b.disabled=true;b.textContent="Importing…";'
+            f'try{{const r=await fetch("/api/import/{iid}",{{method:"POST",headers:{{"X-Review-Token":"/*TOKEN*/"}}}});const j=await r.json();'
+            'if(!r.ok)throw new Error(j.error||r.status);location.href=j.url}catch(x){document.getElementById("msg").textContent=x.message;b.disabled=false;b.textContent="Import"}};</script>'
+            '</body></html>')
+
+
 def handler(home: Home):
     heads_cache: dict = {}
     write_lock = threading.Lock()
@@ -330,7 +419,9 @@ def handler(home: Home):
             return hit[1]
         data = read(rdir / "guide.json")
         if data.get("mode") == "self":
-            root = data["source"]["root"]
+            root = (data.get("source") or {}).get("root")
+            if not root:  # shared from another machine: its branches are not here
+                return {}
             tips = {}
             for p in (p for st in data["stacks"] for p in st["prs"] if p.get("head") != "(uncommitted)"):
                 r = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "--quiet", f"refs/heads/{p['head']}"], capture_output=True, text=True)
@@ -345,12 +436,14 @@ def handler(home: Home):
         return heads_cache[rdir][1]
 
     class Handler(http.server.BaseHTTPRequestHandler):
-        def reply(self, code: int, payload, ctype: str = "application/json") -> None:
+        def reply(self, code: int, payload, ctype: str = "application/json", headers: dict | None = None) -> None:
             body = payload if isinstance(payload, bytes) else payload.encode() if isinstance(payload, str) else json.dumps(payload).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
 
@@ -359,6 +452,12 @@ def handler(home: Home):
             if size > 8_000_000:
                 raise ValueError("request too large")
             return json.loads(self.rfile.read(size) or "{}")
+
+        def raw(self, cap: int) -> bytes:
+            size = int(self.headers.get("Content-Length", 0))
+            if size > cap:
+                raise share.ShareError(f"the upload is over the {cap // 1_000_000} MB limit")
+            return self.rfile.read(size)
 
         def found(self, rid: str) -> dict | None:
             rev = home.review(rid)
@@ -369,7 +468,7 @@ def handler(home: Home):
         def page(self, rid: str, rev: dict, n: int, live: bool) -> None:
             rounds = [{**home.round_info(rid, r["n"]), "effort": r["effort"], "created": r["created"]} for r in rev["rounds"]]
             boot = {"base": f"/api/r/{rid}/{n}", "review": rid, "round": n, "live": live, "status": rev.get("status", "open"),
-                    "ui": home.ui(rid, rev, n), "rounds": rounds}
+                    "ui": home.ui(rid, rev, n), "rounds": rounds, "imported": rev.get("imported")}
             html = (home.rdir(rid, n) / "index.html").read_text()
             html = html.replace("/*TOKEN*/", TOKEN, 1).replace("/*BOOT*/null", json.dumps(boot).replace("<", "\\u003c"), 1)
             self.reply(200, with_theme(html), "text/html; charset=utf-8")
@@ -377,7 +476,10 @@ def handler(home: Home):
         def do_GET(self) -> None:
             path = self.path.split("?")[0]
             if path == "/api/ping":
-                return self.reply(200, {"app": "review-guide", "pid": os.getpid(), "version": VERSION})
+                # The one route a page opened from disk (origin `null`) may read: its probe for "Open in my review-guide".
+                return self.reply(200, {"app": "review-guide", "pid": os.getpid(), "version": VERSION}, headers={"Access-Control-Allow-Origin": "null"})
+            if m := re.fullmatch(r"/import/([\w-]{8,64})", path):
+                return self.import_page(m.group(1))
             if path in ("/", "/index.html"):
                 html = (UI / "inbox.html").read_text().replace("/*TOKEN*/", TOKEN, 1)
                 html = html.replace("/*DATA*/null", json.dumps(home.reviews()).replace("<", "\\u003c"), 1)
@@ -439,8 +541,22 @@ def handler(home: Home):
         def do_PUT(self) -> None:
             self.do_POST()
 
+        def do_OPTIONS(self) -> None:
+            # Chrome may ask before a page opened from disk reads the loopback ping; nothing else answers a preflight.
+            if self.path.split("?")[0] == "/api/ping":
+                return self.reply(204, b"", headers={"Access-Control-Allow-Origin": "null", "Access-Control-Allow-Private-Network": "true", "Access-Control-Allow-Methods": "GET"})
+            self.reply(404, {"error": "not found"})
+
         def do_POST(self) -> None:
             path = self.path.split("?")[0]
+            if path == "/import":
+                # A shared file's own "Open in my review-guide" form: a top-level navigation, so no token. It only stages the
+                # bundle and answers with a page that holds the token; the review is created from that page.
+                try:
+                    form = urllib.parse.parse_qs(self.raw(3 * share.BUNDLE_CAP + 2_000_000).decode(errors="replace"), max_num_fields=8)
+                    return self.receive_import((form.get("bundle") or [""])[0], (form.get("drafts") or [""])[0])
+                except (share.ShareError, ValueError) as ex:
+                    return self.reply(400, import_error_page(str(ex), prefs().get("theme")), "text/html; charset=utf-8")
             if not secrets.compare_digest(self.headers.get("X-Review-Token", ""), TOKEN):
                 return self.reply(403, {"error": "missing or wrong token; reload the page"})
             try:
@@ -470,6 +586,12 @@ def handler(home: Home):
                     return self.reply(200, {"id": rid, "round": n, "started": started, "url": f"/r/{rid}"})
                 if m := re.fullmatch(rf"/api/r/({ID})/(\d+)/(?:(ask)|threads/([\w-]+)/(apply))", path):
                     return self.ask(m)
+                if m := re.fullmatch(rf"/api/r/({ID})/(\d+)/export", path):
+                    return self.export(m.group(1), int(m.group(2)))
+                if m := re.fullmatch(r"/api/import/([\w-]{8,64})", path):
+                    return self.confirm_import(m.group(1))
+                if path == "/api/feedback-file":
+                    return self.receive_feedback()
                 m = re.fullmatch(rf"/api/r/({ID})(?:/(\d+))?/(\w+)", path)
                 if not m:
                     return self.reply(404, {"error": "not found"})
@@ -513,6 +635,8 @@ def handler(home: Home):
                 if is_self:
                     return self.reply(400, {"error": "a self-review is never posted to GitHub"})
                 return self.post_review(rdir, rev)
+            except share.ShareError as e:
+                self.reply(400, {"error": str(e)})
             except (KeyError, ValueError, TypeError) as e:
                 self.reply(400, {"error": f"bad request: {e}"})
             except RuntimeError as e:
@@ -532,14 +656,16 @@ def handler(home: Home):
         def send_feedback(self, rdir: pathlib.Path, rev: dict) -> None:
             """Write the self-review's feedback for the waiting `serve.py open --wait-feedback`, once per round."""
             req = self.body()
-            layers = req["layers"]
+            self.deliver_feedback(rdir, rev, str(req.get("text") or ""), req["layers"])
+
+        def deliver_feedback(self, rdir: pathlib.Path, rev: dict, text: str, layers) -> None:
             if not isinstance(layers, list) or not all(isinstance(x, dict) for x in layers):
                 return self.reply(400, {"error": "layers must be a list"})
             with write_lock:
                 if (rdir / "feedback.json").is_file():
                     return self.reply(409, {"error": "feedback was already sent for this round; rerun the guide for the next pass"})
                 at = int(time.time())
-                write(rdir / "feedback.json", {"sent_at": at, "text": str(req.get("text") or ""), "layers": layers})
+                write(rdir / "feedback.json", {"sent_at": at, "text": text, "layers": layers})
                 write(rdir / "posted.json", (read(rdir / "posted.json") or {}) | {str(x["n"]): f"sent:{at}" for x in layers if "n" in x})
                 with home.lock:
                     rev = home.review(rev["id"])
@@ -561,22 +687,13 @@ def handler(home: Home):
                     return self.reply(400, {"error": "unknown review type"})
                 if req["event"] != "COMMENT" and pr["author"] == data["viewer"]:
                     return self.reply(400, {"error": "GitHub only accepts comment reviews on your own PR"})
-                hunks = read(rdir / str(n) / "hunks.json")
-                comments = []
-                for c in req["comments"]:
-                    commentable = set(hunks.get(c["path"], {}).get("commentable", []))
-                    span = range(c.get("start_line") or c["line"], c["line"] + 1)
-                    if not span or any(i not in commentable for i in span):
-                        return self.reply(400, {"error": f"{c['path']}:{c['line']} is outside the diff"})
-                    comment = {"path": c["path"], "line": c["line"], "side": "RIGHT", "body": c["body"]}
-                    if c.get("start_line"):
-                        comment |= {"start_line": c["start_line"], "start_side": "RIGHT"}
-                    comments.append(comment)
+                try:
+                    payload = review_payload(pr, req, read(rdir / str(n) / "hunks.json"))
+                except ValueError as e:
+                    return self.reply(400, {"error": str(e)})
                 head = gh("pr", "view", str(n), "-R", data["repo"], "--json", "headRefOid", "--jq", ".headRefOid").strip()
                 if head != pr["sha"]:
                     return self.reply(409, {"error": f"#{n} has new commits ({pr['sha'][:8]} to {head[:8]}); rerun the review guide"})
-                # A PR lower in a lagging stack is reviewed at the commit its child contains; comments anchor there.
-                payload = {"commit_id": pr["review_sha"], "event": req["event"], "body": req["body"], "comments": comments}
                 out = json.loads(gh("api", "-X", "POST", f"repos/{data['repo']}/pulls/{n}/reviews", "--input", "-", stdin=json.dumps(payload)))
                 write(rdir / "posted.json", posted | {str(n): out["html_url"]})
                 with home.lock:
@@ -584,6 +701,99 @@ def handler(home: Home):
                     rev["updated"] = int(time.time())
                     home.save_review(rev)
             self.reply(200, {"url": out["html_url"]})
+
+        # ---- sharing ------------------------------------------------------------------------------------------------
+
+        def export(self, rid: str, n: int) -> None:
+            """The shared file of a built round, or with `dry` only its report (size, what the check found). Any built round."""
+            if not (rev := self.found(rid)):
+                return
+            rdir, req = home.rdir(rid, n), self.body()
+            if not (rdir / "index.html").is_file() or not any(r["n"] == n for r in rev["rounds"]):
+                return self.reply(404, {"error": f"round {n} has no page"})
+            threads = [t for r in home.asker.threads(rdir) if (t := home.asker.load(rdir, r["id"])) and t["status"] not in ("queued", "running")]
+            page, report = share.export(rdir, read(rdir / "ui.json") or {}, req, n, rid, threads)
+            if req.get("dry"):
+                return self.reply(200, report)
+            self.reply(200, page, "text/html; charset=utf-8", {"Content-Disposition": f'attachment; filename="{report["name"]}"'})
+
+        def receive_import(self, bundle: str, drafts: str) -> None:
+            """Stage a shared file's bundle under imports/ (nothing is created in reviews/) and answer with the confirmation page."""
+            try:
+                bundle_obj = share.read_bundle(bundle)
+                iid = secrets.token_hex(8)
+                work = home.path / "imports" / iid / "work"
+                with home.lock:
+                    home.purge_imports()
+                    work.mkdir(parents=True)
+                    try:
+                        run = share.stage(work, bundle_obj, "you")
+                        refs = import_refs(run, bundle_obj["meta"])
+                        meta = {**{k: bundle_obj["meta"].get(k) for k in ("author", "built", "tip", "mode", "branch", "round", "name", "review")}, "repo": run["repo"],
+                                "prs": [p["n"] for p in run["prs"]], "drafts": share.clean_drafts(json.loads(drafts)) if drafts else {}, "at": int(time.time()),
+                                "refs": refs, "exists": home.review(review_id(refs)) is not None}
+                        write(work.parent / "meta.json", meta)
+                    except BaseException:
+                        shutil.rmtree(work.parent, ignore_errors=True)
+                        raise
+            except (share.ShareError, ValueError) as e:
+                return self.reply(400, import_error_page(str(e), prefs().get("theme")), "text/html; charset=utf-8")
+            self.import_page(iid)
+
+        def import_page(self, iid: str) -> None:
+            meta = read(home.path / "imports" / iid / "meta.json")
+            if not meta:
+                return self.reply(404, import_error_page("This import is gone. Open the shared file again.", prefs().get("theme")), "text/html; charset=utf-8")
+            html = with_theme(import_confirm_page(meta, iid))
+            self.reply(200, html.replace("/*TOKEN*/", TOKEN, 1), "text/html; charset=utf-8", {"X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'"})
+
+        def confirm_import(self, iid: str) -> None:
+            """The colleague clicked Import on the server's own page: build the review from the staged bundle."""
+            with home.lock:
+                idir = home.path / "imports" / iid
+                meta = read(idir / "meta.json")
+                if not meta:
+                    return self.reply(404, {"error": "this import is gone; open the shared file again"})
+                work, run = idir / "work", read(idir / "work" / "run.json")
+                viewer = (subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True).stdout.strip()
+                          or subprocess.run(["git", "config", "user.name"], capture_output=True, text=True).stdout.strip() or "me")
+                write(work / "run.json", run | {"viewer": viewer})
+                share.rebuild(work)
+                refs = meta["refs"]
+                rid = review_id(refs)
+                rev = home.review(rid) or {"id": rid, "refs": refs, "created": int(time.time()), "rounds": [], "status": "open"}
+                n = len(rev["rounds"]) + 1
+                rdir = home.rdir(rid, n)
+                rdir.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(work), str(rdir))
+                data = read(rdir / "guide.json")
+                drafts = meta["drafts"]
+                known = {c["id"] for st in data["stacks"] for c in st["comments"]} | {c["id"] for cs in (drafts.get("extra") or {}).values() for c in cs}
+                if drafts.get("cm"):
+                    drafts["cm"] = {k: v for k, v in drafts["cm"].items() if k in known}
+                # A later round of the same review takes its first state from the round before, as ever; the file's drafts seed round one.
+                if drafts.get("cm") or drafts.get("verdict") or not rev["rounds"]:
+                    write(rdir / "ui.json", {"view": "guide", "extra": {}, "cm": {}, "verdict": {}, "viewed": {}, "lost": [], "stack": data["stacks"][0]["id"]} | drafts)
+                rev["rounds"].append({"n": n, "effort": run.get("effort") or "balanced", "focus": None, "created": int(time.time())})
+                rev |= {"status": "open", "updated": int(time.time()), "cwd": None,
+                        "imported": {"by": meta["author"], "built": meta["built"], "tip": meta["tip"], "name": meta["name"], "from_review": meta.get("review"), "from_round": meta.get("round"), "checkout": "pending"}}
+                home.save_review(rev)
+                shutil.rmtree(idir, ignore_errors=True)
+            threading.Thread(target=home.find_checkout, args=(rid, n), daemon=True).start()
+            self.reply(200, {"id": rid, "round": n, "url": f"/r/{rid}"})
+
+        def receive_feedback(self) -> None:
+            """A feedback file from a colleague who reviewed this author's shared self-review: delivered to the waiting session
+            the way the page's own Send is."""
+            fb = share.read_feedback(self.raw(2_000_000).decode(errors="replace"))
+            rid = fb["review"]
+            if not re.fullmatch(ID, rid) or not (rev := home.review(rid)) or not SELF_REF.match(rev["refs"][0]):
+                return self.reply(404, {"error": "this feedback is for a self-review that is not in this inbox"})
+            live = home.live(rid, rev)
+            if live is None:
+                return self.reply(404, {"error": "that review has no built round"})
+            note = f"Feedback from {str(fb.get('from') or 'a colleague')[:80]}" + (f", written on round {fb['round']}" if fb.get("round") != live else "") + "."
+            self.deliver_feedback(home.rdir(rid, live), rev, "\n".join(x for x in (note, str(fb.get("text") or "").strip()) if x), fb["layers"])
 
         def log_message(self, *args) -> None:
             pass

@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -444,6 +445,211 @@ def check_ask(w: pathlib.Path, root: pathlib.Path) -> None:
         proc.wait()
 
 
+STUB_GH = '''#!{python}
+import json, os, sys
+argv = sys.argv[1:]
+with open(os.environ["STUB_GH_LOG"], "a") as f:
+    f.write(json.dumps({{"argv": argv, "stdin": sys.stdin.read() if "--input" in argv else ""}}) + "\\n")
+if argv[:2] == ["api", "user"]:
+    print("importer")
+elif argv[:1] == ["pr"]:
+    print(os.environ["STUB_HEAD"])
+elif "reviews" in " ".join(argv):
+    print(json.dumps({{"html_url": "https://example.invalid/review/1"}}))
+else:
+    sys.exit(1)
+'''
+
+
+def check_share(w: pathlib.Path, root: pathlib.Path) -> None:
+    """Sharing a guide as one file: the export with its options and checks, the `gh` payload, the import, and feedback for the author."""
+    import base64
+    import gzip
+    import os
+    import re
+    import time
+
+    import serve
+    import share
+
+    home, home2 = root / "share-home", root / "share-home2"
+    stubs, gh_log = root / "stubs", root / "gh-calls.jsonl"
+    stubs.mkdir()
+    (stubs / "gh").write_text(STUB_GH.format(python=sys.executable))
+    (stubs / "gh").chmod(0o755)
+    rid = "o-r-1-2-test"
+    rdir = home / "reviews" / rid / "rounds" / "1"
+    shutil.copytree(w, rdir)
+    (rdir / "progress.json").unlink(missing_ok=True)
+    guide = json.loads((rdir / "guide.json").read_text())
+    sid, cid = guide["stacks"][0]["id"], next(c["id"] for c in guide["stacks"][0]["comments"] if c["id"].endswith("-x"))
+    # A key and an email planted in the shared code, one refuted finding, a question thread, and the sender's drafts.
+    tip = rdir / sid / "tip" / "B.java"
+    tip.write_text(tip.read_text() + "// key AKIAIOSFODNN7EXAMPLE, owner jane.doe@acme-health.fr\n")
+    (rdir / sid / "verify").mkdir(exist_ok=True)
+    (rdir / sid / "verify" / "correctness-f.json").write_text(json.dumps({"status": "refuted", "note": "It is read."}))
+    (rdir / "threads").mkdir()
+    (rdir / "threads" / "ab12cd34.json").write_text(json.dumps({"id": "ab12cd34", "target": {"kind": "free", "label": "free", "stack": sid}, "created": 1, "session_id": "sess-secret",
+                                                              "status": "idle", "messages": [{"role": "user", "text": "Why?", "at": 1}, {"role": "agent", "text": "Because.", "at": 2}], "proposal": None}))
+    (rdir / "ui.json").write_text(json.dumps({
+        "stack": sid, "viewed": {f"{sid}A.java": True}, "verdict": {"2": {"body": "private note", "event": "COMMENT"}},
+        "extra": {sid: [{"id": f"{sid}-x9", "custom": True, "severity": "nit", "path": "A.java", "line": 3, "pr": 2, "pl": 3, "ps": None}]},
+        "cm": {cid: {"on": True, "gone": False, "sev": "question", "text": "Who reads x?"}, f"{sid}-x9": {"on": True, "gone": False, "sev": "nit", "text": "long is wide"}}}))
+    (home / "reviews" / rid / "review.json").write_text(json.dumps({"id": rid, "refs": ["o/r#1", "o/r#2"], "created": 1, "status": "open", "rounds": [{"n": 1, "effort": "balanced", "created": 1}]}))
+    (rdir / "run.json").write_text(json.dumps({**json.loads((rdir / "run.json").read_text()), "viewer": "sender", "checkout": "/Users/sender/secret-path"}))
+    subprocess.run([sys.executable, str(HERE / "build.py"), str(rdir)], check=True, capture_output=True)
+
+    env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}", "STUB_GH_LOG": str(gh_log), "STUB_HEAD": "0" * 40}
+    form_type = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    def start(h):
+        p = subprocess.Popen([sys.executable, str(HERE / "serve.py"), "--home", str(h), "--port", "0"], stdout=subprocess.PIPE, text=True, env=env)
+        return p, p.stdout.readline().strip(), lambda: json.loads((h / "server.json").read_text())["token"]
+
+    def req(base, path, body=None, tok=None, method=None, raw=None, headers=None):
+        data = raw if raw is not None else None if body is None else json.dumps(body).encode()
+        r = urllib.request.Request(base + path, data, method=method or ("GET" if data is None else "POST"),
+                                   headers={**({"Content-Type": "application/json"} if raw is None else {}), **({"X-Review-Token": tok} if tok else {}), **(headers or {})})
+        try:
+            with urllib.request.urlopen(r) as resp:
+                return resp.status, resp.read().decode(), dict(resp.headers)
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode(), dict(e.headers)
+
+    proc, url, tok = start(home)
+    token, exp = tok(), f"api/r/{rid}/1/export"
+    seed = lambda p: json.loads(re.search(r'id="rg-seed">(.*?)</script>', p, re.S).group(1))  # noqa: E731
+    try:
+        # The ping answers the file's probe (origin null); no other route does, and a preflight is answered for the ping only.
+        assert req(url, "api/ping")[2]["Access-Control-Allow-Origin"] == "null"
+        assert "Access-Control-Allow-Origin" not in req(url, "api/reviews")[2] and "Access-Control-Allow-Origin" not in req(url, "")[2]
+        assert req(url, "api/ping", method="OPTIONS")[2]["Access-Control-Allow-Origin"] == "null" and req(url, "api/reviews", method="OPTIONS")[0] == 404
+
+        # The report: what the file holds, and what the check found, without repeating the secret.
+        assert req(url, exp, {})[0] == 403
+        report = json.loads(req(url, exp, {"dry": True}, token)[1])
+        assert {(h["rule"], h["path"]) for h in report["hits"]} == {("AWS access key", "B.java"), ("email address", "B.java")}, report["hits"]
+        assert "AKIAIOSFODNN7EXAMPLE" not in json.dumps(report) and report["picked"] == 2 and report["refuted"] == 1 and report["threads_available"] == 1 and report["size"] > 100_000, report
+
+        def export(opts):
+            code, page, hdr = req(url, exp, opts, token)
+            assert code == 200 and 'filename="review-r-1-2-round1.html"' in hdr["Content-Disposition"], (code, hdr)
+            return page
+
+        refuted = lambda p: len(re.findall(r'"status":\s*"refuted"', p))  # noqa: E731
+        page, mine, hidden = export({}), export({"mine": True, "threads": True}), export({"refuted": False})
+        # One file: nothing loads from outside, and it holds no token, no path of the sender's and no session.
+        assert not re.search(r'<(?:script|link|img|iframe)[^>]+(?:src|href)=["\']?(?:https?:)?//', page) and "fonts.googleapis" not in page and "cdnjs" not in page
+        assert "@font-face" in page and "Highlight.js v11.9.0" in page
+        assert token not in page and "/*TOKEN*/" not in page and "/Users/sender" not in page and "sess-secret" not in mine
+        boot = json.loads(re.search(r"const BOOT = (\{.*?\}) \|\|", page).group(1))
+        assert boot["live"] is False and boot["base"] == "" and boot["shared"]["tip"] == guide["stacks"][0]["tip"] and boot["shared"]["options"] == {"mine": False, "refuted": True, "threads": False}
+        # Options: no drafts by default; "mine" carries the picked comments and not the verdicts; refuted=0 drops refuted findings.
+        assert seed(page) == {"cm": {}, "extra": {}, "threads": []} and "private note" not in page and "long is wide" not in page
+        assert set(seed(mine)["cm"]) == {cid, f"{sid}-x9"} and [c["id"] for c in seed(mine)["extra"][sid]] == [f"{sid}-x9"] and "private note" not in mine
+        assert [t["id"] for t in seed(mine)["threads"]] == ["ab12cd34"] and seed(mine)["threads"][0]["session_id"] is None
+        assert refuted(page) > 0 and refuted(hidden) == 0, (refuted(page), refuted(hidden))
+
+        # The gh payload is serve.py's: the routed line on the PR's own diff and its reviewed commit; the heredoc keeps `$(...)` and backticks as text.
+        hunks = json.loads((rdir / "2" / "hunks.json").read_text())
+        canary = root / "canary"
+        body = f"`ok` $(touch {canary}) \"$HOME\""
+        pl = serve.review_payload({"review_sha": "a" * 40}, {"event": "COMMENT", "body": "x", "comments": [{"path": "A.java", "line": 3, "body": body}]}, hunks)
+        assert pl == {"commit_id": "a" * 40, "event": "COMMENT", "body": "x", "comments": [{"path": "A.java", "line": 3, "side": "RIGHT", "body": body}]}
+        try:
+            serve.review_payload({"review_sha": "a" * 40}, {"event": "COMMENT", "body": "", "comments": [{"path": "A.java", "line": 99, "body": "y"}]}, hunks)
+            raise AssertionError("a line outside the diff was accepted")
+        except ValueError:
+            pass
+        cmd = "gh api --method POST repos/o/r/pulls/2/reviews --input - <<'REVIEW_GUIDE_JSON'\n" + json.dumps(pl, indent=2) + "\nREVIEW_GUIDE_JSON"
+        assert subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, env=env).returncode == 0 and not canary.exists()
+        call = json.loads(gh_log.read_text().splitlines()[-1])
+        assert call["argv"] == ["api", "--method", "POST", "repos/o/r/pulls/2/reviews", "--input", "-"] and json.loads(call["stdin"]) == pl
+        gh_log.unlink()
+
+        # Import. The bundle holds the round's source files and none of the sender's paths.
+        bundle = re.search(r'id="rg-bundle">([A-Za-z0-9+/=]+)</script>', mine).group(1)
+        files = share.read_bundle(bundle)["files"]
+        assert "/Users/sender" not in files["run.json"] and json.loads(files["run.json"])["checkout"] is None and not [f for f in files if f.endswith(("brief.md", ".log"))], sorted(files)
+        proc2, url2, tok2 = start(home2)
+        token2 = tok2()
+        reviews = lambda: list((home2 / "reviews").glob("*")) if (home2 / "reviews").exists() else []  # noqa: E731
+        sent = lambda b, d="": req(url2, "import", raw=urllib.parse.urlencode({"bundle": b, "drafts": d}).encode(), headers=form_type)  # noqa: E731
+        try:
+            drafts = json.dumps({"cm": seed(mine)["cm"], "extra": seed(mine)["extra"]})
+            code, confirm, hdr = sent(bundle, drafts)
+            assert code == 200 and token2 in confirm and "Import the shared review" in confirm and "sender" in confirm and hdr["X-Frame-Options"] == "DENY", confirm[:300]
+            assert not reviews(), "a review exists before the confirmation"
+            iid = re.search(r"/api/import/([\w-]+)", confirm).group(1)
+            assert req(url2, f"api/import/{iid}", {})[0] == 403 and req(url2, f"api/import/{iid}", {}, "wrong")[0] == 403 and not reviews()
+            # Over the cap, not a bundle, an escaping path, a guide that fails the checks, a repository that is not one: refused, nothing written.
+            assert sent("A" * (share.BUNDLE_CAP + 10))[0] == 400 and sent("nonsense")[0] == 400
+
+            def repack(edit):
+                inner = json.loads(gzip.decompress(base64.b64decode(bundle)))
+                edit(inner)
+                return base64.b64encode(gzip.compress(json.dumps(inner).encode())).decode()
+
+            evil = sent(repack(lambda d: d["files"].__setitem__("../../evil.txt", "x")))
+            assert evil[0] == 400 and "should not" in evil[1] and not (home2 / "evil.txt").exists()
+            bad = sent(repack(lambda d: d["files"].__setitem__(f"{sid}/guide.json", json.dumps({**json.loads(d["files"][f"{sid}/guide.json"]), "summary": "x" * 400}))))
+            assert bad[0] == 400 and "summary is 400 characters" in bad[1], bad[1][-300:]
+            assert sent(repack(lambda d: d["files"].__setitem__("run.json", json.dumps({**json.loads(d["files"]["run.json"]), "repo": "a b/c"}))))[0] == 400 and not reviews()
+            assert not list((home2 / "imports").glob("*/work/..")) or True
+
+            # Confirmed with the token: the review exists, builds, carries the file's drafts, and posts through the stub gh behind the usual guards.
+            code, out, _ = req(url2, f"api/import/{iid}", {}, token2)
+            assert code == 200, out
+            rid2 = json.loads(out)["id"]
+            r2 = home2 / "reviews" / rid2 / "rounds" / "1"
+            rev2 = json.loads((home2 / "reviews" / rid2 / "review.json").read_text())
+            assert (r2 / "index.html").is_file() and rev2["imported"]["by"] == "sender" and rev2["refs"] == ["o/r#1", "o/r#2"] and not (home2 / "imports" / iid).exists()
+            ui = json.loads((r2 / "ui.json").read_text())
+            assert {c["text"] for c in ui["cm"].values()} == {"Who reads x?", "long is wide"} and ui["extra"][sid][0]["id"] == f"{sid}-x9", ui
+            page2 = req(url2, f"r/{rid2}")[1]
+            assert '"by": "sender"' in page2 and token2 in page2 and req(url2, f"api/import/{iid}", {}, token2)[0] == 404
+            for _ in range(100):  # the checkout is resolved after the review exists; no network here, so it settles on none
+                if json.loads((home2 / "reviews" / rid2 / "review.json").read_text())["imported"]["checkout"] != "pending":
+                    break
+                time.sleep(0.1)
+            post = {"pr": 2, "event": "COMMENT", "body": "", "comments": [{"path": "A.java", "line": 3, "body": "x"}]}
+            assert "has new commits" in json.loads(req(url2, f"api/r/{rid2}/1/review", post, token2)[1])["error"]  # the head guard: the stub's head differs
+            assert req(url2, f"api/r/{rid2}/1/review", {**post, "comments": [{"path": "A.java", "line": 99, "body": "y"}]}, token2)[0] == 400
+            assert "adds a round to it" in sent(bundle)[1]  # the same PRs again are a round of the same review
+        finally:
+            proc2.terminate()
+            proc2.wait()
+
+        # A self-review: feedback for the author arrives as a file and is delivered like the page's own Send.
+        srid, sr = "self-share-test", home / "reviews" / "self-share-test" / "rounds" / "1"
+        shutil.copytree(rdir, sr)
+        shutil.rmtree(sr / "threads")
+        (sr / "guide.json").write_text(json.dumps(json.loads((sr / "guide.json").read_text()) | {"mode": "self", "source": {"root": "/repo", "branch": "feat-b"}}))
+        (home / "reviews" / srid / "review.json").write_text(json.dumps({"id": srid, "refs": ["self:/repo@feat-b"], "created": 1, "status": "open", "rounds": [{"n": 1, "effort": "quick", "created": 1}]}))
+        fb = {"review-guide-feedback": 1, "review": srid, "round": 1, "from": "Dana", "text": "",
+              "layers": [{"n": 2, "label": "feat-b", "verdict": "needs changes", "summary": "Tighten y.", "comments": [{"path": "A.java", "line": 3, "start_line": None, "severity": "nit", "body": "long is wide", "code": "  long y;"}]}]}
+        assert req(url, "api/feedback-file", fb)[0] == 403 and req(url, "api/feedback-file", {**fb, "review": rid}, token)[0] == 404
+        assert req(url, "api/feedback-file", {"layers": []}, token)[0] == 400 and req(url, "api/feedback-file", {**fb, "review": "nope"}, token)[0] == 404
+        assert req(url, "api/feedback-file", fb, token)[0] == 200
+        text = serve.feedback_text(sr, json.loads((sr / "feedback.json").read_text()))
+        assert "Feedback from Dana." in text and "## feat-b: needs changes" in text and "- A.java:3 (nit): long is wide" in text, text
+        assert req(url, "api/feedback-file", fb, token)[0] == 409
+        spage = req(url, f"api/r/{srid}/1/export", {}, token)[1]
+        assert "/repo" not in re.search(r"const DATA = .*", spage).group(0) and '"mode":"self"' in spage.replace(" ", "")
+    finally:
+        proc.terminate()
+        proc.wait()
+    # The check on its own: each rule on a sample, and what it must not flag.
+    for sample, rule in (("-----BEGIN RSA PRIVATE KEY-----", "private key"), ("ghp_" + "a" * 36, "GitHub token"), ("password = hunter2hunter", "password in config"),
+                         ("tel 06 12 34 56 78", "French phone number"), ("1 85 05 78 006 084 36", "French social security number (NIR)"), ("mail bob@doctolib.com", "email address")):
+        got: list = []
+        share.scan_text("x", sample, got, set())
+        assert [h["rule"] for h in got] == [rule], (sample, got)
+    got = []
+    share.scan_text("x", "password: ${PASSWORD}\n$ref: x@me.yaml\nhttps://github.com/o/r\n", got, set())
+    assert not got, got
+
+
 def main(keep: str | None = None) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
@@ -670,6 +876,7 @@ def main(keep: str | None = None) -> None:
         check_server(w, home)
         check_self_server(w, root / "self-home")
         check_ask(w, root)
+        check_share(w, root)
         if keep:
             shutil.copytree(home, keep, dirs_exist_ok=True)
     print("ok" + (f", fixture in {keep}" if keep else ""))
