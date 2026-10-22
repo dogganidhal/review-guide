@@ -945,7 +945,7 @@ function stageText(x) {
   if (x.state === 'failed') return 'failed; see agents.log';
   if (x.state === 'skipped') return x.note || 'skipped';
   if (x.state === 'waiting') return 'waiting';
-  return x.key === 'guide' ? 'written' : x.found ? plural(x.found, 'finding', 'findings') : 'nothing found';
+  return x.key === 'guide' || x.found == null ? 'written' : x.found ? plural(x.found, 'finding', 'findings') : 'nothing found';
 }
 
 // Painted in place on every poll, so progress moves without reloading the page.
