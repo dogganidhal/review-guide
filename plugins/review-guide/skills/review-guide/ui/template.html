@@ -182,7 +182,7 @@ main { overflow: auto; padding: 22px clamp(16px, 3vw, 40px) 120px; }
 h1 { font-size: 1.35rem; line-height: 1.2; margin: 0 0 6px; }
 .summary { margin: 0 0 10px; max-width: 80ch; }
 .step .ttl .why, .glist, .cm .ttl, .cm .preview, .cm .cites, .cm textarea { max-width: 80ch; }
-.facts li > span:last-child { max-width: 80ch; }
+.facts li > span:not(.n) { max-width: 80ch; }
 @media (min-width: 1200px) { .facts ol { grid-template-columns: 1fr 1fr; gap: 10px 36px; } }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; font-size: .78rem; }
 .meta span, .meta a { padding: 1px 9px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
@@ -481,6 +481,101 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
 .status { font-size: .88rem; }
 .status.err { color: var(--danger); }
 .status.ok { color: var(--ok); }
+
+/* Questions: the Ask affordances, the thread under what was asked about, the rail group. */
+.askbtn { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 99px; padding: 0 10px; font-size: .74rem; font-weight: 600; line-height: 1.7; cursor: pointer; opacity: 0; transition: opacity .12s; white-space: nowrap; }
+.askbtn:hover { color: var(--accent); border-color: var(--accent); }
+.gsec.askable { position: relative; }
+.gsec.askable > .askbtn { position: absolute; top: 16px; right: 0; }
+.gsec.askable > .sec { padding-right: 56px; }
+.facts li { position: relative; }
+.facts li > .askbtn { position: absolute; top: -2px; right: 0; }
+.facts li > span:not(.n) { padding-right: 44px; }
+.facts li > .thr, .facts li > .askbox { margin-right: 44px; }
+.step > .row .askbtn { margin-left: 6px; }
+.gsec.askable:hover > .askbtn, .facts li:hover > .askbtn, .step:hover > .row .askbtn, .askbtn:focus-visible { opacity: 1; }
+@media (hover: none) { .askbtn { opacity: 1; } }
+.facts li > .thr, .facts li > .askbox { grid-column: 2; }
+.step > .thr, .step > .askbox { margin: 0 12px 12px 44px; }
+.ln .no.go { cursor: pointer; }
+.ln.sel { background: var(--accent-soft); }
+.ln.sel .no:not(:empty) { box-shadow: inset 3px 0 0 var(--accent); }
+.selbar { display: flex; align-items: center; gap: 6px; width: max-content; max-width: calc(100% - 20px); margin: 4px 10px 4px 56px; position: sticky; left: 10px; padding: 2px 4px 2px 11px; background: var(--bg); border: 1px solid var(--accent); border-radius: 99px; box-shadow: 0 2px 8px rgb(0 0 0 / .12); font-family: 'Figtree', system-ui, sans-serif; font-size: .78rem; white-space: normal; line-height: 1.4; }
+.selbar .lab { color: var(--muted); font-family: var(--mono); font-size: .74rem; overflow-wrap: anywhere; }
+.selbar .btn { padding: 1px 11px; border-radius: 99px; font-size: .78rem; }
+.thr, .askbox { border: 1px solid var(--line); border-radius: 10px; margin: 10px 0; background: var(--surface); font-family: 'Figtree', system-ui, sans-serif; font-size: .86rem; line-height: 1.45; white-space: normal; max-width: 780px; min-width: 0; }
+.code .thr, .code .askbox { margin: 8px 10px 8px 56px; position: sticky; left: 10px; }
+.thhd { display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: .76rem; color: var(--muted); min-width: 0; }
+.thhd .grow { flex: 1; }
+.tchip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-2); border-radius: 99px; padding: 0 9px; font-size: .74rem; color: var(--text); vertical-align: bottom; }
+.thr .linkish, .askbox .linkish { white-space: nowrap; }
+.tsum { padding: 0 12px 9px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tmsg { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 6px 12px 0; }
+.tmsg .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: .72rem; font-weight: 700; margin-top: 1px; }
+.tmsg.me .av { background: var(--accent); color: var(--accent-ink); }
+.tmsg.ag .av { background: var(--warn-soft); color: var(--warn); }
+.tq { margin: 0; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tmeta { font-size: .72rem; color: var(--faint); margin-bottom: 2px; }
+.tbody { overflow-wrap: anywhere; }
+.tbody p { margin: 0 0 6px; }
+.tbody ul { margin: 0 0 6px; padding-left: 18px; }
+.tbody code, .tq code { font-family: var(--mono); font-size: .82em; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+a.tref { font-family: var(--mono); font-size: .8em; overflow-wrap: anywhere; }
+.unsure { color: var(--warn); font-weight: 600; }
+.tcode { margin: 4px 0 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); font: 12px/1.55 var(--mono); overflow: auto; white-space: pre; }
+.tfold > summary { cursor: pointer; color: var(--faint); font-size: .78rem; padding: 6px 12px 0; }
+.tfold .tmsg { padding-top: 4px; opacity: .8; }
+.tlive { display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--muted); font-size: .8rem; min-width: 0; }
+.tlive .lt { font-family: var(--mono); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.terr { margin: 8px 12px 0; padding: 7px 10px; border-radius: 6px; background: var(--danger-soft); color: var(--danger); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.terr .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tacts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px 10px; }
+.tacts .btn { padding: 3px 10px; font-size: .8rem; }
+.tfu { display: flex; gap: 6px; align-items: flex-end; padding: 0 12px 10px; }
+.tfu textarea, .askbox textarea { width: 100%; resize: vertical; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; }
+.tfu textarea { flex: 1; min-width: 0; min-height: 34px; }
+.tfu .btn { padding: 4px 11px; font-size: .82rem; }
+.prop { margin: 8px 12px 0; border: 1px dashed var(--faint); border-radius: 8px; padding: 8px 10px; background: var(--bg); }
+.prop .ph { font-size: .76rem; font-weight: 700; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.prop .pb { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.prop .acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px 0 0; }
+.prop .acts .btn { padding: 3px 10px; font-size: .8rem; }
+.prop .done { margin: 6px 0 0; font-size: .8rem; color: var(--ok); }
+.prop .gtable { font-size: .8rem; margin-top: 6px; }
+.prop .gtable td { overflow-wrap: anywhere; }
+.prop .gtable td.k { font-family: var(--mono); font-size: .74rem; color: var(--muted); white-space: nowrap; }
+.prop .gtable td.b { color: var(--muted); }
+.prop .gtable td.a { background: var(--add); }
+.fixed, .rejudged { display: inline-block; font-size: .7rem; font-weight: 700; border-radius: 99px; padding: 0 7px; background: var(--ok-soft); color: var(--ok); white-space: nowrap; text-transform: none; letter-spacing: 0; }
+.askbox { padding: 9px 12px 10px; }
+.askbox .ahd { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; min-width: 0; }
+.askbox textarea { min-height: 56px; }
+.askbox .starters { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.askbox .starters .fchip { font-size: .76rem; }
+.askbox .acts { display: flex; gap: 8px; align-items: center; padding: 8px 0 0; }
+.askbox .acts .btn { padding: 3px 12px; font-size: .82rem; }
+.askbox .acts .hint { margin: 0 0 0 auto; }
+.askbox .err { margin: 6px 0 0; font-size: .8rem; color: var(--danger); }
+.side .askbox { margin: 0 12px 10px; max-width: none; }
+.askrail { display: flex; justify-content: space-between; align-items: center; width: calc(100% - 24px); margin: 0 12px 10px; border: 1px solid var(--line); background: var(--bg); border-radius: 9px; padding: 4px 10px; font-size: .82rem; font-weight: 600; color: var(--muted); cursor: pointer; }
+.askrail:hover { color: var(--text); border-color: var(--accent); }
+kbd { font: 600 .72rem var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; background: var(--surface); color: var(--muted); }
+.oi.qi .qdot { flex: none; width: 8px; height: 8px; border-radius: 50%; align-self: center; margin-left: 2px; }
+.oi.qi .qdot.busy { background: var(--faint); animation: pulse 1s ease-in-out infinite; }
+.oi.qi .qdot.new { background: var(--accent); }
+@keyframes pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .oi.qi .qdot.busy { animation: none; } }
+.side details.lostq { padding: 2px 12px 2px 14px; font-size: .8rem; }
+.side details.lostq > summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side details.lostq p { margin: 4px 0 0; color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
+.side details.lostq p.user { color: var(--text); font-weight: 600; }
+.oi .cnt .spin { width: 10px; height: 10px; border-width: 2px; display: inline-block; vertical-align: -1px; }
+.dgpop { position: fixed; z-index: 60; min-width: 160px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 4px; box-shadow: 0 8px 24px rgb(0 0 0 / .18); font-size: .86rem; }
+.dgpop .ph { padding: 4px 10px 2px; font-size: .72rem; color: var(--faint); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prrow .pick b, .srow .pick b { flex: 0 0 auto; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prrow .pick .t, .srow .pick .t { flex: 0 1 auto; min-width: 0; }
+svg.dg [role=button] { cursor: pointer; }
+svg.dg [role=button]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 860px) {
   .body { grid-template-columns: minmax(0, 1fr); position: relative; }
   .side { display: none; position: absolute; top: 0; bottom: 0; left: 0; width: min(330px, 88vw); z-index: 25; box-shadow: 8px 0 24px rgb(0 0 0 / .18); }
@@ -501,7 +596,8 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
   .cm .to { white-space: normal; flex-wrap: wrap; }
   main { overflow-x: hidden; }
   .step .inner { padding-left: 12px; }
-  .code .cm { margin-left: 10px; }
+  .step > .thr, .step > .askbox { margin-left: 12px; }
+  .code .cm, .code .thr, .code .askbox, .selbar { margin-left: 10px; }
   .srow { grid-template-columns: minmax(0, 1fr); }
   .srow .cnt, .srow .seg { justify-self: start; }
   .sbody, .srow .sline { padding-left: 0; }
@@ -531,7 +627,11 @@ const LANG = { java: 'java', kt: 'kotlin', kts: 'kotlin', py: 'python', ts: 'typ
   go: 'go', rb: 'ruby', rs: 'rust', sql: 'sql', sh: 'bash', bash: 'bash', yml: 'yaml', yaml: 'yaml', xml: 'xml', html: 'xml', json: 'json', md: 'markdown',
   toml: 'ini', ini: 'ini', properties: 'ini', css: 'css', scss: 'scss', graphql: 'graphql', swift: 'swift', php: 'php', cs: 'csharp', c: 'c', h: 'c', cpp: 'cpp' };
 
-const defaults = { stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {}, lost: [], rail: null, origin: null, nav: null };
+// `tc`: what the page remembers about each question thread (hidden, a declined proposal, the comment made from it).
+const defaults = { stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {}, lost: [], rail: null, origin: null, nav: null,
+  tc: {} };
+// Asking is for the latest round only; an earlier round still shows its threads.
+const CAN_ASK = !!(BOOT.live && BOOT.review);
 let state = { ...defaults, ...(BOOT.ui || {}) };
 if (!DATA.stacks.some((s) => s.id === state.stack)) state.stack = DATA.stacks[0].id;
 let posted = {};
@@ -797,7 +897,9 @@ function renderSide() {
   const st = ST(), mode = railMode();
   const sw = el('div', { class: 'railsw', role: 'tablist', 'aria-label': 'Left rail' }, [['outline', 'Outline'], ['files', 'Files']].map(([k, l]) =>
     el('button', { type: 'button', role: 'tab', 'aria-selected': String(mode === k), onclick: () => { state.rail = k; save(); renderSide(); } }, l)));
-  document.getElementById('side').replaceChildren(sw, ...(mode === 'files' ? filesRail(st) : outlineRail(st)).flat(Infinity).filter(Boolean));
+  const askRail = !CAN_ASK ? null : asking?.rail ? askBox(asking.target, { rail: true })
+    : el('button', { class: 'askrail', type: 'button', onclick: () => openAsk(attachment(), { rail: true }), title: 'Ask about what is selected or on screen' }, 'Ask a question', el('kbd', {}, '?'));
+  document.getElementById('side').replaceChildren(sw, askRail, ...(mode === 'files' ? filesRail(st) : outlineRail(st)).flat(Infinity).filter(Boolean));
   const tree = document.querySelector('.ftree');
   if (tree) { tree.scrollLeft = sideScrollLeft; tree.addEventListener('scroll', () => { sideScrollLeft = tree.scrollLeft; }, { passive: true }); }
   applySpy();
@@ -813,8 +915,9 @@ function outlineRail(st) {
     item('g-findings', 'grp', t('Findings'), el('span', { class: 'cnt' + (found.length && !left ? ' ok' : '') }, found.length ? (left ? `${left} left` : '✓') : '')),
     AXES.map(([a, label]) => {
       const mine = found.filter((c) => c.axis === a), n = mine.filter((c) => !cmState(c).on && !cmState(c).gone).length;
-      return item('axis-' + a, 'ax', t(label), el('span', { class: 'cnt' + (mine.length && !n ? ' ok' : '') }, !mine.length ? (st.reviewing.includes(a) ? '…' : '0') : n ? n : '✓'));
+      return item('axis-' + a, 'ax', t(label), el('span', { class: 'cnt' + (mine.length && !n ? ' ok' : '') }, !mine.length ? (st.reviewing.includes(a) ? el('span', { class: 'spin', title: 'reviewing' }) : '0') : n ? n : '✓'));
     }),
+    questionsRail(st),
     item('send', 'grp', t('Your review'), el('span', { class: 'cnt' }, `${comments(st).filter((c) => cmState(c).on && !cmState(c).gone).length}`))];
 }
 
@@ -897,7 +1000,8 @@ function dgTarget(st, at, path) {
   if (!m || SELF) return null;
   return { open: () => window.open(`https://github.com/${DATA.repo}/blob/${f ? st.base : st.tip}/${p}#L${m[2]}${m[3] ? `-L${m[3]}` : ''}`, '_blank', 'noopener'), where: at };
 }
-const dgClick = (t) => (t ? (ev) => { ev.stopPropagation(); document.querySelector('.dgfull')?.remove(); t.open(); } : null);
+// With questions on, a click on a box or an arrow opens a popover (dgSvg); the handler only hands it where the code is.
+const dgClick = (t) => (t ? (ev) => { if (CAN_ASK) { ev.dgt = t; return; } ev.stopPropagation(); document.querySelector('.dgfull')?.remove(); t.open(); } : null);
 
 // A box: its size and how to draw it at (x, y). `shape` picks the outline.
 function dgNode(kind, n) {
@@ -1178,7 +1282,49 @@ function dgSvg(kind, title, box, kids) {
     s.querySelectorAll(`[data-n~="${CSS.escape(n.dataset.id)}"]`).forEach((x) => x.classList.add('lit'));
   });
   s.addEventListener('mouseleave', clear);
+  if (CAN_ASK) {
+    const ref = (n) => (n.dataset.id ? n.dataset.id : n.dataset.n.split(' ').join('>'));
+    const title = (n) => (n.querySelector('title')?.textContent || '').split('\n')[0];
+    s.querySelectorAll('.dn[data-id], .de[data-n]:not(.dlg)').forEach((n) => {
+      n.setAttribute('tabindex', '0'); n.setAttribute('role', 'button'); n.setAttribute('aria-label', `${title(n)}: ask or open the code`);
+    });
+    s.addEventListener('click', (ev) => {
+      const n = ev.target.closest('.dn[data-id], .de[data-n]');
+      if (!n) { if (ev.dgt) { document.querySelector('.dgfull')?.remove(); ev.dgt.open(); } return; }
+      ev.stopPropagation();
+      dgPop(ev.clientX, ev.clientY, ref(n), title(n), ev.dgt, +s.dataset.si);
+    });
+    s.addEventListener('keydown', (ev) => {
+      const n = ev.target.closest?.('.dn[data-id], .de[data-n]');
+      if (!n || n !== ev.target || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+      ev.preventDefault();
+      const r = n.getBoundingClientRect();
+      n.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+    });
+  }
   return s;
+}
+
+// The popover of a box or an arrow: its code, or a question about it.
+let dgOff = null;
+function dgPop(x, y, ref, label, t, si) {
+  dgOff?.();
+  const done = () => { document.querySelector('.dgfull')?.remove(); dgOff?.(); };
+  const pop = el('div', { class: 'dgpop', role: 'menu', 'aria-label': label },
+    el('div', { class: 'ph', title: label }, label),
+    t ? el('button', { class: 'mitem', type: 'button', role: 'menuitem', onclick: () => { done(); t.open(); } }, 'Open the code', el('span', {}, '↗')) : null,
+    el('button', { class: 'mitem', type: 'button', role: 'menuitem', onclick: () => { done(); openAsk(TG.node(ST(), ref, Number.isNaN(si) ? undefined : si)); } }, 'Ask about this', el('span', {}, '?')));
+  document.body.append(pop);
+  const r = pop.getBoundingClientRect();
+  pop.style.left = `${Math.max(8, Math.min(x + 6, innerWidth - r.width - 8))}px`;
+  pop.style.top = `${Math.max(8, Math.min(y + 6, innerHeight - r.height - 8))}px`;
+  const away = (e) => { if (!pop.contains(e.target)) dgOff(); };
+  const key = (e) => { if (e.key === 'Escape') dgOff(); };
+  dgOff = () => { pop.remove(); document.removeEventListener('click', away, true); document.removeEventListener('keydown', key); $main().removeEventListener('scroll', dgOff); dgOff = null; };
+  setTimeout(() => document.addEventListener('click', away, true));
+  document.addEventListener('keydown', key);
+  $main().addEventListener('scroll', dgOff, { once: true, passive: true });
+  pop.querySelector('button').focus();
 }
 
 function graphSvg(st, sec) {
@@ -1374,13 +1520,14 @@ function diagramView(st, sec) {
   // states and data read left to right; when that runs wider than the column and the writer set no direction, top to
   // bottom wins if it shows at a larger scale.
   const fitAt = (s) => Math.min(1, 1100 / +s.dataset.w);
-  const build = () => {
+  const draw = () => {
     if (sec.kind === 'sequence') return sequenceSvg(st, sec);
     const lr = graphSvg(st, sec);
     if (sec.direction || !['states', 'data'].includes(sec.kind) || +lr.dataset.w <= 1100) return lr;
     const tb = graphSvg(st, { ...sec, direction: 'TB' });
     return fitAt(tb) > fitAt(lr) + 0.05 ? tb : lr;
   };
+  const build = () => { const v = draw(); v.dataset.si = st.sections.indexOf(sec); return v; };
   const sv = build(), body = el('div', { class: 'dgs' }, sv);
   const btn = el('button', { class: 'dgx', type: 'button', hidden: true, onclick: () => dgExpand(build, sec.title) }, 'Expand');
   const has = (q) => !!sv.querySelector(q);
@@ -1389,7 +1536,7 @@ function diagramView(st, sec) {
     DG_STATES.filter((s) => has(`.dn.${s}`)).map((s) => sw(s, s)),
     has('.de.guess') ? el('span', {}, el('i', { class: 'swl guess' }), 'no line cited') : null,
     has('.de.ret') ? el('span', {}, el('i', { class: 'swl ret' }), 'return') : null,
-    has('.link') ? el('span', { class: 'hint' }, 'click a box or an arrow to open its code') : null, btn);
+    CAN_ASK ? el('span', { class: 'hint' }, 'click a box or an arrow to open its code or ask about it') : has('.link') ? el('span', { class: 'hint' }, 'click a box or an arrow to open its code') : null, btn);
   dgFit(sv, body, btn);
   return el('div', { class: 'dgm' }, body, legend);
 }
@@ -1447,7 +1594,7 @@ function findingsView(st) {
           el('span', { class: 'n' }, busy ? [el('span', { class: 'spin' }), 'reviewing'] : skip ? 'skipped' : mine.length ? plural(mine.length, 'finding', 'findings') : 'nothing found')),
         el('div', { class: 'axbody' }, skip ? el('p', { class: 'hint' }, skip) : null,
           !busy && !skip && !mine.length ? el('p', { class: 'hint' }, 'Nothing to raise on this axis.') : null,
-          mine.map((c) => commentCard(st, c))));
+          mine.map((c) => [commentCard(st, c, { ask: true }), qs(st, (g) => g.kind === 'finding' && g.ref === c.id)])));
     })];
 }
 
@@ -1461,20 +1608,37 @@ function codeBlock(st, rows, path, { excerpt, link, title, bare, onOpen, oldNums
   if (!bare) for (const c of comments(st)) if (c.path === path) (byLine.get(c.line) || byLine.set(c.line, []).get(c.line)).push(c);
   const box = el('div', { class: 'code' });
   if (title || link) box.append(el('div', { class: 'head' }, onOpen ? el('button', { type: 'button', onclick: onOpen, title: 'Open the file' }, title || path) : el('span', {}, title || path), link ? ext(link, 'GitHub ↗') : null));
+  const full = !excerpt && !bare;
   const hunkRows = (list) => list.forEach((r) => {
     const can = r.k === '+' && r.pr;
     const dim = state.focus && r.k === '+' && r.pr !== state.focus;
-    const num = el('span', { class: 'no' + (can ? ' go' : ''), title: can ? `Comment on this line (goes to #${r.pr})` : null, onclick: can ? () => addCustom(st, path, r) : null }, r.k === '-' ? '' : r.n);
-    const strip = el('span', { style: r.pr ? `background:${prColor(st, r.pr)}` : '', title: r.pr ? `written by #${r.pr}` : null });
+    const pick = full && r.k !== '-' ? (e) => (CAN_ASK ? pickLine(st, path, box, r, e.shiftKey) : can && addCustom(st, path, r)) : can ? () => addCustom(st, path, r) : null;
+    const num = el('span', { class: 'no' + (pick ? ' go' : ''), title: pick ? (CAN_ASK ? `Pick this line to comment or ask (shift-click for a range)` : `Comment on this line (goes to ${tag(r.pr)})`) : null, onclick: pick }, r.k === '-' ? '' : r.n);
+    const strip = el('span', { style: r.pr ? `background:${prColor(st, r.pr)}` : '', title: r.pr ? `written by ${tag(r.pr)}` : null });
     const src = el('span', { class: 'src', html: html.get(r) || ' ' });
     const fresh = r.k === '+' && sinceLines(st, path)?.includes(r.n);
     const cls = `ln${excerpt ? ' excerpt' : ''}${r.k === '+' ? ' add' : r.k === '-' ? ' del' : ''}${dim ? ' dim' : ''}${fresh ? ' mark' : ''}`;
     if (excerpt && r.k === '-' && oldNums) num.textContent = r.o;
-    box.append(excerpt ? el('div', { class: cls }, num, strip, src) : el('div', { class: cls, 'data-n': r.k === '-' ? null : r.n }, el('span', { class: 'no' }, r.k === '+' ? '' : r.o), num, strip, src));
-    if (r.k !== '-') for (const c of byLine.get(r.n) || []) box.append(commentCard(st, c, { inDiff: true }));
+    const row = excerpt ? el('div', { class: cls }, num, strip, src) : el('div', { class: cls, 'data-n': r.k === '-' ? null : r.n }, el('span', { class: 'no' }, r.k === '+' ? '' : r.o), num, strip, src);
+    rowData.set(row, r);
+    box.append(row);
+    if (r.k !== '-') for (const c of byLine.get(r.n) || []) box.append(commentCard(st, c, { inDiff: true, ask: full }), ...qs(st, (g) => g.kind === 'finding' && g.ref === c.id));
+    if (full && r.k !== '-') box.append(...qs(st, (g) => g.kind === 'line' && g.path === path && g.end === r.n));
   });
   if (Array.isArray(rows[0])) rows.forEach((h, i) => { box.append(el('div', { class: 'hunksep' }, i ? '⋯' : `@@ ${h[0]?.n ?? h[0]?.o}`)); hunkRows(h); });
   else hunkRows(rows);
+  if (full && CAN_ASK) {
+    box.addEventListener('mouseup', (e) => {
+      const g = getSelection(), end = (n) => (n && (n.nodeType === 1 ? n : n.parentElement)?.closest('.ln[data-n]'));
+      if (!g || g.isCollapsed || e.target.closest('.cm, .thr, .askbox, .selbar')) return;
+      const a = end(g.anchorNode), b = end(g.focusNode);
+      if (!a || !b || !box.contains(a) || !box.contains(b)) return;
+      const x = +a.dataset.n, y = +b.dataset.n;
+      lineSel = { st, path, anchor: Math.min(x, y), start: Math.min(x, y), end: Math.max(x, y) };
+      paintSel(box);
+    });
+    if (lineSel?.path === path) paintSel(box);
+  }
   return box;
 }
 
@@ -1498,8 +1662,10 @@ function snippet(st, c) {
   return null;
 }
 
-function commentCard(st, c, { inDiff } = {}) {
+function commentCard(st, c, { inDiff, ask } = {}) {
   const cs = cmState(c);
+  const askB = ask && CAN_ASK && c.axis ? el('button', { class: 'btn', type: 'button', title: 'Ask the agent about this finding', onclick: () => openAsk(TG.finding(st, c)) }, 'Ask') : null;
+  const rj = c.rejudged ? el('span', { class: 'rejudged', title: c.note || '' }, 're-judged after your question') : null;
   const rerender = () => { save(); render(); };
   const where = c.path ? `${c.path.split('/').pop()}:${c.line}` : 'review summary';
   const target = el('span', { class: 'to', title: SELF ? `Sent to the agent with ${tag(c.pr)}` : c.path ? `Posted on #${c.pr}` : `Posted on #${c.pr}, in the review summary: no line the stack changed carries it` }, '→', prDot(st, c.pr), tag(c.pr), ' · ', c.link ? ext(c.link, where) : where);
@@ -1516,13 +1682,13 @@ function commentCard(st, c, { inDiff } = {}) {
     const open = !!state.cmOpen[c.id];
     return el('div', { class: 'cm sugg' + (c.status === 'refuted' ? ' refuted' : ''), 'data-cid': c.id },
       el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Suggested comment'),
-        el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.axis ? el('span', { class: 'axtag' }, c.axis) : null, c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null,
+        el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.axis ? el('span', { class: 'axtag' }, c.axis) : null, c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null, rj,
         el('span', { class: 'grow' }), target),
       el('div', { class: 'ttl' }, c.title), cites, inDiff ? null : snippet(st, c),
       open ? el('div', { class: 'cmb' }, el('p', { class: 'preview' }, cs.text), proof) : null,
       el('div', { class: 'acts' },
         el('button', { class: 'btn primary', type: 'button', onclick: () => { cs.on = true; state.cmOpen[c.id] = true; rerender(); } }, 'Add to my review'),
-        el('button', { class: 'btn', type: 'button', onclick: () => { cs.gone = true; rerender(); } }, 'Dismiss'),
+        el('button', { class: 'btn', type: 'button', onclick: () => { cs.gone = true; rerender(); } }, 'Dismiss'), askB,
         el('button', { class: 'linkish', type: 'button', onclick: () => { state.cmOpen[c.id] = !open; rerender(); } }, open ? 'Hide the comment' : 'Read the comment and the proof')));
   }
   const ta = el('textarea', { 'aria-label': 'Comment as posted', placeholder: 'Write your comment', oninput: (e) => { cs.text = e.target.value; save(); } });
@@ -1531,17 +1697,17 @@ function commentCard(st, c, { inDiff } = {}) {
     Object.keys(SEV).map((k) => el('button', { class: k, type: 'button', 'aria-pressed': String(cs.sev === k), onclick: () => { cs.sev = k; rerender(); } }, SEV[k])));
   return el('div', { class: 'cm mine', 'data-cid': c.id },
     el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, DATA.viewer.slice(0, 1).toUpperCase()), c.custom ? 'Your comment' : 'In your review'),
-      types, el('span', { class: 'grow' }), target),
+      types, rj, el('span', { class: 'grow' }), target),
     inDiff ? null : snippet(st, c),
     el('div', { class: 'cmb' }, ta, PREFIX[cs.sev] && !SELF ? el('div', { class: 'ev' }, `Posted as “${PREFIX[cs.sev]}…”`) : null, cites && !SELF ? el('div', { class: 'ev' }, 'Posted with links to the code it cites.') : null, c.custom ? null : proof),
     el('div', { class: 'acts' },
       c.custom
         ? el('button', { class: 'btn', type: 'button', onclick: () => { state.extra[st.id] = extras(st).filter((x) => x.id !== c.id); rerender(); } }, 'Delete')
-        : el('button', { class: 'btn', type: 'button', onclick: () => { cs.on = false; rerender(); } }, 'Remove from my review')));
+        : el('button', { class: 'btn', type: 'button', onclick: () => { cs.on = false; rerender(); } }, 'Remove from my review'), askB));
 }
 
-function addCustom(st, path, r) {
-  const c = { id: `${st.id}-x${Date.now()}`, custom: true, severity: 'comment', path, line: r.n, pr: r.pr, pl: r.pl, ps: null };
+function addCustom(st, path, r, range) {
+  const c = { id: `${st.id}-x${Date.now()}`, custom: true, severity: 'comment', path, line: r.n, pr: r.pr, pl: r.pl, ps: range?.ps ?? null, ...(range ? { start_line: range.start } : {}) };
   extras(st).push(c);
   state.cm[c.id] = { on: true, gone: false, sev: 'comment', text: '' };
   save(); render();
@@ -1557,6 +1723,7 @@ function stepCard(st, s, i) {
     el('span', { class: 'num' }, done ? '✓' : i + 1),
     el('span', { class: 'ttl' }, el('b', {}, s.title), ' ', s.kind === 'decide' ? el('span', { class: 'kind' }, 'decide') : null, el('span', { class: 'why' }, s.why)),
     mine.length ? el('span', { class: 'badge' }, mine.length) : null,
+    askBtn(`step ${i + 1}`, () => openAsk(TG.step(st, s))),
     el('span', { class: 'chev' }, '›')));
   if (open) {
     const f = fileOf(st, s.path);
@@ -1567,6 +1734,8 @@ function stepCard(st, s, i) {
         el('label', {}, el('input', { type: 'checkbox', checked: done, onchange: (e) => { state.done[s.id] = e.target.checked; save(); render(); } }), 'Reviewed'),
         f ? el('a', { href: '#', onclick: (e) => { e.preventDefault(); openFile(s.path, { line: s.start }); } }, 'Whole file in the stack →') : null)));
   }
+  card.append(...qs(st, (g) => g.kind === 'step' && g.ref === s.id));
+  if (s._fixed) card.querySelector('.ttl b').after(' ', el('span', { class: 'fixed' }, 'corrected after a question'));
   return card;
 }
 
@@ -1644,8 +1813,17 @@ function guideView(st) {
     st.pending ? el('div', { class: 'pendingbox' }, el('span', { class: 'spin' }),
       'The guide is being written, and three reviewers are reading the code. Each part appears here when it lands. The files and diffs are ready now.') : null,
     !st.key_facts.length ? null : el('section', { class: 'facts' }, el('h3', {}, 'Know this first'),
-      el('ol', {}, st.key_facts.map((f, i) => el('li', {}, el('span', { class: 'n' }, i + 1), el('span', {}, el('b', {}, rich(f.title)), ' ', rich(f.text)))))),
-    st.sections.map((sec, i) => { const v = sectionView(st, sec); return v ? el('div', { class: 'gsec', id: `sec-${i}` }, v) : null; }),
+      el('ol', {}, st.key_facts.map((f, i) => el('li', {}, el('span', { class: 'n' }, i + 1),
+        el('span', {}, el('b', {}, rich(f.title)), ' ', rich(f.text), f._fixed ? [' ', el('span', { class: 'fixed' }, 'corrected after a question')] : null),
+        askBtn(`key fact ${i + 1}`, () => openAsk(TG.fact(st, i))), qs(st, (g) => g.kind === 'fact' && g.ref === i))))),
+    qs(st, (g) => g.kind === 'free' || (g.kind === 'node' && g.section == null)),
+    st.sections.map((sec, i) => {
+      const v = sectionView(st, sec);
+      if (!v) return null;
+      if (sec._fixed) v[0].append(el('span', { class: 'fixed' }, 'corrected after a question'));
+      const own = qs(st, (g) => g.kind === 'section' && g.ref === i), nodes = qs(st, (g) => g.kind === 'node' && g.section === i);
+      return el('div', { class: 'gsec' + (CAN_ASK ? ' askable' : ''), id: `sec-${i}` }, askBtn(`section ${sec.title}`, () => openAsk(TG.section(st, i))), v[0], own, v.slice(1), nodes);
+    }),
     el('div', { id: 'g-findings' }, findingsView(st))];
 }
 
@@ -1672,7 +1850,20 @@ const orderedFindings = (st) => AXES.flatMap(([a]) => axisFindings(st).filter((c
 
 function backToOrigin() {
   const o = state.origin || { view: 'guide', top: 0 };
-  state.view = o.view; state.origin = state.nav = null; save(); render(); $main().scrollTo(0, o.top);
+  state.view = o.view; state.origin = o.then || null; state.nav = o.nav || null;
+  if (o.file) state.file = o.file;
+  save(); render(); settleScroll(o.top);
+}
+// Diagrams take their size from a ResizeObserver after the render, so the page is still short when it is drawn: set the
+// scroll again as the layout settles, and stop once the reader scrolls on their own.
+function settleScroll(top) {
+  const m = $main();
+  let mine = top;
+  const stop = () => { mine = null; };
+  m.addEventListener('wheel', stop, { once: true, passive: true }); m.addEventListener('touchstart', stop, { once: true, passive: true });
+  const set = () => { if (mine !== null) m.scrollTo(0, top); };
+  set(); requestAnimationFrame(() => { set(); requestAnimationFrame(set); });
+  setTimeout(() => { set(); m.removeEventListener('wheel', stop); m.removeEventListener('touchstart', stop); }, 250);
 }
 
 function fileView(st) {
@@ -1683,7 +1874,9 @@ function fileView(st) {
   const key = st.id + f.path;
   const general = comments(st).filter((c) => c.path === f.path && !f.hunks.flat().some((r) => r.k !== '-' && r.n === c.line));
   const crumb = (label, fn) => el('button', { class: 'crumb' + (fn ? '' : ' cur'), type: 'button', onclick: fn, title: label }, label);
-  const parts = [crumb(o.label, backToOrigin)];
+  const asked = o.thread && TH.has(o.thread) ? chipText(TH.get(o.thread).target) : null;
+  const parts = [crumb(o.view === 'file' && asked ? `Question: ${asked}` : o.label, backToOrigin)];
+  if (asked && o.view !== 'file') parts.push(crumb(`Question: ${asked}`, () => { backToOrigin(); goTo('th-' + o.thread); }));
   let walkers = null, reviewed = null;
   const step = nv.kind === 'step' && allSteps(st).find((e) => e.s.id === nv.id);
   const finding = nv.kind === 'finding' && comments(st).find((c) => c.id === nv.id);
@@ -1708,7 +1901,7 @@ function fileView(st) {
     walkers = [w(-1, '← Previous finding'), k >= 0 ? el('span', {}, `${k + 1} of ${list.length}`) : null, w(1, 'Next finding →')];
   } else walkers = [nav(-1), nav(1)];
   return [
-    el('div', { class: 'crumbrow' }, el('button', { class: 'btn', type: 'button', onclick: backToOrigin, title: `Back to ${o.label.toLowerCase()}, where you left it` }, '← Back'),
+    el('div', { class: 'crumbrow' }, el('button', { class: 'btn', type: 'button', onclick: backToOrigin, title: `Back to ${o.view === 'file' ? o.label : o.label.toLowerCase()}, where you left it` }, '← Back'),
       el('nav', { class: 'crumbs', 'aria-label': 'Where you are' }, parts.map((p, j) => [j ? el('span', { 'aria-hidden': 'true' }, '›') : null, p]))),
     el('div', { class: 'filehead' },
       el('span', { class: 'path' }, f.path),
@@ -1719,7 +1912,7 @@ function fileView(st) {
         f.status !== 'modified' ? `${f.status} · ` : '', `+${f.adds} −${f.dels} · `,
         f.prs.map((n, j) => [j ? ', ' : 'changed by ', f.pr_links[n] ? ext(f.pr_links[n], tag(n)) : tag(n)]), ' · ', f.link ? ext(f.link, 'stack diff ↗') : null,
         sinceLines(st, f.path) ? [' · ', el('span', { class: 'newmark' }, 'new'), ` ${plural(sinceLines(st, f.path).length, 'line', 'lines')} changed since your last review`] : null)),
-    general.map((c) => commentCard(st, c, { inDiff: true })),
+    general.map((c) => [commentCard(st, c, { inDiff: true, ask: true }), qs(st, (g) => g.kind === 'finding' && g.ref === c.id)]),
     f.hunks.length ? codeBlock(st, f.hunks, f.path) : el('div', { class: 'empty' }, f.status === 'deleted' ? 'Deleted in this stack.' : 'No text diff to show (binary, too large, or rename only). Open it on GitHub.')];
 }
 
@@ -2018,6 +2211,483 @@ function prRow(st, x, busy) {
   return row;
 }
 
+// ---- Questions -----------------------------------------------------------------------------------------------------
+// A question is a thread on the server (ask.py). The page keeps every thread of the round in TH and draws each one where
+// its target is: under a diff line, a section, a fact, a step, a diagram or a finding card. A thread that is answering is
+// polled every 500 ms and repainted alone, so typing elsewhere is never disturbed.
+const TH = new Map(), drafts = {}, unseen = new Set(), watching = new Set(), appliedFx = new Set(), actBusy = new Set(), thErr = {};
+let asking = null, lineSel = null;
+const rowData = new WeakMap();
+const BUSYS = ['queued', 'running'], isBusy = (t) => BUSYS.includes(t.status);
+const byCreated = (a, b) => a.created - b.created || (a.id < b.id ? -1 : 1);
+const tcOf = (id) => (state.tc[id] ||= {});
+const stackOf = (t) => DATA.stacks.find((s) => s.id === t.target.stack) || ST();
+const inStack = (t, st) => !t.target.stack || t.target.stack === st.id;
+const askBtn = (what, fn) => (CAN_ASK ? el('button', { class: 'askbtn', type: 'button', 'aria-label': `Ask about ${what}`, title: 'Ask a question about this',
+  onclick: (e) => { e.stopPropagation(); fn(); } }, 'Ask') : null);
+const base = (p) => p.split('/').pop();
+
+// What a question is about, in the shape ask.py takes (label is for the chip; the server stores its own).
+const TG = {
+  line: (st, path, start, end) => ({ kind: 'line', stack: st.id, path, start, end, label: `${base(path)}:${start}${end > start ? `-${end}` : ''}` }),
+  section: (st, i) => ({ kind: 'section', stack: st.id, ref: i, label: st.sections[i].title }),
+  fact: (st, i) => ({ kind: 'fact', stack: st.id, ref: i, label: st.key_facts[i].title }),
+  step: (st, s) => ({ kind: 'step', stack: st.id, ref: s.id, label: s.title }),
+  finding: (st, c) => ({ kind: 'finding', stack: st.id, ref: c.id, label: c.title }),
+  free: () => ({ kind: 'free', stack: ST().id, label: 'Free question' }),
+  node(st, ref, si) {
+    const comps = dgComps(st), sec = st.sections[si];
+    const names = { ...comps, ...Object.fromEntries((sec?.nodes || []).filter((n) => n.id).map((n) => [n.id, n])) };
+    const lab = (id) => plain(names[id]?.label || id);
+    const [a, b] = String(ref).split('>');
+    return { kind: 'node', stack: st.id, ref, ...(si != null && si >= 0 ? { section: si } : {}), label: b ? `${lab(a)} to ${lab(b)}` : lab(a) };
+  },
+};
+function chipText(g) {
+  const st = DATA.stacks.find((s) => s.id === g.stack) || ST(), l = plain(g.label || '');
+  if (g.kind === 'step') { const e = allSteps(st).find((x) => x.s.id === g.ref); return e ? `Step ${e.n}: ${l}` : l; }
+  const pre = { finding: 'Finding: ', fact: 'Fact: ', section: 'Section: ', node: String(g.ref).includes('>') ? 'Arrow: ' : 'Box: ' }[g.kind] || '';
+  return pre + l;
+}
+const STARTERS = {
+  line: ['Why this way?', 'What calls this?', 'What breaks if…', 'Is this tested?'], step: ['Why this way?', 'What calls this?', 'What breaks if…', 'Is this tested?'],
+  section: ['Why this way?', 'What breaks if…', 'Is this tested?'], fact: ['Why is this true?', 'What breaks if…', 'Is this tested?'],
+  node: ['What calls this?', 'Why this way?', 'What breaks if…'], finding: ['Is this real?', 'Show me the caller', 'What breaks if…', 'Is this tested?'],
+  free: ['Why this way?', 'What calls this?'],
+};
+
+// The threads (and the open ask box) that belong at one place. `match` tests a thread's target.
+const qs = (st, match) => [
+  ...[...TH.values()].filter((t) => inStack(t, st) && match(t.target)).sort(byCreated).map(threadEl),
+  asking && !asking.rail && match(asking.target) ? askBox(asking.target) : null].filter(Boolean);
+
+// What the page is looking at, for `?`: the selected lines, else the section or step at the top of the guide.
+function attachment() {
+  const st = ST();
+  if (state.view === 'file' && lineSel && lineSel.path === state.file) return TG.line(st, lineSel.path, lineSel.start, lineSel.end);
+  if (state.view === 'guide' && spy.item) {
+    const m = /^sec-(\d+)$/.exec(spy.item);
+    if (m && st.sections[+m[1]]) return TG.section(st, +m[1]);
+    const e = allSteps(st).find((x) => x.s.id === spy.item);
+    if (e) return TG.step(st, e.s);
+  }
+  return TG.free();
+}
+function openAsk(g, o = {}) {
+  if (!CAN_ASK) return;
+  asking = { target: g, text: '', rail: !!o.rail, busy: false, err: '' };
+  lineSel = null;
+  if (o.rail) document.body.classList.add('rail-open');
+  render();
+  requestAnimationFrame(() => { const ta = document.querySelector('[data-asktext]'); if (ta) { ta.focus({ preventScroll: true }); ta.scrollIntoView({ block: 'nearest' }); } });
+}
+const closeAsk = () => { asking = null; render(); };
+const rebox = () => document.querySelector('.askbox')?.replaceWith(askBox(asking.target, { rail: asking.rail }));
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform || '');
+
+function askBox(g, { rail } = {}) {
+  const a = asking, starters = STARTERS[g.kind] || STARTERS.free;
+  const send = el('button', { class: 'btn primary', type: 'button', disabled: !a.text.trim() || a.busy, onclick: submitAsk }, a.busy ? 'Asking…' : 'Ask');
+  const ta = el('textarea', { 'data-asktext': '', rows: 3, 'aria-label': `Question about ${chipText(g)}`, placeholder: g.kind === 'free' ? 'Ask about anything in this review' : 'Ask about this',
+    oninput: (e) => { a.text = e.target.value; send.disabled = !a.text.trim() || a.busy; },
+    onkeydown: (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitAsk(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeAsk(); }
+    } });
+  ta.value = a.text; ta.disabled = !!a.busy;
+  const fill = (s) => { a.text = s.endsWith('…') ? s.slice(0, -1) + ' ' : s; ta.value = a.text; send.disabled = false; ta.focus(); ta.setSelectionRange(a.text.length, a.text.length); };
+  return el('div', { class: 'askbox', role: 'group', 'aria-label': 'Ask a question' },
+    el('div', { class: 'ahd' }, el('span', { class: 'tchip', title: chipText(g) }, chipText(g)),
+      rail && g.kind !== 'free' ? el('button', { class: 'linkish', type: 'button', onclick: () => { a.target = TG.free(); rebox(); } }, 'Remove') : null),
+    ta,
+    el('div', { class: 'starters' }, starters.map((s) => el('button', { class: 'fchip', type: 'button', onclick: () => fill(s) }, s))),
+    el('div', { class: 'acts' }, send, el('button', { class: 'btn', type: 'button', onclick: closeAsk }, 'Cancel'),
+      el('span', { class: 'hint' }, el('kbd', {}, MAC ? '⌘' : 'Ctrl'), ' ', el('kbd', {}, '↵'))),
+    a.err ? el('p', { class: 'err', role: 'alert' }, a.err) : null);
+}
+
+async function sendAsk(body) {
+  try {
+    const r = await fetch(`${API}/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    return r.ok ? { thread: j.thread } : { error: j.error || r.statusText };
+  } catch (e) { return { error: 'The server does not answer.' }; }
+}
+
+async function submitAsk() {
+  const a = asking, q = a?.text.trim();
+  if (!q || a.busy) return;
+  a.busy = true; a.err = ''; rebox();
+  const { label, ...target } = a.target;
+  const r = await sendAsk({ target, question: q });
+  if (asking !== a) return;
+  if (r.error) { a.busy = false; a.err = r.error; return rebox(); }
+  const t = { id: r.thread, target: a.target, created: Math.floor(Date.now() / 1000), session_id: null, status: 'queued', live: '', proposal: null, messages: [{ role: 'user', text: q, at: Math.floor(Date.now() / 1000) }] };
+  TH.set(t.id, t); asking = null;
+  // A free question shows at the top of the guide.
+  if (a.target.kind === 'free' && state.view !== 'guide') { state.view = 'guide'; state.origin = state.nav = null; save(); }
+  render(); watch(t.id);
+  if (a.rail && a.target.kind !== 'free') goThread(t.id);
+  else requestAnimationFrame(() => document.getElementById('th-' + t.id)?.scrollIntoView({ block: 'nearest' }));
+}
+
+async function submitFollow(t, q, deep) {
+  q = q.trim();
+  if (!q) return;
+  const prev = { status: t.status, proposal: t.proposal, error: t.error, live: t.live };
+  t.messages.push({ role: 'user', text: q, at: Math.floor(Date.now() / 1000), ...(deep ? { deep: true } : {}) });
+  Object.assign(t, { status: 'queued', live: '', proposal: null }); delete t.error; thErr[t.id] = '';
+  if (!deep) drafts[t.id] = '';
+  paintThread(t.id); paintQuestions();
+  const r = await sendAsk({ thread: t.id, question: q, deep: !!deep });
+  if (r.error) {
+    t.messages.pop(); Object.assign(t, prev); thErr[t.id] = r.error;
+    if (!deep) drafts[t.id] = q;
+    paintThread(t.id); paintQuestions(); return;
+  }
+  watch(t.id);
+}
+
+// Poll one thread until it stops answering, then repaint it (and the rail row) when something changed.
+function watch(id) {
+  if (watching.has(id) || !BOOT.live) return;
+  watching.add(id);
+  let fails = 0;
+  const tick = async () => {
+    const was = TH.get(id);
+    try {
+      const r = await fetch(`${API}/threads/${id}`, { cache: 'no-store' });
+      if (r.ok) {
+        const t = await r.json(); fails = 0;
+        const key = (x) => JSON.stringify([x.status, x.live, x.error, x.proposal, x.messages]);
+        TH.set(id, t);
+        if (!was || key(was) !== key(t)) {
+          if (was && isBusy(was) && !isBusy(t)) unseen.add(id);
+          paintThread(id);
+          if (!was || was.status !== t.status) paintQuestions();
+        }
+      } else fails++;
+    } catch (e) { fails++; }
+    const now = TH.get(id);
+    if (now && isBusy(now) && fails < 40) setTimeout(tick, 500); else watching.delete(id);
+  };
+  tick();
+}
+
+async function loadThreads() {
+  try {
+    const rows = (await (await fetch(`${API}/threads`, { cache: 'no-store' })).json()).threads || [];
+    const full = await Promise.all(rows.map((r) => fetch(`${API}/threads/${r.id}`, { cache: 'no-store' }).then((x) => (x.ok ? x.json() : null)).catch(() => null)));
+    for (const t of full) if (t) TH.set(t.id, t);
+  } catch (e) { return; }
+  applyOver(); render();
+  for (const t of TH.values()) if (isBusy(t)) watch(t.id);
+}
+
+// Accepted answers show on the page before the next build merges them: a re-judged finding, a corrected guide item.
+const srcStep = (s, sid) => ({ id: s.id.replace(sid + '-', ''), kind: s.kind, title: s.title, why: s.why, nodes: s.nodes, test: s.test || null, anchor: { path: s.path, start: s.start, end: s.end } });
+const srcSec = (sec, sid) => (sec.type === 'steps' ? { ...sec, steps: sec.steps.map((s) => srcStep(s, sid)) } : sec);
+function applyOver() {
+  for (const t of [...TH.values()].filter((x) => x.proposal?.applied).sort(byCreated)) {
+    const p = t.proposal;
+    if (p.type === 'rejudge') {
+      const c = DATA.stacks.flatMap((s) => s.comments).find((x) => x.id === t.target.ref);
+      if (c) Object.assign(c, { status: p.status, note: p.note, rejudged: t.id });
+    } else if (p.type === 'guide_fix' && !appliedFx.has(t.id)) {
+      appliedFx.add(t.id);
+      const st = DATA.stacks.find((s) => s.id === p.ref.stack), rep = p.replacement;
+      if (!st) continue;
+      if (p.ref.kind === 'fact') { if (st.key_facts[p.ref.index]) st.key_facts[p.ref.index] = { ...rep, _fixed: t.id }; continue; }
+      const fixStep = (old, s) => {
+        const same = old && old.path === s.anchor.path && old.start === s.anchor.start && old.end === s.anchor.end;
+        const rows = fileOf(st, s.anchor.path)?.hunks.flat().filter((r) => r.k !== '-' && r.n >= s.anchor.start && r.n <= s.anchor.end) || [];
+        return { id: `${st.id}-${s.id}`, kind: s.kind, title: s.title, why: s.why, nodes: s.nodes || [], test: 'test' in s ? s.test : false, path: s.anchor.path, start: s.anchor.start, end: s.anchor.end,
+          lines: same ? old.lines : rows, link: same ? old.link : null, _fixed: t.id };
+      };
+      if (p.ref.kind === 'section') {
+        const old = st.sections[p.ref.index];
+        st.sections[p.ref.index] = rep.type === 'steps' ? { ...rep, steps: rep.steps.map((s) => fixStep(old.steps?.find((o) => o.id === `${st.id}-${s.id}`), s)), _fixed: t.id } : { ...rep, _fixed: t.id };
+      } else {
+        const sec = st.sections.find((x) => x.type === 'steps' && x.steps.some((s) => s.id === `${st.id}-${p.ref.id}`));
+        if (sec) sec.steps = sec.steps.map((s) => (s.id === `${st.id}-${p.ref.id}` ? fixStep(s, { ...rep, id: p.ref.id }) : s));
+      }
+    }
+  }
+}
+
+// ---- the thread component
+const REF = /((?:[\w.@+-]+\/)*[\w@+-][\w.@+-]*\.[A-Za-z]\w*):(\d+)(?:-(\d+))?/g;
+function refEl(st, tid, text, path, a, b) {
+  path = path.replace(/^(?:\.\/)?(?:tip\/)?/, '');
+  const hit = fileOf(st, path) || (() => { const m = st.files.filter((f) => f.path.endsWith('/' + path)); return m.length === 1 ? m[0] : null; })();
+  if (hit && hit.status !== 'deleted') return el('a', { class: 'tref', href: '#', title: `Open ${hit.path}`, onclick: (e) => { e.preventDefault(); openFile(hit.path, { line: a, thread: tid, nav: { kind: 'tree' } }); } }, text);
+  if (!hit && !SELF && !/^[/~]/.test(path)) return ext(`https://github.com/${DATA.repo}/blob/${st.tip}/${path}#L${a}${b ? `-L${b}` : ''}`, text + ' ↗', 'tref');
+  return el('code', {}, text);
+}
+function inlineText(s, st, tid) {
+  return String(s).split('`').flatMap((part, i) => {
+    if (i % 2) {
+      const m = /^(.+\.[A-Za-z]\w*):(\d+)(?:-(\d+))?$/.exec(part.trim());
+      return m ? refEl(st, tid, part.trim(), m[1], +m[2], m[3] ? +m[3] : null) : el('code', {}, part);
+    }
+    // The agent is told not to, but it sometimes bolds: show it as bold rather than as asterisks.
+    return part.split(/\*\*([^*]+)\*\*/).flatMap((chunk, k) => (k % 2 ? [el('b', {}, chunk)] : chunk.split(/(could not confirm)/i).flatMap((bit, j) => {
+      if (j % 2) return el('span', { class: 'unsure' }, bit);
+      const out = []; let last = 0;
+      for (const m of bit.matchAll(REF)) { out.push(bit.slice(last, m.index), refEl(st, tid, m[0], m[1], +m[2], m[3] ? +m[3] : null)); last = m.index + m[0].length; }
+      out.push(bit.slice(last));
+      return out;
+    })));
+  });
+}
+function codeEl(c) {
+  const src = c.src.join('\n'), lang = LANG[c.lang] || c.lang;
+  let html = esc(src);
+  if (window.hljs && lang && hljs.getLanguage(lang)) { try { html = hljs.highlight(src, { language: lang, ignoreIllegals: true }).value; } catch (e) {} }
+  return el('pre', { class: 'tcode', html });
+}
+// The answer as text: paragraphs, bullet lists, fenced code, `code` and path:line links.
+function answerEl(text, st, tid) {
+  const out = [];
+  let para = [], list = null, code = null;
+  const fp = () => { if (para.length) out.push(el('p', {}, inlineText(para.join(' '), st, tid))); para = []; };
+  const fl = () => { if (list) out.push(el('ul', {}, list.map((x) => el('li', {}, inlineText(x, st, tid))))); list = null; };
+  for (const ln of String(text).split('\n')) {
+    if (code) { if (/^\s*```/.test(ln)) { out.push(codeEl(code)); code = null; } else code.src.push(ln); continue; }
+    const f = /^\s*```(\w*)/.exec(ln), b = /^\s*[-*]\s+(.*)/.exec(ln);
+    if (f) { fp(); fl(); code = { lang: f[1], src: [] }; } else if (!ln.trim()) { fp(); fl(); } else if (b) { fp(); (list ||= []).push(b[1]); } else { fl(); para.push(ln.trim()); }
+  }
+  if (code) out.push(codeEl(code));
+  fp(); fl();
+  return el('div', { class: 'tbody' }, out);
+}
+
+const lastQuestion = (t) => [...t.messages].reverse().find((m) => m.role === 'user');
+const seenObs = new IntersectionObserver((es) => es.forEach((e) => {
+  if (!e.isIntersecting) return;
+  seenObs.unobserve(e.target); unseen.delete(e.target.id.slice(3)); paintQuestions();
+}), { threshold: 0.5 });
+
+function threadEl(t) {
+  const st = stackOf(t), tc = state.tc[t.id] || {}, busy = isBusy(t), g = t.target, ms = t.messages;
+  const root = el('div', { class: 'thr', id: 'th-' + t.id, role: 'group', 'aria-label': `Question about ${chipText(g)}` });
+  const min = !!tc.min && !busy;
+  root.append(el('div', { class: 'thhd' }, el('span', { class: 'tchip', title: chipText(g) }, chipText(g)), el('span', { class: 'grow' }),
+    el('button', { class: 'linkish', type: 'button', 'aria-expanded': String(!min), onclick: () => { tcOf(t.id).min = !min; save(); paintThread(t.id); } }, min ? 'Show' : 'Hide')));
+  if (min) { root.append(el('div', { class: 'tsum' }, ms[0]?.text || '')); return root; }
+  const agentAfter = (i) => ms.slice(i + 1).some((m) => m.role === 'agent' && m.text.trim());
+  ms.forEach((m, i) => {
+    if (m.role === 'user') {
+      if (m.deep || ms[i + 1]?.role === 'user') return;  // a repeat for a deeper run, or one that got no answer
+      return root.append(el('div', { class: 'tmsg me' }, el('span', { class: 'av', 'aria-hidden': 'true' }, DATA.viewer.slice(0, 1).toUpperCase()), el('p', { class: 'tq' }, m.text)));
+    }
+    if (!m.text.trim()) return;
+    const msg = el('div', { class: 'tmsg ag' }, el('span', { class: 'av', title: 'From the agent, not from you' }, '✦'),
+      el('div', {}, el('div', { class: 'tmeta' }, `Agent · ${m.model === 'opus' ? 'Opus' : 'Sonnet'}${m.deep ? ', read more' : ''}`), answerEl(m.text, st, t.id)));
+    const folded = ms[i + 1]?.role === 'user' && ms[i + 1].deep && (agentAfter(i + 1) || busy);
+    root.append(folded ? el('details', { class: 'tfold' }, el('summary', {}, `Earlier answer (${m.model === 'opus' ? 'Opus' : 'Sonnet'})`), msg) : msg);
+  });
+  if (busy) root.append(el('div', { class: 'tlive', role: 'status', 'aria-live': 'polite' }, el('span', { class: 'spin' }),
+    t.status === 'queued' ? 'Waiting for a free slot…' : el('span', { class: 'lt', title: t.live }, t.live || 'Starting…')));
+  if (t.status === 'failed' || thErr[t.id]) {
+    const q = lastQuestion(t);
+    root.append(el('div', { class: 'terr', role: 'alert' }, el('span', { class: 'grow' }, thErr[t.id] || t.error || 'The answer failed.'),
+      t.status === 'failed' && CAN_ASK && q ? el('button', { class: 'btn', type: 'button', onclick: () => submitFollow(t, q.text, !!q.deep) }, 'Retry') : null));
+  }
+  const last = ms.at(-1);
+  if (t.status === 'idle' && last?.role === 'agent') {
+    const prop = proposalEl(t, st);
+    if (prop) root.append(prop);
+    const spot = CAN_ASK && t.proposal?.type !== 'comment' ? commentSpot(t) : null;
+    const acts = [];
+    if (CAN_ASK && !last.deep) acts.push(el('button', { class: 'btn', type: 'button', title: 'Run the question again on Opus, with room to read more', onclick: () => submitFollow(t, lastQuestion(t).text, true) }, 'Dig deeper'));
+    if (spot) acts.push(el('button', { class: 'btn', type: 'button', title: 'Draft a comment on this line from the answer', onclick: () => toComment(t) }, 'Turn into comment'));
+    if (CAN_ASK && SELF) acts.push(el('button', { class: 'btn', type: 'button', disabled: !!tc.impl, title: 'Add this question to your feedback for the implementing session', onclick: () => toImplementer(t) }, tc.impl ? 'In your review' : 'Ask the implementer'));
+    if (acts.length) root.append(el('div', { class: 'tacts' }, acts));
+    if (CAN_ASK) {
+      const go = () => submitFollow(t, ta.value, false);
+      const ta = el('textarea', { rows: 1, placeholder: 'Ask a follow-up', 'aria-label': 'Follow-up question', oninput: (e) => { drafts[t.id] = e.target.value; },
+        onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } } });
+      ta.value = drafts[t.id] || '';
+      root.append(el('div', { class: 'tfu' }, ta, el('button', { class: 'btn', type: 'button', onclick: go }, 'Ask')));
+    }
+  }
+  if (unseen.has(t.id)) seenObs.observe(root);
+  return root;
+}
+function paintThread(id) {
+  const old = document.getElementById('th-' + id), t = TH.get(id);
+  if (!old || !t) return;
+  const typing = old.contains(document.activeElement) && document.activeElement.tagName === 'TEXTAREA';
+  const fresh = threadEl(t);
+  old.replaceWith(fresh);
+  if (typing) { const ta = fresh.querySelector('textarea'); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
+}
+
+// Where a comment from this thread can go: the line it is about (or the finding's line), when the stack wrote that line.
+function commentSpot(t) {
+  const st = stackOf(t), g = t.target;
+  let path, a, b;
+  if (g.kind === 'line') { path = g.path; a = g.start; b = g.end; }
+  else if (g.kind === 'finding') {
+    const c = st.comments.find((x) => x.id === g.ref);
+    if (!c?.path) return null;
+    path = c.path; b = c.line; a = c.start_line || c.line;
+  } else return null;
+  const rows = fileOf(st, path)?.hunks.flat().filter((r) => r.k === '+' && r.pr) || [];
+  const last = rows.find((r) => r.n === b);
+  if (!last) return null;
+  const run = rows.filter((r) => r.n >= a && r.n <= b);
+  const ok = a < b && run.length === b - a + 1 && run.every((r, i) => r.pr === last.pr && (!i || r.pl === run[i - 1].pl + 1));
+  return { path, line: b, start_line: ok ? a : null, pr: last.pr, pl: last.pl, ps: ok ? run[0].pl : null };
+}
+
+async function doApply(t) {
+  actBusy.add(t.id); thErr[t.id] = ''; paintThread(t.id);
+  let ok = false;
+  try {
+    const r = await fetch(`${API}/threads/${t.id}/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: '{}' });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) { t.proposal = j.proposal; ok = true; } else thErr[t.id] = j.error || r.statusText;
+  } catch (e) { thErr[t.id] = 'The server does not answer.'; }
+  actBusy.delete(t.id);
+  if (!ok) paintThread(t.id);
+  return ok;
+}
+async function acceptOver(t) { if (await doApply(t)) { applyOver(); render(); } }
+const rejectProposal = (t) => { tcOf(t.id).rej = true; save(); paintThread(t.id); };
+
+// A comment from an answer: the proposal's own, or the last answer as a draft. It lands among your comments with the editor open.
+async function toComment(t) {
+  const p = t.proposal?.type === 'comment' ? t.proposal : null, st = stackOf(t);
+  if (p && !(await doApply(t))) return;
+  const spot = p ? { path: p.path, line: p.line, start_line: p.start_line, pr: p.pr, pl: p.pl, ps: p.ps } : commentSpot(t);
+  if (!spot) return;
+  const body = p ? p.body : (t.messages.filter((m) => m.role === 'agent').at(-1)?.text || '').replace(/\*\*/g, '').trim();
+  const c = { id: `${st.id}-x${Date.now()}`, custom: true, severity: p?.severity || 'comment', ...spot };
+  extras(st).push(c);
+  state.cm[c.id] = { on: true, gone: false, sev: c.severity, text: body };
+  tcOf(t.id).cid = c.id; save();
+  if (state.view === 'file' && state.file === spot.path) render(); else openFile(spot.path, { line: spot.line, thread: t.id, nav: { kind: 'tree' } });
+  requestAnimationFrame(() => { const ta = document.querySelector(`[data-cid="${c.id}"] textarea`); if (ta) { ta.focus(); ta.scrollIntoView({ block: 'nearest' }); } });
+}
+
+// Self-review: the question goes to the implementing session with the rest of the feedback, as a general comment on the layer.
+function toImplementer(t) {
+  const st = stackOf(t), g = t.target, spot = commentSpot(t);
+  const pr = spot?.pr ?? st.comments.find((x) => x.id === g.ref)?.pr ?? fileOf(st, g.path)?.prs.at(-1) ?? st.prs.at(-1).n;
+  const c = { id: `${st.id}-x${Date.now()}`, custom: true, severity: 'question', path: null, line: null, pr, pl: null, ps: null };
+  extras(st).push(c);
+  state.cm[c.id] = { on: true, gone: false, sev: 'question', text: `${g.kind === 'free' ? '' : `About ${chipText(g)}: `}${t.messages[0].text}` };
+  tcOf(t.id).impl = c.id; save();
+  renderTop(); paintThread(t.id);
+}
+
+const FIX_SKIP = new Set(['_fixed', 'id']);
+function fixRows(st, p) {
+  const k = p.ref.kind, rep = p.replacement;
+  const cur = k === 'fact' ? st.key_facts[p.ref.index] : k === 'section' ? srcSec(st.sections[p.ref.index], st.id)
+    : srcStep(st.sections.flatMap((s) => s.steps || []).find((s) => s.id === `${st.id}-${p.ref.id}`) || {}, st.id);
+  const fmt = (v) => (v == null ? '(none)' : typeof v === 'string' ? v : JSON.stringify(v).slice(0, 240));
+  const rows = [];
+  const diff = (label, a, b) => { if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) rows.push([label, fmt(a), fmt(b)]); };
+  for (const key of Object.keys({ ...cur, ...rep })) {
+    if (FIX_SKIP.has(key)) continue;
+    if (key === 'steps') (rep.steps || []).forEach((s, i) => Object.keys({ ...(cur.steps?.[i] || {}), ...s }).filter((f) => f !== 'id').forEach((f) => diff(`step ${i + 1} ${f}`, cur.steps?.[i]?.[f], s[f])));
+    else diff(key, cur[key], rep[key]);
+  }
+  return rows;
+}
+
+function proposalEl(t, st) {
+  const p = t.proposal, tc = state.tc[t.id] || {};
+  if (!p || tc.rej || (!CAN_ASK && !p.applied)) return null;
+  const busy = actBusy.has(t.id), b = (txt, fn, cls = 'btn') => el('button', { class: cls, type: 'button', disabled: busy || !CAN_ASK, onclick: fn }, busy && cls.includes('primary') ? 'Working…' : txt);
+  if (p.type === 'comment') {
+    const made = tc.cid && comments(st).some((x) => x.id === tc.cid);
+    return el('div', { class: 'prop' }, el('div', { class: 'ph' }, '✦ Drafted comment', el('span', { class: 'pill ' + p.severity }, SEV[p.severity] || p.severity), el('span', { class: 'tchip' }, `${base(p.path)}:${p.line}`)),
+      el('p', { class: 'pb' }, p.body),
+      made ? el('p', { class: 'done' }, '✓ In your comments.') : el('div', { class: 'acts' }, b('Turn into comment', () => toComment(t), 'btn primary'), b('Not now', () => rejectProposal(t))));
+  }
+  if (p.type === 'rejudge') {
+    const word = p.status === 'refuted' ? 'disproved' : 'checked';
+    return el('div', { class: 'prop' }, el('div', { class: 'ph' }, '✦ Re-judge this finding'), el('p', { class: 'pb' }, rich(p.note)),
+      p.applied ? el('p', { class: 'done' }, `✓ Re-judged as ${word}. The finding card says so.`) : el('div', { class: 'acts' }, b(`Re-judge: ${word}`, () => acceptOver(t), 'btn primary'), b('Not now', () => rejectProposal(t))));
+  }
+  const rows = p.applied ? [] : fixRows(st, p);
+  return el('div', { class: 'prop' }, el('div', { class: 'ph' }, '✦ Fix the guide'),
+    rows.length ? el('div', { class: 'tscroll' }, el('table', { class: 'gtable' }, el('thead', {}, el('tr', {}, ['', 'Before', 'After'].map((x) => el('th', {}, x)))),
+      el('tbody', {}, rows.slice(0, 8).map(([k, x, y]) => el('tr', {}, el('td', { class: 'k' }, k), el('td', { class: 'b' }, rich(x)), el('td', { class: 'a' }, rich(y))))))) : null,
+    rows.length > 8 ? el('p', { class: 'hint' }, `and ${rows.length - 8} more changes`) : null,
+    p.applied ? el('p', { class: 'done' }, '✓ Accepted. The guide now carries the replacement, marked as corrected after a question.')
+      : el('div', { class: 'acts' }, b('Accept', () => acceptOver(t), 'btn primary'), b('Reject', () => rejectProposal(t))));
+}
+
+// ---- the rail group
+function questionsRail(st) {
+  const list = [...TH.values()].filter((t) => inStack(t, st)).sort(byCreated), lost = state.lost_threads || [];
+  const box = el('div', { id: 'qgrp' });
+  if (!list.length && !lost.length) return box;
+  const mark = (t) => (isBusy(t) ? el('span', { class: 'qdot busy', role: 'img', 'aria-label': 'answering', title: 'answering' })
+    : t.status === 'failed' ? el('span', { class: 'cnt', title: 'failed' }, '✕') : unseen.has(t.id) ? el('span', { class: 'qdot new', role: 'img', 'aria-label': 'new answer', title: 'new answer' }) : null);
+  if (list.length) box.append(el('div', { class: 'oi grp' }, el('span', { class: 't' }, `Questions (${list.length})`)),
+    ...list.map((t) => el('a', { class: 'oi qi', href: '#', 'data-t': 'th-' + t.id, 'aria-current': 'false', onclick: (e) => { e.preventDefault(); goThread(t.id); } },
+      el('span', { class: 't', title: t.messages[0]?.text }, t.messages[0]?.text || ''), mark(t))));
+  if (lost.length) box.append(el('details', { class: 'lostq' }, el('summary', {}, `Questions from earlier rounds (${lost.length})`),
+    ...lost.flatMap((q) => [el('p', { class: 'user' }, q.question), el('p', {}, plain((q.messages || []).filter((m) => m.role === 'agent').at(-1)?.text?.slice(0, 300) || 'No answer.'))])));
+  return box;
+}
+const paintQuestions = () => document.getElementById('qgrp')?.replaceWith(questionsRail(ST()));
+
+function goThread(id) {
+  const t = TH.get(id);
+  if (!t) return;
+  unseen.delete(id); paintQuestions();
+  const g = t.target, st = stackOf(t);
+  if (st.id !== state.stack) { state.stack = st.id; state.focus = null; }
+  if (g.kind === 'line' && fileOf(st, g.path)) {
+    if (!(state.view === 'file' && state.file === g.path)) openFile(g.path, { line: g.end, nav: { kind: 'tree' } });
+    document.body.classList.remove('rail-open'); return goTo('th-' + id);
+  }
+  const c = g.kind === 'finding' && st.comments.find((x) => x.id === g.ref);
+  if (c?.axis) state.open[`axis:${st.id}:${c.axis}`] = true;
+  go('guide', 'th-' + id);
+}
+
+// ---- lines of the diff: a click on a number or a drag over the code picks lines, then offers Comment and Ask
+function pickLine(st, path, box, r, shift) {
+  const from = shift && lineSel?.path === path ? lineSel.anchor : r.n;
+  lineSel = { st, path, anchor: from, start: Math.min(from, r.n), end: Math.max(from, r.n) };
+  paintSel(box);
+}
+function paintSel(box) {
+  if (!box) return;
+  box.querySelectorAll(':scope > .selbar').forEach((x) => x.remove());
+  box.querySelectorAll(':scope > .ln.sel').forEach((x) => x.classList.remove('sel'));
+  const s = lineSel;
+  if (!s) return;
+  const rows = [...box.querySelectorAll(':scope > .ln[data-n]')].filter((x) => +x.dataset.n >= s.start && +x.dataset.n <= s.end);
+  if (!rows.length) return;
+  rows.forEach((x) => x.classList.add('sel'));
+  const data = rows.map((x) => rowData.get(x)), a = data[0].n, b = data.at(-1).n, last = data.at(-1);
+  const comment = () => {
+    const same = data.length > 1 && data.every((r, i) => r.k === '+' && r.pr === last.pr && (!i || r.pl === data[i - 1].pl + 1));
+    lineSel = null; addCustom(s.st, s.path, last, same ? { start: a, ps: data[0].pl } : null);
+  };
+  const bar = el('div', { class: 'selbar', role: 'group', 'aria-label': 'Selected lines' }, el('span', { class: 'lab' }, TG.line(s.st, s.path, a, b).label),
+    last.k === '+' && last.pr ? el('button', { class: 'btn', type: 'button', title: `Comment on the last line (goes to ${tag(last.pr)})`, onclick: comment }, 'Comment') : null,
+    CAN_ASK ? el('button', { class: 'btn primary', type: 'button', onclick: () => openAsk(TG.line(s.st, s.path, a, b)) }, 'Ask') : null,
+    el('button', { class: 'linkish', type: 'button', 'aria-label': 'Clear the selection', onclick: () => { lineSel = null; paintSel(box); } }, '✕'));
+  rows.at(-1).after(bar);
+}
+const clearSel = () => { if (lineSel) { lineSel = null; paintSel(document.querySelector('#content > .code')); } };
+
+document.addEventListener('keydown', (e) => {
+  const t = e.target, typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable;
+  if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey && CAN_ASK && !typing) { e.preventDefault(); openAsk(attachment(), { rail: true }); }
+  else if (e.key === 'Escape' && !typing && lineSel) clearSel();
+});
+
 // Where a click came from, so a file opened from a step, a finding or a diagram knows its way back and what comes next.
 let lastCtx = null, pendingLine = null;
 document.addEventListener('click', (e) => {
@@ -2027,9 +2697,12 @@ document.addEventListener('click', (e) => {
 
 function openFile(path, o = {}) {
   const from = state.view === 'send' ? 'send' : 'guide';
-  if (state.view !== 'file' || !state.origin) state.origin = { view: from, top: $main().scrollTop, label: from === 'send' ? 'Your review' : 'Guide' };
+  if (o.thread && state.view === 'file') {
+    // From a thread under a line of a file: Back returns to that file, where the thread is, and its own Back goes on from there.
+    state.origin = { view: 'file', file: state.file, top: $main().scrollTop, label: base(state.file), nav: state.nav, then: state.origin, thread: o.thread };
+  } else if (state.view !== 'file' || !state.origin) state.origin = { view: from, top: $main().scrollTop, label: from === 'send' ? 'Your review' : 'Guide', ...(o.thread ? { thread: o.thread } : {}) };
   state.nav = o.nav || lastCtx || { kind: 'tree' };
-  lastCtx = null; pendingLine = o.line ?? null;
+  lastCtx = null; pendingLine = o.line ?? null; lineSel = null;
   state.file = path; state.view = 'file'; document.body.classList.remove('rail-open'); save(); render();
   if (pendingLine == null) $main().scrollTo(0, 0);
 }
@@ -2085,6 +2758,7 @@ async function poll() {
   if (BOOT.live) setTimeout(poll, busy ? 3000 : 15000);
 }
 poll();
+if (BOOT.review) loadThreads();
 if (BOOT.live) { checkHeads(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && checkHeads()); }
 </script>
 </body>

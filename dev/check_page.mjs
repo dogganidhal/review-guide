@@ -1,11 +1,15 @@
 // Dev-only: loads a review page in a browser and checks the page frame.
-//   NODE_PATH=/tmp/rg-video/node_modules node dev/check_page.mjs <review page url> [--shots <dir>]
+//   NODE_PATH=/tmp/rg-video/node_modules node dev/check_page.mjs <review page url> [--shots <dir>] [--stub]
 // The fixture home comes from `test_scripts.py --keep <home>`; serve it with serve.py and pass a /r/<id> URL.
+// --stub also checks the questions (asking from a finding, the thread, a path:line link and Back, 390 px wide). Serve with
+//   REVIEW_GUIDE_CLAUDE=dev/stub_claude.py serve.py --home <home> --port 0
+// so answers come from the stub; it asks on the first finding that has a suggested card, so it needs a guide with findings.
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
 const { chromium } = createRequire(process.cwd() + '/')('playwright');
 
 const url = process.argv[2];
+const stub = process.argv.includes('--stub');
 const shots = process.argv.includes('--shots') ? process.argv[process.argv.indexOf('--shots') + 1] : null;
 if (!url) { console.error('usage: check_page.mjs <url> [--shots <dir>]'); process.exit(2); }
 if (shots) mkdirSync(shots, { recursive: true });
@@ -103,6 +107,60 @@ for (const width of [1440, 1920]) {
   check((await x()).doc <= 0, 'no horizontal page scroll in Your review at 390px');
   await page.close();
 }
+
+// Questions, against the stub agent: ask from a finding, read the thread, follow a path:line link, come back, check 390 px.
+async function questions() {
+  const page = await open(1440);
+  const pick = await page.evaluate(() => {
+    const c = ST().comments.find((x) => x.axis && !cmState(x).gone && !cmState(x).on);
+    if (!c) return null;
+    state.open[`axis:${ST().id}:${c.axis}`] = true; render();
+    document.getElementById(`axis-${c.axis}`).scrollIntoView({ block: 'start' });
+    return { id: c.id, axis: c.axis };
+  });
+  if (!pick) { console.log('skip questions: no suggested finding in this guide'); await page.close(); return; }
+  const card = page.locator(`[data-cid="${pick.id}"]`);
+  await card.getByRole('button', { name: 'Ask', exact: true }).click();
+  check(await page.locator('.askbox .tchip').innerText().then((t) => t.startsWith('Finding: ')), 'the ask box names its target');
+  await page.locator('.askbox .fchip', { hasText: 'Is this real?' }).click();
+  check(await page.locator('[data-asktext]').inputValue() === 'Is this real?', 'a starter fills the box');
+  await page.keyboard.press('Control+Enter');
+  await page.waitForSelector('.thr .tlive');
+  await shot(page, '1440-thread-live');
+  await page.waitForSelector('.thr .tfu', { timeout: 20000 });  // the follow-up box shows once the answer is complete
+  check(await page.locator('.thr .tmsg.ag .av').first().innerText() === '✦', 'the answer carries the ✦ mark');
+  check(await page.locator('.thr .tmsg.me .tq').first().innerText() === 'Is this real?', 'the thread shows the question');
+  check(await page.locator('#qgrp .oi.qi').count() === 1, 'the rail lists the thread under Questions');
+  const link = page.locator('.thr a.tref').first();
+  check(await link.count() > 0, 'the answer has a path:line link');
+  await page.evaluate((id) => { document.querySelector(`[data-cid="${id}"]`).scrollIntoView({ block: 'start' }); $main().scrollBy(0, 120); }, pick.id);
+  await page.waitForTimeout(300);
+  await shot(page, '1440-thread-finding');
+  const before = await page.evaluate(() => $main().scrollTop);
+  await link.click();
+  await page.waitForSelector('.crumbs');
+  const trail = await page.locator('.crumbs').innerText().then((t) => t.replace(/\s+/g, ' '));
+  check(await page.evaluate(() => state.view === 'file') && /Question: Finding: /.test(trail), `a link in the answer opens the file, with the thread in the breadcrumb: ${trail}`);
+  check(await page.locator('.ln.anchor').count() > 0, 'the file view outlines the cited line');
+  await page.getByRole('button', { name: '← Back' }).click();
+  await page.waitForSelector('.thr');
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => $main().scrollTop);
+  check(Math.abs(after - before) <= 5, `Back returns to the thread (${before} to ${after})`);
+  await page.close();
+
+  // The same thread on a phone: nothing sticks out sideways.
+  const m = await open(390, 844);
+  await m.evaluate((id) => { const c = ST().comments.find((x) => x.id === id); state.open[`axis:${ST().id}:${c.axis}`] = true; render(); document.getElementById('th-' + [...TH.values()][0].id).scrollIntoView({ block: 'center' }); }, pick.id);
+  await m.waitForTimeout(300);
+  await shot(m, '390-thread');
+  const over = await m.evaluate(() => ({ doc: document.documentElement.scrollWidth - innerWidth, main: $main().scrollWidth - $main().clientWidth, thr: document.querySelector('.thr').getBoundingClientRect().right - innerWidth }));
+  check(over.doc <= 0 && over.main <= 0 && over.thr <= 0, `no horizontal scroll at 390px with a thread open ${JSON.stringify(over)}`);
+  await m.keyboard.press('?');
+  check(await m.locator('.askbox').count() === 1, '? opens a question box');
+  await m.close();
+}
+if (stub) await questions();
 
 check(!errors.length, `no page or console errors${errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''}`);
 await browser.close();
