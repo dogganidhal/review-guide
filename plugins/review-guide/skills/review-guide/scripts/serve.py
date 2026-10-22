@@ -7,7 +7,7 @@ Binds 127.0.0.1 only. Every POST must carry the per-process token embedded in th
 site open in the browser cannot post reviews in the user's name. Before posting, the PR head is compared
 with the SHA the guide was built on, and each inline comment line is checked against the diff.
 
-The page can also rerun the guide (POST /api/rerun, same token) through rerun.py. When the PRs have new commits the
+The page's Close button stops the server (POST /api/close, same token). The page can also rerun the guide (POST /api/rerun, same token) through rerun.py. When the PRs have new commits the
 rerun lands in a new work directory, and the server switches to it, so the open page reloads onto the new guide.
 """
 
@@ -96,10 +96,14 @@ def handler(workdir: pathlib.Path):
                 self.reply(404, {"error": "not found"})
 
         def do_POST(self) -> None:
-            if self.path not in ("/api/review", "/api/rerun"):
+            if self.path not in ("/api/review", "/api/rerun", "/api/close"):
                 return self.reply(404, {"error": "not found"})
             if not secrets.compare_digest(self.headers.get("X-Review-Token", ""), TOKEN):
                 return self.reply(403, {"error": "missing or wrong token; reload the page"})
+            if self.path == "/api/close":
+                self.reply(200, {"closed": True})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                return
             if self.path == "/api/rerun":
                 effort = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or "{}").get("effort")
                 with lock:

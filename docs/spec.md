@@ -16,19 +16,22 @@ The plugin turns one or more GitHub pull requests into a local review page. The 
 ```
 fetch.py ──▶ page opens (tree + diffs)
    │
-   ├─▶ guide-writer (one per stack) ──▶ build.py --partial ──▶ page reloads with the guide
-   │                                         │
-   │                                         └─▶ comment-verifier ──▶ build.py ──▶ page reloads with verdicts
+   ├─▶ guide-writer ─────────────────┐   (per stack, all four in parallel;
+   ├─▶ reviewer: correctness ───┐    │    build.py --partial after each, page reloads)
+   ├─▶ reviewer: standards ─────┤    │
+   ├─▶ reviewer: spec ──────────┤    │
+   │                            └─▶ comment-verifier ──▶ build.py ──▶ page reloads with statuses
    │
 serve.py: local page, posts reviews through the user's gh login, and reruns the whole pipeline from the page (rerun.py)
 ```
 
 | Step | Kind | Output |
 | --- | --- | --- |
-| `fetch.py` | script | `run.json`, per stack `target.diff`, `tip/`, `attribution.json`, `brief.md`, `repo-guidance/`; per PR `pr.diff`, `hunks.json`, `existing-comments.json` |
-| `guide-writer` | agent (sonnet, medium effort) | `<stack>/guide.json` |
-| `build.py --check` | script | validation errors the writer must fix |
-| `comment-verifier` | agent (sonnet, high effort) | `<stack>/verify.json` |
+| `fetch.py` | script | `run.json`, per stack `target.diff`, `tip/`, `attribution.json`, `brief.md`, `spec.md`, `repo-guidance/`; per PR `pr.diff`, `hunks.json`, `existing-comments.json` |
+| `guide-writer` | agent (sonnet, medium effort) | `<stack>/guide.json`: the explanation |
+| `reviewer` ×3 | agent (sonnet, high effort) | `<stack>/review-<axis>.json`: findings on one axis |
+| `build.py --check --only X` | script | validation errors each agent must fix in its own file |
+| `comment-verifier` | agent (sonnet, high effort) | `<stack>/verify.json`: a status per finding, duplicates marked |
 | `build.py [--partial]` | script | `guide.json` (merged page data) and `index.html` |
 | `serve.py` | script | serves the page on `127.0.0.1`, posts reviews, and starts reruns |
 | `rerun.py` | script | the pipeline above without a Claude Code session: fetch, then both agents through `claude -p` |
@@ -37,13 +40,13 @@ serve.py: local page, posts reviews through the user's gh login, and reruns the 
 
 One level for the whole run, chosen in the skill's arguments (`quick`, `balanced` by default, `deep`) or on the page when rerunning. `fetch.py --effort` stores it in `run.json`, and each agent prompt carries an `Effort:` line.
 
-| Level | Writer | Verifier | Model |
-| --- | --- | --- | --- |
-| `quick` | about 4 calls, cap 8; brief only; blockers and should-fixes, no nits | about 5 calls, cap 8; `unverified` rather than reading far | agents' own, low effort |
-| `balanced` | about 8 calls, cap 15 | about 10 calls, cap 15 | agents' own (sonnet) |
-| `deep` | about 15 calls, cap 30; reads callers and tests of each risky change | about 20 calls, cap 30; callers, config and tests for every comment | opus, high effort |
+| Level | Writer | Reviewers | Verifier | Model |
+| --- | --- | --- | --- | --- |
+| `quick` | brief and spec only | brief and spec only; `blocker` and `should` | `unverified` rather than reading far | agents' own, low effort |
+| `balanced` | brief, spec, code where the diff is unclear | reads what each candidate finding needs, and the consumers of each risky change | reads the code behind each finding | agents' own (sonnet) |
+| `deep` | also the code around entry points | also tests and config around each change; follows each changed contract to every reader | callers, config and tests for every finding | opus, high effort |
 
-The output contract and the limits in `build.py` do not change with the level: `deep` spends its calls on being right, not on more comments.
+Agents stop on coverage, not on a call count: a reviewer is done when its axis is checked against every changed file that holds behavior, the verifier when every finding has a status it can defend. A 40-call cap stays as a guard. The output limits do not change with the level.
 
 ### Rerun from the page
 
@@ -86,27 +89,26 @@ The brief is capped at 220 KB. When over the cap, the largest test files' diffs 
 
 ## Agents
 
-Both prompts are self-contained. Agent-to-agent replies are one line (`<stack> ok: N steps, M comments`). Text that a person reads follows plain-writing rules: no praise, no "Consider…", no headings or bold in comments, identifiers in backticks.
+The prompts are self-contained. Agent-to-agent replies are one line. Text that a person reads follows plain-writing rules: no praise, no "Consider…", no headings or bold in comments, identifiers in backticks.
+
+Explaining and finding are separate agents, and finding is split by axis, after the `/code-review` skill of mattpocock-skills: one context that both explains and hunts does both worse, and one axis can hide another (code that follows every standard but builds the wrong thing).
 
 ### guide-writer
 
-- Reads `brief.md`, `repo-guidance/` and existing comments in one or two calls, then decides.
-- Budget: about 8 tool calls, hard cap 15. Reads in parallel. Does not search broadly, because the brief already lists callers. Never opens third-party code (jars, `~/.m2`, `node_modules`, `site-packages`). A finding that depends on library behavior becomes a `question` naming the behavior to confirm.
-- Produces:
-  - `summary` (300 characters at most) and 2 to 4 `key_facts`, the things a newcomer must know first;
-  - the map: layers, 5 to 12 components, each with a plain-words `role` and its code `label`, plus edges labeled with the operation;
-  - 1 to 3 `flows`: ordered hops from an entry point to where data lands, plus the failure path when the stack is about failures;
-  - a role for every changed file (`read`, `skim`, `skip`; `read` when unsure);
-  - 2 to 6 steps (8 at most), ordered so each needs only earlier ones; each step has a 10 to 60 line anchor, the components it covers, and the test that covers it, or `null`;
-  - comments, at most 5 per PR, with severity `blocker`, `should`, `question` or `nit` (2 nits per stack at most), a title under 12 words, a body as posted, and `path:line` evidence.
-- Review lenses: correctness, contracts, risk (auth, PHI in logs, secrets), over-engineering (the ponytail lens), stack shape (a lower PR unsafe to merge alone, churn across PRs), tests, and the description against the diff.
-- Verdict per PR: `COMMENT` on the viewer's own PR, `REQUEST_CHANGES` only with a blocker routed to that PR, and `APPROVE` only with no blocker, should or open question.
+- Reads `brief.md` and `spec.md`, and code only where the diff is unclear. Writes no findings.
+- Produces `summary`, 2 to 4 `key_facts`, a role for every changed file, and 1 to 4 `sections` chosen for the change from six types: `flow` (a sequence diagram), `map` (components by layer), `before_after`, `table`, `list` and `steps` (a reading order with anchored excerpts). The prompt gives each type a "use when / not when" and common shapes (a removal gets before/after and what still depends on it, a long stack gets a per-PR table). `components` feed `flow` and `map` and are left out when neither is used.
+
+### reviewer (one per axis)
+
+- **correctness:** error paths, boundaries, retries, concurrency, timeouts; everything that depends on what changed (the brief lists removed names still in use and functions left without a caller; a name another system may read becomes a question naming who); stored data and mixed-version deploys; security and personal data; stack shape; whether a test would catch a break.
+- **standards:** every documented rule in `repo-guidance/` and the convention docs they point to, each finding citing its rule; then a smell baseline (Fowler's code smells plus dead weight) as judgement calls that a repo rule overrides.
+- **spec:** against `spec.md` (Jira tickets the PRs name, when credentials are set, and the issues they close), or the PR descriptions when there is none: missing or partial requirements, scope creep, requirements done wrong, description claims the code does not back. Skips with a reason when the spec is too thin.
+- Each reads existing comments first and never repeats them, and in a new round reviews only what changed since. At most 3 findings per PR per axis; an empty list is a good result.
 
 ### comment-verifier
 
-- Tries to disprove each drafted comment against the code: `verified` (it traced the mechanism, and every claim matches), `refuted` (the code contradicts it), or `unverified` (the claim depends on library internals, prod config or runtime).
-- Budget: about 10 tool calls, hard cap 15, with the same rules about third-party code.
-- May move a comment to a better line the stack wrote. May add up to 3 `missed` blocker or should findings.
+- Tries to disprove each finding: `verified` (it traced the mechanism, and every claim matches), `refuted` (the code, the spec or the description contradicts it; for standards, the rule does not say that), `unverified` (library internals, prod config, runtime). Marks findings that repeat another as `duplicate`; the page hides them.
+- May move a finding to a better line the stack wrote.
 
 ## Validation (`build.py --check`)
 
@@ -118,10 +120,11 @@ Both prompts are self-contained. Agent-to-agent replies are one line (`<stack> o
   | step title | 70 |
   | step `why` | 220 |
   | file `why` | 90 |
-  | comment title | 90 |
-  | comment body | 700 |
-  | `verdict.why` | 160 |
-  | `review_body` | 400 |
+  | section title | 70 |
+  | table and before/after cell | 160 |
+  | list item | 220 |
+  | finding title | 90 |
+  | finding body | 700 |
   | labels | 40 |
   | node role | 30 |
   | fact title | 60 |
@@ -131,10 +134,12 @@ Both prompts are self-contained. Agent-to-agent replies are one line (`<stack> o
 - Every changed file has a role, and no other file does.
 - Anchors exist at the tip and span 60 lines at most.
 - Inline comments sit on lines the stack wrote. A range must cover consecutive lines from one PR. A line error lists nearby valid lines.
-- Map nodes reference declared layers. `new` and `changed` nodes name the changed file that holds them. Edges and flow hops reference node ids.
-- Verdict rules are enforced per PR, including `COMMENT` on the viewer's own PRs.
+- 1 to 5 sections of a known type, each with its own shape rules (cells per row, items, hops). `flow` and `map` need `components`.
+- Components reference declared layers. `new` and `changed` nodes name the changed file that holds them. Edges and flow hops reference node ids.
+- At most 3 findings per PR per axis.
+- `--only guide|<axis>` checks one agent's file, so agents running in parallel do not see each other's errors.
 
-`--partial` renders a stack without a guide as a file tree and diffs only. It renders comments as "being checked" until `verify.json` exists.
+`--partial` renders a stack without a guide as a file tree and diffs only, and an axis with no file yet as "reviewing". It renders findings as "being checked" until `verify.json` exists.
 
 ## Page
 
@@ -142,17 +147,21 @@ Single self-contained HTML file. Figtree from Google Fonts and highlight.js 11.9
 
 ### Layout
 
-- **Top bar:** stack picker (when there are several), the PR chain as chips with a color dot per PR (above five PRs, one dropdown listing them with their CI state), the tabs "Guide" and "Your review (N)", and the theme toggle. Clicking a PR chip dims everything the other PRs wrote.
+- **Top bar:** stack picker (when there are several), the PR chain as chips with a color dot per PR (above five PRs, one dropdown listing them with their CI state), the tabs "Guide" and "Your review (N)", the theme toggle, and Close. Clicking a PR chip dims everything the other PRs wrote. Close stops the local server after a confirmation when some PRs have no review; it is faint until a review is posted and becomes the primary "Done · Close" once every PR has one.
 - **Scrolling:** no panel on the page shows a scrollbar; content still scrolls by wheel, trackpad and keyboard.
 - **Left sidebar:** file tree with collapsible folders, compressed single-child folders, a search box, read/skim/skip filter chips, a viewed count, a role marker per file, and a drafted-comment count. The PR dots sit pinned to the right edge, over a fade, so they stay visible while the tree scrolls sideways.
 - **Guide view:**
   - title, summary, and meta chips (size, CI summary, link to the stack), a PR list with one row per PR (title, CI state, failing check names, GitHub link; collapsed above five PRs), plus warnings in a collapsible box;
   - "Know this first";
-  - "How a call moves through it": one tab per flow, each drawn as a sequence diagram. Components are columns in call order with role above label. Arrows are numbered top to bottom, and blue arrows are what the stack added. Clicking a box opens its file;
-  - "All components by layer": the layered map, collapsed by default. Nodes are ordered by barycenter to reduce crossings, edges are spread along node borders, and labels are placed where they do not collide;
-  - "Read in this order": collapsible steps showing title, one sentence, a decide badge, and a comment count. Opening a step shows the highlighted excerpt, the test line ("none covers this" in red), the comments, a "Reviewed" checkbox, and a link to the whole file.
+  - the writer's sections, in its order, each under its own title:
+    - `flow`: a sequence diagram. Components are columns in call order with role above label. Arrows are numbered top to bottom, and blue arrows are what the stack added. Clicking a box opens its file;
+    - `map`: the layered component map. Nodes are ordered by barycenter to reduce crossings, edges are spread along node borders, and labels are placed where they do not collide;
+    - `before_after` and `table`: plain tables, backticked names as code;
+    - `list`: a bullet list;
+    - `steps`: collapsible steps showing title, one sentence, a decide badge, and a count of findings on the excerpt. Opening a step shows the highlighted excerpt with those findings under their lines, the test line ("none covers this" in red), a "Reviewed" checkbox, and a link to the whole file;
+  - "What the reviewers found": one collapsible block per axis (correctness, standards, spec), showing "reviewing" while its reviewer works, "skipped" with the reason, or the findings, most severe first, each tagged with its axis and verifier status.
 - **File view:** the full stack diff with old and new line numbers, a color strip per line for the PR that wrote it, drafted comments under their lines, a "Viewed" checkbox, and prev/next buttons. Clicking a line number adds a comment there, routed to the owning PR.
-- **Your review:** one compact row per PR waiting to be posted, then a collapsed "Posted (N)" list. A row shows the title, picked comment count with suggestions still waiting, a CI failure mark, and a Comment / Approve / Changes switch. No verdict is selected until the reviewer picks one (clicking it again clears it) or adds a comment, which brings the suggestion along; a PR without a verdict is not posted. ✦ marks the suggestion, recomputed from the live comments: request changes with a blocker, comment with a should-fix or question, approve otherwise (only Comment on the viewer's own PR). Opening a row shows the reason, the routed comments, the summary (empty, with the guide's text as placeholder), "Post only #N" and "Copy as markdown". Above the list: "Approve all clean (N)" (not the viewer's PR, CI not failing, suggestion is approve), "Use the suggested verdicts", "Clear verdicts", "Add N suggestions checked in the code", and "Post N reviews", which asks once and posts each PR with a verdict in order, showing each result on its row.
+- **Your review:** one compact row per PR waiting to be posted, then a collapsed "Posted (N)" list. A row shows the title, picked comment count with suggestions still waiting, a CI failure mark, and a Comment / Approve / Changes switch. No verdict is selected until the reviewer picks one (clicking it again clears it) or adds a comment, which brings the suggestion along; a PR without a verdict is not posted. ✦ marks the suggestion, recomputed from the live comments: request changes with a blocker, comment with a should-fix or question, approve otherwise (only Comment on the viewer's own PR). Opening a row shows the reason (the open findings by title, or "Nothing open"), the routed findings, the summary (empty, with a placeholder), "Post only #N" and "Copy as markdown". Above the list: "Approve all clean (N)" (not the viewer's PR, CI not failing, suggestion is approve), "Use the suggested verdicts", "Clear verdicts", "Add N suggestions checked in the code", and "Post N reviews", which asks once and posts each PR with a verdict in order, showing each result on its row.
 - **Since your last review:** when the viewer already reviewed a PR of the stack, the guide shows when and how (the highest PR they reviewed), with "Review what changed". Files changed since carry a "new" mark and a "New N" filter, and the tip lines added since have a highlighted line number. Each row of "Your review" shows the viewer's last verdict on that PR.
 - **Theme:** the toggle is remembered across reloads and runs.
 

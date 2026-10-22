@@ -19,7 +19,7 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from fetch import Git, attribute, changed_files, changed_since, commit_owners, last_seen, parse_diff, review_shas  # noqa: E402
+from fetch import Git, attribute, changed_files, changed_since, commit_owners, last_seen, leftovers, parse_diff, review_shas  # noqa: E402
 
 
 def sh(cwd: pathlib.Path, *args: str) -> str:
@@ -67,6 +67,21 @@ def main(keep: str | None = None) -> None:
         assert changed_since(git, r["pr1"], r["pr2"], {"A.java", "B.java"}) == {"A.java": [3, 4], "B.java": [1]}
         assert last_seen(git, [1, 2], {1: None, 2: None}) == (None, None)
 
+        # A removal: the metric name is still read elsewhere, and `notifyLater` lost its only caller.
+        rm = root / "rm"
+        rm.mkdir()
+        sh(rm, "git", "init", "-q", "-b", "main")
+        (rm / "Job.java").write_text('class Job {\n  void run() { notifyLater(); counter("odc.review.sms_sent"); }\n  void notifyLater() {}\n}\n')
+        (rm / "dash.yml").write_text("query: odc.review.sms_sent\n")
+        sh(rm, "git", "add", ".")
+        sh(rm, "git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base")
+        (rm / "Job.java").write_text("class Job {\n  void run() {}\n  void notifyLater() {}\n}\n")
+        sh(rm, "git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "remove")
+        rg = Git(str(rm), via_gh=False)
+        left = "\n".join(leftovers(rg, "HEAD", parse_diff(rg("diff", "HEAD~1", "HEAD"))))
+        assert "odc.review.sms_sent (removed string in Job.java; 1 uses left)" in left and "dash.yml:1" in left, left
+        assert "notifyLater has no caller left" in left, left
+
         w = root / "w"
         sid = "1-2"
         (w / sid / "tip").mkdir(parents=True)
@@ -89,39 +104,68 @@ def main(keep: str | None = None) -> None:
 
         guide = {
             "summary": "Adds fields to A and a class B.",
-            "prs": {"1": {"verdict": {"event": "COMMENT", "why": "One question."}, "review_body": "See inline."},
-                    "2": {"verdict": {"event": "COMMENT", "why": "One question."}, "review_body": "See inline."}},
-            "map": {"layers": [{"id": "core", "label": "core"}],
-                    "nodes": [{"id": "a", "label": "A", "layer": "core", "state": "changed", "path": "A.java"},
-                              {"id": "b", "label": "B", "layer": "core", "state": "new", "path": "B.java"}],
-                    "edges": [{"from": "a", "to": "b", "label": "uses", "new": True}]},
-            "flows": [{"title": "Use B", "steps": [{"from": "a", "to": "b", "label": "calls"}]}],
+            "key_facts": [{"title": "Nothing reads `x` yet.", "text": "It is written only."}],
+            "components": {"layers": [{"id": "core", "label": "core"}],
+                           "nodes": [{"id": "a", "label": "A", "layer": "core", "state": "changed", "path": "A.java"},
+                                     {"id": "b", "label": "B", "layer": "core", "state": "new", "path": "B.java"}],
+                           "edges": [{"from": "a", "to": "b", "label": "uses", "new": True}]},
+            "sections": [
+                {"type": "flow", "title": "Use B", "steps": [{"from": "a", "to": "b", "label": "calls"}]},
+                {"type": "before_after", "title": "What changes", "rows": [{"aspect": "`y`", "before": "int", "after": "long"}]},
+                {"type": "table", "title": "Per PR", "columns": ["PR", "Change"], "rows": [["#1", "Fields"], ["#2", "Class B"]]},
+                {"type": "steps", "title": "Read in this order", "steps": [
+                    {"id": "fields", "kind": "read", "title": "Fields", "why": "New state on A.", "nodes": ["a"], "test": None,
+                     "anchor": {"path": "A.java", "start": 1, "end": 5}}]},
+            ],
             "files": {"A.java": {"role": "read", "why": "Fields."}, "B.java": {"role": "skim", "why": "Empty class."}},
-            "steps": [{"id": "fields", "kind": "read", "title": "Fields", "why": "New state on A.", "nodes": ["a"],
-                       "anchor": {"path": "A.java", "start": 1, "end": 5},
-                       "comments": [
-                           {"id": "x", "severity": "question", "title": "Who reads x?", "path": "A.java", "line": 2, "body": "Who reads `x`?", "evidence": ["A.java:2"]},
-                           {"id": "f", "severity": "nit", "title": "Empty f", "path": "A.java", "line": 4, "body": "`f` is empty.", "evidence": ["A.java:4"]},
-                       ]}],
         }
+        correctness = {"skipped": None, "findings": [
+            {"id": "x", "severity": "question", "title": "Who reads x?", "path": "A.java", "line": 2, "body": "Who reads `x`?", "evidence": ["A.java:2"]},
+            {"id": "f", "severity": "nit", "title": "Empty f", "path": "A.java", "line": 4, "body": "`f` is empty.", "evidence": ["A.java:4"]},
+            {"id": "d", "severity": "nit", "title": "Same as x", "path": "A.java", "line": 2, "body": "Who reads `x`?", "evidence": ["A.java:2"]}]}
+        check = lambda *a: subprocess.run([sys.executable, str(HERE / "build.py"), str(w), "--check", *a], capture_output=True, text=True)  # noqa: E731
+
         bad = json.loads(json.dumps(guide))
-        bad["steps"][0]["comments"][0]["line"] = 1
-        bad["prs"]["1"]["verdict"]["event"] = "APPROVE"
         bad["summary"] = "x" * 400
+        bad["sections"][1] = {"type": "table", "title": "Per PR", "columns": ["PR", "Change"], "rows": [["#1"]]}
+        bad["sections"].append({"type": "poem", "title": "x"})
         (w / sid / "guide.json").write_text(json.dumps(bad))
-        out = subprocess.run([sys.executable, str(HERE / "build.py"), str(w), "--check"], capture_output=True, text=True)
+        bad_review = json.loads(json.dumps(correctness))
+        bad_review["findings"][0]["line"] = 1
+        bad_review["findings"] += [{**bad_review["findings"][1], "id": f"n{i}"} for i in range(3)]
+        (w / sid / "review-correctness.json").write_text(json.dumps(bad_review))
+        out = check()
         assert out.returncode == 1, out.stdout
-        for expected in ("line 1 of A.java was not written by this stack", "must be COMMENT", "summary is 400 characters"):
+        for expected in ("line 1 of A.java was not written by this stack", "#2 receives 4 findings", "summary is 400 characters",
+                         "rows[0]: expected 2 cells", "sections[4].type must be one of"):
             assert expected in out.stdout, (expected, out.stdout)
+        # A reviewer checks its own file, whatever state the guide is in.
+        assert "summary" not in check("--only", "correctness").stdout
 
         (w / sid / "guide.json").write_text(json.dumps(guide))
-        (w / sid / "verify.json").write_text(json.dumps({"comments": {"x": {"status": "verified", "note": "No reader."}}}))
+        (w / sid / "review-correctness.json").write_text(json.dumps(correctness))
+        assert check("--only", "guide").stdout.strip() == "ok"
+        out = subprocess.run([sys.executable, str(HERE / "build.py"), str(w), "--partial"], capture_output=True, text=True)
+        assert out.returncode == 0, out.stdout + out.stderr
+        data = json.loads((w / "guide.json").read_text())
+        assert data["stacks"][0]["reviewing"] == ["standards", "spec"], data["stacks"][0]["reviewing"]
+        assert {c["status"] for c in data["stacks"][0]["comments"]} == {"checking"}
+
+        (w / sid / "review-standards.json").write_text(json.dumps({"skipped": None, "findings": []}))
+        (w / sid / "review-spec.json").write_text(json.dumps({"skipped": "No ticket and an empty description.", "findings": []}))
+        (w / sid / "verify.json").write_text(json.dumps({"comments": {"correctness/x": {"status": "verified", "note": "No reader."},
+                                                                      "correctness/d": {"status": "duplicate", "note": "Same as correctness/x."}}}))
         out = subprocess.run([sys.executable, str(HERE / "build.py"), str(w)], capture_output=True, text=True)
         assert out.returncode == 0, out.stdout + out.stderr
         data = json.loads((w / "guide.json").read_text())
-        cms = {c["id"].rsplit("-", 1)[-1]: c for c in data["stacks"][0]["comments"]}
-        assert (cms["x"]["pr"], cms["x"]["pl"], cms["x"]["status"]) == (1, 2, "verified"), cms["x"]
+        st0 = data["stacks"][0]
+        cms = {c["id"].rsplit("-", 1)[-1]: c for c in st0["comments"]}
+        assert set(cms) == {"x", "f"}, cms
+        assert (cms["x"]["pr"], cms["x"]["pl"], cms["x"]["status"], cms["x"]["axis"]) == (1, 2, "verified", "correctness"), cms["x"]
         assert (cms["f"]["pr"], cms["f"]["pl"], cms["f"]["status"]) == (2, 4, "unverified"), cms["f"]
+        assert st0["reviewing"] == [] and st0["skipped"] == {"spec": "No ticket and an empty description."}
+        assert [x["type"] for x in st0["sections"]] == ["flow", "before_after", "table", "steps"]
+        assert st0["sections"][3]["steps"][0]["lines"][1]["pr"] == 1
         assert data["stacks"][0]["since"]["files"] == {"A.java": [3, 4], "B.java": [1]}
         assert data["effort"] == "balanced"
         page = (w / "index.html").read_text()
@@ -152,6 +196,9 @@ def main(keep: str | None = None) -> None:
                     urllib.request.urlopen(rerun)
                 except urllib.error.HTTPError as e:
                     assert e.code == code, (tok, e.code)
+            close = urllib.request.Request(url + "api/close", b"", {"X-Review-Token": token})
+            assert urllib.request.urlopen(close).status == 200
+            assert server.wait(timeout=5) == 0
         finally:
             server.terminate()
         if keep:

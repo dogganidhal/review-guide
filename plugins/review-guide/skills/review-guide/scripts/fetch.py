@@ -14,7 +14,9 @@ Writes:
   <stack>/tip/<path>             each changed file at the tip
   <stack>/attribution.json       path -> {tip line: [pr, line in that PR's head]} for lines the stack wrote
   <stack>/repo-guidance/         the repo's review rules at the tip
-  <stack>/brief.md               everything the agents read first: descriptions, numbered diff with owners, symbol uses
+  <stack>/brief.md               everything the agents read first: descriptions, numbered diff with owners, symbol uses,
+                                 and what removed names still touch
+  <stack>/spec.md                the tickets the PRs name (Jira, when credentials are set) and the GitHub issues they close
   <n>/pr.diff, <n>/hunks.json    the PR's own diff at its review commit, and the lines GitHub accepts comments on
   <n>/existing-comments.json     what reviewers already said
 A stack the viewer reviewed before carries `since`: the commit of their last review and the tip lines changed after it.
@@ -22,14 +24,17 @@ Prints the work directory on the last line.
 """
 
 import argparse
+import base64
 import concurrent.futures
 import hashlib
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
 import time
+import urllib.request
 from collections import defaultdict
 
 CACHE = pathlib.Path.home() / ".cache" / "review-guide"
@@ -74,6 +79,13 @@ class Git:
             return data.decode()
         except UnicodeDecodeError:
             return None
+
+
+def prefetch_tree(git: Git, rev: str, scratch: pathlib.Path) -> None:
+    """Download every blob of `rev` into a blobless clone in one batch, so `git grep` and `git show` at that commit stay
+    local. A throwaway worktree is the cheapest way to make git fetch a whole tree at once."""
+    git("worktree", "add", "--detach", "--quiet", str(scratch), rev)
+    git("worktree", "remove", "--force", str(scratch))
 
 
 def open_repo(repo: str) -> tuple[Git, str | None]:
@@ -245,6 +257,9 @@ DECLARATIONS = (
 COMMON_NAMES = frozenset({"main", "toString", "equals", "hashCode", "build", "close", "apply", "test", "setUp", "tearDown", "init", "start", "stop", "create", "value", "values", "from"})
 BRIEF_BUDGET = 220_000
 MAX_SYMBOLS, MAX_REFS = 40, 6
+CALL = re.compile(r"\b([a-z]\w{3,})\s*\(")
+NAME_LITERAL = re.compile(r"[\"']([a-z][a-z0-9]*(?:[._-][a-z0-9]+){1,})[\"']")
+TICKET = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d+)\b")
 
 
 def numbered_diff(d: dict, owners: dict) -> str:
@@ -293,8 +308,90 @@ def references(git: Git, tip: str, parsed: dict, stack_paths: set[str]) -> list[
         return [row for block in pool.map(lookup, symbols.items()) for row in block]
 
 
+def leftovers(git: Git, tip: str, parsed: dict) -> list[str]:
+    """What the stack removed but the repo still touches: removed declarations and name-like strings (metric, config,
+    event or column names) still found at the tip, and functions whose last caller the stack removed."""
+    removed, called, added_text = {}, set(), []
+    for path, d in parsed.items():
+        for line in (line for hunk in d["hunks"] for line in hunk):
+            if line["k"] == "+":
+                added_text.append(line["t"])
+            elif line["k"] == "-":
+                for rx in DECLARATIONS:
+                    for m in rx.finditer(line["t"]):
+                        removed.setdefault(m[1], ("declared", path))
+                for m in NAME_LITERAL.finditer(line["t"]):
+                    removed.setdefault(m[1], ("string", path))
+                if CODE_PATH.search(path):
+                    called.update(m[1] for m in CALL.finditer(line["t"]))
+    added = "\n".join(added_text)
+    names = [n for n in removed if n not in COMMON_NAMES and n not in added][:MAX_SYMBOLS]
+    callees = [n for n in called - set(removed) - COMMON_NAMES if not re.search(rf"\b{re.escape(n)}\s*\(", added)][:MAX_SYMBOLS]
+
+    def hits(name: str) -> list[str]:
+        out = (git("grep", "-n", "-w", "-I", "-F", "-e", name, tip, check=False) or "").splitlines()
+        return [h.split(":", 1)[1][:160] for h in out]
+
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        found = dict(zip(names, pool.map(hits, names)))
+        orphans = dict(zip(callees, pool.map(hits, callees)))
+    out = []
+    for name, rows in found.items():
+        kind, path = removed[name]
+        if rows:
+            out += [f"### {name} (removed {kind} in {path}; {len(rows)} uses left)", *rows[:MAX_REFS], ""]
+    for name, rows in orphans.items():
+        # One hit is the declaration itself: the stack removed the last caller.
+        if len(rows) == 1:
+            out += [f"### {name} has no caller left", rows[0], ""]
+    return out
+
+
+def jira_issue(key: str) -> str | None:
+    """A ticket's title, status and description as text, when ATLASSIAN_SITE, ATLASSIAN_EMAIL and a token are set."""
+    site, email = os.environ.get("ATLASSIAN_SITE"), os.environ.get("ATLASSIAN_EMAIL")
+    if not site or not email:
+        return None
+    token = os.environ.get("ATLASSIAN_API_TOKEN") or (run(["security", "find-generic-password", "-a", email, "-s", "atlassian-api-token", "-w"], check=False) or "").strip()
+    if not token:
+        return None
+    req = urllib.request.Request(f"{site.rstrip('/')}/rest/api/3/issue/{key}?fields=summary,status,issuetype,description,parent",
+                                 headers={"Authorization": "Basic " + base64.b64encode(f"{email}:{token}".encode()).decode(), "Accept": "application/json"})
+    try:
+        f = json.load(urllib.request.urlopen(req, timeout=10))["fields"]
+    except (OSError, ValueError, KeyError):
+        return None
+
+    def text(node) -> str:
+        if not isinstance(node, dict):
+            return ""
+        if node.get("type") == "text":
+            return node.get("text", "")
+        inner = "".join(text(c) for c in node.get("content") or [])
+        return inner + "\n" if node.get("type") in ("paragraph", "heading", "listItem", "codeBlock") else inner
+
+    parent = (f.get("parent") or {}).get("fields", {}).get("summary")
+    head = f"## {key}: {f.get('summary')}\n{(f.get('issuetype') or {}).get('name')} · {(f.get('status') or {}).get('name')}" + (f" · parent: {parent}" if parent else "")
+    return head + "\n\n" + re.sub(r"\n{3,}", "\n\n", text(f.get("description"))).strip()[:6000]
+
+
+def write_spec(sdir: pathlib.Path, chain: list[int], prs: dict[int, dict]) -> None:
+    """The spec the spec reviewer checks the stack against: Jira tickets named by the PRs, and the issues they close."""
+    keys = list(dict.fromkeys(k for n in chain for k in TICKET.findall(f"{prs[n]['title']} {prs[n]['headRefName']}")))
+    with concurrent.futures.ThreadPoolExecutor(4) as pool:
+        tickets = [t for t in pool.map(jira_issue, keys) if t]
+    issues = [f"## {i.get('url') or i.get('number')}: {i.get('title')}\n\n{(i.get('body') or '').strip()[:6000]}"
+              for n in chain for i in prs[n].get("closingIssuesReferences") or []]
+    found = tickets + issues
+    missing = [k for k in keys if not any(t.startswith(f"## {k}:") for t in tickets)]
+    body = ["# Spec", "", *found] if found else ["# Spec", "", "No ticket or linked issue was found. Use the PR descriptions in `brief.md` as the spec."]
+    if missing:
+        body += ["", f"Named but not fetched (no Jira access or not found): {', '.join(missing)}"]
+    (sdir / "spec.md").write_text("\n\n".join(body) + "\n")
+
+
 def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: str, files: list[dict],
-                attribution: dict, prs: dict[int, dict], warnings: list[str], local: bool, since: dict | None = None) -> int:
+                attribution: dict, prs: dict[int, dict], warnings: list[str], since: dict | None = None) -> int:
     """One file holding what the agents need, so they read once instead of exploring turn by turn."""
     parsed = parse_diff(git("diff", "--no-color", "-M", "-U8", base, tip))
     head = [f"# Brief for stack {sdir.name}", "",
@@ -324,7 +421,7 @@ def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: 
             omitted.append(f"{f['path']} (+{f['adds']} -{f['dels']})")
         else:
             sections[f["path"]] = f"### {f['path']}\n\n```\n{numbered_diff(d, attribution.get(f['path'], {}))}\n```\n"
-    refs = references(git, tip, parsed, {f["path"] for f in files}) if local else ["No local clone: use `gh search code` if you need callers.", ""]
+    refs = references(git, tip, parsed, {f["path"] for f in files})
     fixed = len("\n".join(head + refs))
     for path in sorted((p for p in sections if TEST_PATH.search(p)), key=lambda p: -len(sections[p])):
         if fixed + sum(map(len, sections.values())) <= BRIEF_BUDGET:
@@ -335,6 +432,8 @@ def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: 
     if omitted:
         body += ["Not shown above; read `tip/<path>` if needed: " + ", ".join(omitted), ""]
     body += ["## Where declared symbols are used", "", *refs]
+    body += ["## Removed names still in use, and code left without a caller", "",
+             *(leftovers(git, tip, parsed) or ["Nothing the stack removed is still referenced at the tip.", ""])]
     text = "\n".join(body)
     (sdir / "brief.md").write_text(text)
     return len(text)
@@ -405,7 +504,7 @@ def main() -> None:
     repo = refs[0][0]
     numbers = sorted({n for _, n in refs})
 
-    fields = "number,title,body,author,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,state,additions,deletions,url,statusCheckRollup"
+    fields = "number,title,body,closingIssuesReferences,author,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,state,additions,deletions,url,statusCheckRollup"
     prs = {n: json.loads(gh("pr", "view", str(n), "-R", repo, "--json", fields)) for n in numbers}
     heads = {n: p["headRefOid"] for n, p in prs.items()}
     viewer = gh("api", "user", "--jq", ".login").strip()
@@ -414,6 +513,8 @@ def main() -> None:
     workdir.mkdir(parents=True, exist_ok=True)
 
     git, checkout = open_repo(repo)
+    cached = checkout is None
+    checkout = checkout or git.prefix[2]
     specs = [f"+pull/{n}/head:refs/review-guide/{n}" for n in numbers] + [f"+{p['baseRefOid']}:refs/review-guide/base/{n}" for n, p in prs.items()]
     git("fetch", "--quiet", "--no-tags", "origin", *specs)
     chains, warnings = link_stacks(git, prs, heads)
@@ -422,6 +523,10 @@ def main() -> None:
         shas, lag_warnings = review_shas(git, chain, heads)
         review |= shas
         warnings += lag_warnings
+    if cached:
+        # The cache clone is blobless: fetch each tip's tree once, so symbol search and the agents' git grep stay local.
+        for chain in chains:
+            prefetch_tree(git, review[chain[-1]], workdir / f"tree-{chain[-1]}")
 
     pr_files: dict[int, set[str]] = {}
     last: dict[int, dict | None] = {}
@@ -480,7 +585,8 @@ def main() -> None:
         if since:
             since["files"] = changed_since(git, since["sha"], tip, {f["path"] for f in files if f["status"] != "deleted"})
         stacks.append({"id": sid, "prs": chain, "base": base, "tip": tip, "files": files, "since": since})
-        size = write_brief(git, sdir, chain, base, tip, files, attribution, prs, warnings, checkout is not None, since)
+        size = write_brief(git, sdir, chain, base, tip, files, attribution, prs, warnings, since)
+        write_spec(sdir, chain, prs)
         print(f"stack {sid}: brief {size // 1000} KB")
 
     stack_of = {n: s["id"] for s in stacks for n in s["prs"]}
@@ -498,7 +604,7 @@ def main() -> None:
         print(f"stack {s['id']}: {' -> '.join(f'#{n}' for n in s['prs'])}, {len(s['files'])} files in the target")
     for w in warnings:
         print(f"warning: {w}")
-    print(f"local checkout for code search: {checkout}" if checkout else "no local checkout: agents search code through the GitHub API")
+    print(f"code search runs in {checkout}")
     print(workdir)
 
 

@@ -239,6 +239,29 @@ svg .hopnum { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: 
 .facts ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .facts li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; font-size: .88rem; }
 .facts li .n { width: 20px; height: 20px; border-radius: 50%; background: var(--accent-soft); color: var(--text); font-size: .72rem; font-weight: 700; display: grid; place-items: center; }
+.gtable { width: 100%; border-collapse: collapse; font-size: .86rem; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.gtable th { text-align: left; font-weight: 600; color: var(--muted); background: var(--surface); padding: 7px 10px; font-size: .78rem; }
+.gtable td { padding: 7px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+.gtable td.aspect { font-weight: 600; white-space: nowrap; }
+.gtable td.before { color: var(--muted); }
+.gtable code, .glist code, .facts code { font-family: var(--mono); font-size: .82em; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+.tscroll { overflow-x: auto; }
+.glist { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: .88rem; }
+.axis { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); margin-bottom: 8px; }
+.axis > summary { list-style: none; display: flex; gap: 10px; align-items: center; padding: 9px 12px; cursor: pointer; font-size: .9rem; }
+.axis > summary::-webkit-details-marker { display: none; }
+.axis > summary .aside { color: var(--faint); font-size: .8rem; }
+.axis > summary .grow { flex: 1; }
+.axis > summary .n { font-size: .8rem; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.axis[open] > summary { border-bottom: 1px solid var(--line); }
+.axbody { padding: 2px 12px 6px; }
+.axbody .hint { margin: 8px 0; }
+.axtag { font-size: .68rem; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
+.closebtn { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 4px 11px; cursor: pointer; color: var(--muted); font-size: .85rem; }
+.closebtn.quiet { border-color: transparent; background: transparent; color: var(--faint); }
+.closebtn.done { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.closed { max-width: 520px; margin: 18vh auto; padding: 0 16px; text-align: center; color: var(--muted); }
+.closed h1 { color: var(--text); }
 .ftabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .ftab { border: 1px solid var(--line); background: var(--bg); border-radius: 99px; padding: 4px 12px; cursor: pointer; font-size: .84rem; font-weight: 600; color: var(--muted); }
 .ftab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -354,7 +377,7 @@ const LANG = { java: 'java', kt: 'kotlin', kts: 'kotlin', py: 'python', ts: 'typ
 
 let state = {};
 try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
-const defaults = { flow: 0, stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {} };
+const defaults = { stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {} };
 state = { ...defaults, ...state };
 if (!DATA.stacks.some((s) => s.id === state.stack)) state.stack = DATA.stacks[0].id;
 let posted = {};
@@ -392,6 +415,8 @@ const inFilter = (st, f) => state.filter === 'all' || (state.filter === 'since' 
 const extras = (st) => (state.extra[st.id] ||= []);
 const comments = (st) => [...st.comments, ...extras(st)];
 const cmState = (c) => (state.cm[c.id] ??= { on: !!c.custom, gone: false, sev: c.severity, text: c.body || '' });
+// Backticked names in guide text render as code.
+const rich = (text) => String(text).split('`').map((part, i) => (i % 2 ? el('code', {}, part) : part));
 const postText = (c) => { const cs = cmState(c); return ((PREFIX[cs.sev] ?? '') + cs.text.trim()).trim(); };
 
 function highlight(texts, path) {
@@ -434,7 +459,25 @@ function renderTop() {
     el('div', { class: 'tabs', role: 'tablist' },
       el('button', { class: 'tab', role: 'tab', type: 'button', 'aria-selected': String(state.view !== 'send'), onclick: () => { state.view = state.file ? 'file' : 'guide'; if (state.view === 'file' && !fileOf(st, state.file)) state.view = 'guide'; save(); render(); } }, 'Guide'),
       el('button', { class: 'tab', role: 'tab', type: 'button', 'aria-selected': String(state.view === 'send'), onclick: () => { state.view = 'send'; save(); render(); } }, `Your review (${n})`)),
-    el('button', { class: 'iconbtn', type: 'button', onclick: toggleTheme, title: 'Toggle theme' }, '◐')].filter(Boolean));
+    el('button', { class: 'iconbtn', type: 'button', onclick: toggleTheme, title: 'Toggle theme' }, '◐'), closeButton()].filter(Boolean));
+}
+
+// Quiet until something is posted, primary once every PR has a review.
+function closeButton() {
+  const all = DATA.stacks.flatMap((s) => s.prs), n = all.filter((p) => posted[p.n]).length;
+  const cls = n === all.length ? 'done' : n ? '' : 'quiet';
+  return el('button', { class: 'closebtn ' + cls, type: 'button', onclick: closeSession, title: 'Stop the local server and end this review' },
+    n === all.length ? 'Done · Close' : 'Close');
+}
+
+async function closeSession() {
+  const left = DATA.stacks.flatMap((s) => s.prs).filter((p) => !posted[p.n]).length;
+  if (left && !confirm(`${plural(left, 'PR has', 'PRs have')} no review posted from this page. Close anyway? Your picks stay saved in this browser.`)) return;
+  save();
+  try { await fetch('/api/close', { method: 'POST', headers: { 'X-Review-Token': TOKEN } }); } catch (e) {}
+  closed = true;
+  document.body.replaceChildren(el('div', { class: 'closed' }, el('h1', {}, 'Review closed'), el('p', {}, 'The local server has stopped. You can close this tab.')));
+  window.close();
 }
 
 document.addEventListener('click', (e) => document.querySelectorAll('.stackmenu[open]').forEach((d) => d.contains(e.target) || d.removeAttribute('open')));
@@ -522,7 +565,7 @@ function renderSide() {
 let sideScrollLeft = 0;
 
 function mapView(st) {
-  const m = st.map, MINW = 980, ROW = 112, TOP = 30, LEFT = 150, NH = 32, GAP = 28;
+  const m = st.components, MINW = 980, ROW = 112, TOP = 30, LEFT = 150, NH = 32, GAP = 28;
   const layerOf = Object.fromEntries(m.nodes.map((n) => [n.id, m.layers.findIndex((l) => l.id === n.layer)]));
   const rows = m.layers.map((l) => m.nodes.filter((n) => n.layer === l.id).map((n) => n.id));
   const nbrs = {};
@@ -633,7 +676,7 @@ function setHot(nodes, edges, hops) {
 }
 
 function seqDiagram(st, f) {
-  const byId = Object.fromEntries(st.map.nodes.map((n) => [n.id, n]));
+  const byId = Object.fromEntries((st.components?.nodes || []).map((n) => [n.id, n]));
   const parts = [];
   for (const h of f.steps) for (const id of [h.from, h.to]) if (!parts.includes(id)) parts.push(id);
   const info = parts.map((id) => byId[id] || { id, label: id, state: 'existing' });
@@ -668,12 +711,40 @@ function seqDiagram(st, f) {
   return el('div', { class: 'seq' }, svg('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': f.title }, g));
 }
 
-function flowsView(st) {
-  if (!st.flows.length) return null;
-  const i = Math.min(state.flow || 0, st.flows.length - 1);
-  return [el('div', { class: 'ftabs', role: 'tablist' }, st.flows.map((f, j) =>
-      el('button', { class: 'ftab', role: 'tab', type: 'button', 'aria-selected': String(j === i), onclick: () => { state.flow = j; save(); render(); } }, f.title))),
-    seqDiagram(st, st.flows[i])];
+function sectionView(st, sec) {
+  const head = (aside) => el('div', { class: 'sec' }, sec.title, aside ? el('span', { class: 'aside' }, aside) : null);
+  if (sec.type === 'flow') return [head('blue = added by the stack · click a box to open its file'), seqDiagram(st, sec)];
+  if (sec.type === 'map') return [head('click a component to open its file'), mapView(st)];
+  if (sec.type === 'before_after') return [head(), el('div', { class: 'tscroll' }, el('table', { class: 'gtable' },
+    el('thead', {}, el('tr', {}, el('th', {}, ''), el('th', {}, 'Before'), el('th', {}, 'After'))),
+    el('tbody', {}, sec.rows.map((r) => el('tr', {}, el('td', { class: 'aspect' }, rich(r.aspect)), el('td', { class: 'before' }, rich(r.before)), el('td', {}, rich(r.after)))))))];
+  if (sec.type === 'table') return [head(), el('div', { class: 'tscroll' }, el('table', { class: 'gtable' },
+    el('thead', {}, el('tr', {}, sec.columns.map((c) => el('th', {}, c)))),
+    el('tbody', {}, sec.rows.map((r) => el('tr', {}, r.map((c) => el('td', {}, rich(c))))))))];
+  if (sec.type === 'list') return [head(), el('ul', { class: 'glist' }, sec.items.map((it) => el('li', {}, rich(it))))];
+  if (sec.type === 'steps') {
+    const done = sec.steps.filter((s) => state.done[s.id]).length;
+    return [head(`${done}/${sec.steps.length} reviewed`), el('div', { class: 'steps' }, sec.steps.map((s, i) => stepCard(st, s, i)))];
+  }
+  return null;
+}
+
+const AXES = [['correctness', 'Correctness', 'bugs, risk, and what depends on the change'], ['standards', 'Standards', "the repo's documented rules and code smells"],
+  ['spec', 'Spec', 'the ticket and the PR description']];
+function findingsView(st) {
+  const all = comments(st).filter((c) => c.axis);
+  return [el('div', { class: 'sec' }, 'What the reviewers found', el('span', { class: 'aside' }, 'each finding was checked against the code by another agent')),
+    AXES.map(([a, label, hint]) => {
+      const mine = all.filter((c) => c.axis === a && !cmState(c).gone).sort((x, y) => RANK[y.severity] - RANK[x.severity]);
+      const busy = st.reviewing.includes(a), skip = st.skipped[a];
+      const key = `axis:${st.id}:${a}`;
+      return el('details', { class: 'axis', open: state.open[key] ?? (mine.length > 0), ontoggle: (e) => { state.open[key] = e.target.open; save(); } },
+        el('summary', {}, el('b', {}, label), el('span', { class: 'aside' }, hint), el('span', { class: 'grow' }),
+          el('span', { class: 'n' }, busy ? [el('span', { class: 'spin' }), 'reviewing'] : skip ? 'skipped' : mine.length ? plural(mine.length, 'finding', 'findings') : 'nothing found')),
+        el('div', { class: 'axbody' }, skip ? el('p', { class: 'hint' }, skip) : null,
+          !busy && !skip && !mine.length ? el('p', { class: 'hint' }, 'Nothing to raise on this axis.') : null,
+          mine.map((c) => commentCard(st, c))));
+    })];
 }
 
 function codeBlock(st, rows, path, { excerpt, link, title } = {}) {
@@ -718,7 +789,7 @@ function commentCard(st, c) {
     const open = !!state.cmOpen[c.id];
     return el('div', { class: 'cm sugg' + (c.status === 'refuted' ? ' refuted' : '') },
       el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Suggested comment'),
-        el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null,
+        el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.axis ? el('span', { class: 'axtag' }, c.axis) : null, c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null,
         el('span', { class: 'grow' }), target),
       el('div', { class: 'ttl' }, c.title),
       open ? el('div', { class: 'cmb' }, el('p', { class: 'preview' }, cs.text), proof) : null,
@@ -751,7 +822,7 @@ function addCustom(st, path, r) {
 
 function stepCard(st, s, i) {
   const open = !!state.open[s.id], done = !!state.done[s.id];
-  const mine = comments(st).filter((c) => c.step === s.id);
+  const mine = comments(st).filter((c) => c.path === s.path && c.line >= s.start && c.line <= s.end && !cmState(c).gone);
   const card = el('section', { class: `step${open ? ' open' : ''}${done ? ' done' : ''}`, id: s.id,
     onmouseenter: () => setHot(s.nodes, []), onmouseleave: () => setHot([], []) });
   card.append(el('div', { class: 'row', onclick: () => { state.open[s.id] = !open; save(); render(); } },
@@ -764,7 +835,6 @@ function stepCard(st, s, i) {
     card.append(el('div', { class: 'inner' },
       codeBlock(st, s.lines, s.path, { excerpt: true, link: s.link, title: `${s.path}:${s.start}-${s.end}` }),
       s.test === false ? null : el('p', { class: 'testline' }, 'Test: ', s.test ? el('code', {}, s.test) : el('span', { class: 'none' }, 'none covers this')),
-      mine.filter((c) => !c.path || c.line < s.start || c.line > s.end).map((c) => commentCard(st, c)),
       el('div', { class: 'bar' },
         el('label', {}, el('input', { type: 'checkbox', checked: done, onchange: (e) => { state.done[s.id] = e.target.checked; save(); render(); } }), 'Reviewed'),
         f ? el('a', { href: '#', onclick: (e) => { e.preventDefault(); openFile(s.path); } }, 'Whole file in the stack →') : null)));
@@ -779,7 +849,6 @@ function guideView(st) {
     : pending ? `CI: ${pending} pending` : 'CI green';
   const listKey = 'prs:' + st.id;
   const adds = st.files.reduce((t, f) => t + f.adds, 0), dels = st.files.reduce((t, f) => t + f.dels, 0);
-  const done = st.steps.filter((s) => state.done[s.id]).length;
   const warnings = DATA.warnings.filter((w) => st.prs.some((p) => w.includes('#' + p.n)));
   return [
     el('h1', {}, st.prs.length > 1 ? `Stack of ${st.prs.length} PRs` : st.prs[0].title),
@@ -797,15 +866,11 @@ function guideView(st) {
     warnings.length ? el('details', { class: 'warnbox' }, el('summary', {}, warnings.length === 1 ? 'One thing about this stack' : `${warnings.length} things about this stack`),
       warnings.map((w) => el('p', {}, w))) : null,
     st.pending ? el('div', { class: 'pendingbox' }, el('span', { class: 'spin' }),
-      'The guide is being written: map, reading order and drafted comments appear here on their own. The files and diffs are ready now.') : null,
-    st.pending || !st.key_facts.length ? null : el('section', { class: 'facts' }, el('h3', {}, 'Know this first'),
-      el('ol', {}, st.key_facts.map((f, i) => el('li', {}, el('span', { class: 'n' }, i + 1), el('span', {}, el('b', {}, f.title), ' ', f.text))))),
-    st.pending ? null : [
-      el('div', { class: 'sec' }, 'How a call moves through it', el('span', { class: 'aside' }, 'blue = added by the stack · click a box to open its file')),
-      flowsView(st),
-      el('details', { class: 'more' }, el('summary', {}, 'All components by layer'), mapView(st)),
-      el('div', { class: 'sec' }, 'Read in this order', el('span', { class: 'aside' }, `${done}/${st.steps.length} reviewed`)),
-      el('div', { class: 'steps' }, st.steps.map((s, i) => stepCard(st, s, i)))]];
+      'The guide is being written, and three reviewers are reading the code. Each part appears here when it lands. The files and diffs are ready now.') : null,
+    !st.key_facts.length ? null : el('section', { class: 'facts' }, el('h3', {}, 'Know this first'),
+      el('ol', {}, st.key_facts.map((f, i) => el('li', {}, el('span', { class: 'n' }, i + 1), el('span', {}, el('b', {}, rich(f.title)), ' ', rich(f.text)))))),
+    st.sections.map((sec) => sectionView(st, sec)),
+    findingsView(st)];
 }
 
 function sinceBox(st) {
@@ -951,7 +1016,7 @@ function sendView(st) {
       el('span', { class: 'grow' }),
       el('button', { class: 'btn primary', type: 'button', disabled: busy || !ready.length, onclick: () => postMany(ready) },
         busy ? `Posting #${sending}…` : ready.length ? `Post ${plural(ready.length, 'review', 'reviews')}` : 'Post')),
-    el('p', { class: 'hint' }, `Pick a verdict per PR; a PR without one is not posted. ✦ marks the suggestion: approve when nothing is open.${unclean ? ` ${plural(unclean, 'PR is', 'PRs are')} not clean (failing CI or an open point).` : ''}`),
+    el('p', { class: 'hint' }, `Pick a verdict per PR; a PR without one is not posted. ✦ marks the suggestion: approve when nothing is open.${unclean ? ` ${plural(unclean, 'PR is', 'PRs are')} not clean (failing CI or an open point).` : ''}${st.reviewing.length ? ' Reviewers are still working, so suggestions can change.' : ''}`),
     open.length ? el('div', { class: 'sendlist' }, open.map((x) => prRow(st, x, busy))) : el('p', { class: 'empty' }, 'Every PR in this stack is posted.'),
     done.length ? el('details', { class: 'sendlist donelist', open: !!state.open['send:done'], ontoggle: (e) => { state.open['send:done'] = e.target.open; save(); } },
       el('summary', {}, `Posted (${done.length})`), done.map((x) => prRow(st, x, busy))) : null];
@@ -978,7 +1043,7 @@ function prRow(st, x, busy) {
     info, done ? el('span') : seg,
     status ? el('div', { class: 'sline' }, status) : null);
   if (!open) return row;
-  const body = el('textarea', { 'aria-label': 'Review summary', placeholder: p.review_body || 'Optional summary, posted above the inline comments', disabled: !!done,
+  const body = el('textarea', { 'aria-label': 'Review summary', placeholder: 'Optional summary, posted above the inline comments', disabled: !!done,
     oninput: (e) => { vs.body = e.target.value; save(); } });
   body.value = vs.body;
   const msg = el('span', { class: 'status' });
@@ -988,9 +1053,11 @@ function prRow(st, x, busy) {
     try { await navigator.clipboard.writeText(md); msg.className = 'status ok'; msg.textContent = 'Copied.'; } catch (e) { msg.className = 'status err'; msg.textContent = 'The browser blocked the clipboard.'; }
   } }, 'Copy as markdown');
   const lag = p.review_sha !== p.sha ? el('p', { class: 'verdict' }, `Comments land on ${p.review_sha.slice(0, 8)}, the version of #${p.n} the PR above it is built on.`) : null;
-  const why = sug === p.verdict.event && p.verdict.why ? p.verdict.why : sug === 'APPROVE' ? 'Nothing open on this PR.' : p.verdict.why;
+  const openPts = mine.filter((c) => !cmState(c).gone && (cmState(c).on || c.status !== 'refuted') && RANK[cmState(c).sev] >= 1);
+  const why = own ? 'GitHub accepts only comment reviews on your own PR.' : sug === 'APPROVE' ? 'Nothing open on this PR.'
+    : `${plural(openPts.length, 'open point', 'open points')}: ${openPts.slice(0, 2).map((c) => c.title).join('; ')}${openPts.length > 2 ? '…' : ''}`;
   row.append(el('div', { class: 'sbody' },
-    el('p', { class: 'verdict' }, `Suggested ${VERB[sug]}: ${why}`), lag,
+    el('p', { class: 'verdict' }, own ? why : `Suggested ${VERB[sug]}: ${why}`), lag,
     mine.length ? mine.map((m) => commentCard(st, m)) : el('p', { class: 'verdict' }, 'No comment routed to this PR.'),
     el('div', { class: 'sec' }, 'Summary posted with the review'), body,
     el('div', { class: 'actions' },
@@ -1020,8 +1087,9 @@ const style = document.createElement('style');
 style.textContent = '.arr{fill:var(--faint)}.arrnew{fill:var(--accent)}.arrhot{fill:var(--hot)}';
 document.head.append(style);
 render();
-let version = null;
+let version = null, closed = false;
 async function poll() {
+  if (closed) return;
   try {
     const j = await (await fetch('/api/state', { cache: 'no-store' })).json();
     posted = j.posted || {};
@@ -1030,7 +1098,7 @@ async function poll() {
     if (version === null) render();
     version = j.version;
   } catch (e) {}
-  if (rerun.running || DATA.stacks.some((s) => s.pending || s.comments.some((c) => c.status === 'checking'))) setTimeout(poll, 3000);
+  if (rerun.running || DATA.stacks.some((s) => s.pending || s.reviewing.length || s.comments.some((c) => c.status === 'checking'))) setTimeout(poll, 3000);
 }
 poll();
 checkHeads();
