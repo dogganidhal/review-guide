@@ -486,7 +486,7 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
 .askbtn { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 99px; padding: 0 10px; font-size: .74rem; font-weight: 600; line-height: 1.7; cursor: pointer; opacity: 0; transition: opacity .12s; white-space: nowrap; }
 .askbtn:hover { color: var(--accent); border-color: var(--accent); }
 .gsec.askable { position: relative; }
-.gsec.askable > .askbtn { position: absolute; top: 16px; right: 0; }
+.gsec.askable > .askbtn { position: absolute; top: 20px; right: 0; z-index: 3; }
 .gsec.askable > .sec { padding-right: 56px; }
 .facts li { position: relative; }
 .facts li > .askbtn { position: absolute; top: -2px; right: 0; }
@@ -898,7 +898,7 @@ function renderSide() {
   const sw = el('div', { class: 'railsw', role: 'tablist', 'aria-label': 'Left rail' }, [['outline', 'Outline'], ['files', 'Files']].map(([k, l]) =>
     el('button', { type: 'button', role: 'tab', 'aria-selected': String(mode === k), onclick: () => { state.rail = k; save(); renderSide(); } }, l)));
   const askRail = !CAN_ASK ? null : asking?.rail ? askBox(asking.target, { rail: true })
-    : el('button', { class: 'askrail', type: 'button', onclick: () => openAsk(attachment(), { rail: true }), title: 'Ask about what is selected or on screen' }, 'Ask a question', el('kbd', {}, '?'));
+    : el('button', { class: 'askrail', type: 'button', onclick: () => openAsk(attachment(), { rail: true }), title: 'Ask about what is selected or on screen' }, '✦ Ask a question', el('kbd', {}, '?'));
   document.getElementById('side').replaceChildren(sw, askRail, ...(mode === 'files' ? filesRail(st) : outlineRail(st)).flat(Infinity).filter(Boolean));
   const tree = document.querySelector('.ftree');
   if (tree) { tree.scrollLeft = sideScrollLeft; tree.addEventListener('scroll', () => { sideScrollLeft = tree.scrollLeft; }, { passive: true }); }
@@ -1313,7 +1313,7 @@ function dgPop(x, y, ref, label, t, si) {
   const pop = el('div', { class: 'dgpop', role: 'menu', 'aria-label': label },
     el('div', { class: 'ph', title: label }, label),
     t ? el('button', { class: 'mitem', type: 'button', role: 'menuitem', onclick: () => { done(); t.open(); } }, 'Open the code', el('span', {}, '↗')) : null,
-    el('button', { class: 'mitem', type: 'button', role: 'menuitem', onclick: () => { done(); openAsk(TG.node(ST(), ref, Number.isNaN(si) ? undefined : si)); } }, 'Ask about this', el('span', {}, '?')));
+    el('button', { class: 'mitem', type: 'button', role: 'menuitem', onclick: () => { done(); openAsk(TG.node(ST(), ref, Number.isNaN(si) ? undefined : si)); } }, '✦ Ask about this', el('span', {}, '?')));
   document.body.append(pop);
   const r = pop.getBoundingClientRect();
   pop.style.left = `${Math.max(8, Math.min(x + 6, innerWidth - r.width - 8))}px`;
@@ -1664,7 +1664,7 @@ function snippet(st, c) {
 
 function commentCard(st, c, { inDiff, ask } = {}) {
   const cs = cmState(c);
-  const askB = ask && CAN_ASK && c.axis ? el('button', { class: 'btn', type: 'button', title: 'Ask the agent about this finding', onclick: () => openAsk(TG.finding(st, c)) }, 'Ask') : null;
+  const askB = ask && CAN_ASK && c.axis ? el('button', { class: 'btn', type: 'button', title: 'Ask the agent about this finding', onclick: () => openAsk(TG.finding(st, c)) }, '✦ Ask') : null;
   const rj = c.rejudged ? el('span', { class: 'rejudged', title: c.note || '' }, 're-judged after your question') : null;
   const rerender = () => { save(); render(); };
   const where = c.path ? `${c.path.split('/').pop()}:${c.line}` : 'review summary';
@@ -2224,7 +2224,7 @@ const tcOf = (id) => (state.tc[id] ||= {});
 const stackOf = (t) => DATA.stacks.find((s) => s.id === t.target.stack) || ST();
 const inStack = (t, st) => !t.target.stack || t.target.stack === st.id;
 const askBtn = (what, fn) => (CAN_ASK ? el('button', { class: 'askbtn', type: 'button', 'aria-label': `Ask about ${what}`, title: 'Ask a question about this',
-  onclick: (e) => { e.stopPropagation(); fn(); } }, 'Ask') : null);
+  onclick: (e) => { e.stopPropagation(); fn(); } }, '✦ Ask') : null);
 const base = (p) => p.split('/').pop();
 
 // What a question is about, in the shape ask.py takes (label is for the chip; the server stores its own).
@@ -2287,7 +2287,7 @@ const MAC = /Mac|iPhone|iPad/.test(navigator.platform || '');
 
 function askBox(g, { rail } = {}) {
   const a = asking, starters = STARTERS[g.kind] || STARTERS.free;
-  const send = el('button', { class: 'btn primary', type: 'button', disabled: !a.text.trim() || a.busy, onclick: submitAsk }, a.busy ? 'Asking…' : 'Ask');
+  const send = el('button', { class: 'btn primary', type: 'button', disabled: !a.text.trim() || a.busy, onclick: submitAsk }, a.busy ? 'Asking…' : '✦ Ask');
   const ta = el('textarea', { 'data-asktext': '', rows: 3, 'aria-label': `Question about ${chipText(g)}`, placeholder: g.kind === 'free' ? 'Ask about anything in this review' : 'Ask about this',
     oninput: (e) => { a.text = e.target.value; send.disabled = !a.text.trim() || a.busy; },
     onkeydown: (e) => {
@@ -2509,7 +2509,7 @@ function threadEl(t) {
       const ta = el('textarea', { rows: 1, placeholder: 'Ask a follow-up', 'aria-label': 'Follow-up question', oninput: (e) => { drafts[t.id] = e.target.value; },
         onkeydown: (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } } });
       ta.value = drafts[t.id] || '';
-      root.append(el('div', { class: 'tfu' }, ta, el('button', { class: 'btn', type: 'button', onclick: go }, 'Ask')));
+      root.append(el('div', { class: 'tfu' }, ta, el('button', { class: 'btn', type: 'button', onclick: go }, '✦ Ask')));
     }
   }
   if (unseen.has(t.id)) seenObs.observe(root);
@@ -2676,7 +2676,7 @@ function paintSel(box) {
   };
   const bar = el('div', { class: 'selbar', role: 'group', 'aria-label': 'Selected lines' }, el('span', { class: 'lab' }, TG.line(s.st, s.path, a, b).label),
     last.k === '+' && last.pr ? el('button', { class: 'btn', type: 'button', title: `Comment on the last line (goes to ${tag(last.pr)})`, onclick: comment }, 'Comment') : null,
-    CAN_ASK ? el('button', { class: 'btn primary', type: 'button', onclick: () => openAsk(TG.line(s.st, s.path, a, b)) }, 'Ask') : null,
+    CAN_ASK ? el('button', { class: 'btn primary', type: 'button', onclick: () => openAsk(TG.line(s.st, s.path, a, b)) }, '✦ Ask') : null,
     el('button', { class: 'linkish', type: 'button', 'aria-label': 'Clear the selection', onclick: () => { lineSel = null; paintSel(box); } }, '✕'));
   rows.at(-1).after(bar);
 }
