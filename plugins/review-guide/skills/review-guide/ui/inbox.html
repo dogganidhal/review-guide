@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #ffffff; --surface: #f5f8fb; --surface-2: #eaf1f7; --line: #dbe4ec;
+  --text: #00264c; --muted: #4f6a85; --faint: #8399ad;
+  --accent: #107aca; --accent-ink: #ffffff; --accent-soft: #d0e9fb;
+  --danger: #b3123f; --ok: #17663f; --hot: #ffcd4d; --hot-ink: #00264c;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #101010; --surface: #181818; --surface-2: #202020; --line: #2c2c2c;
+    --text: #ececec; --muted: #a0a0a0; --faint: #707070;
+    --accent: #00bfff; --accent-ink: #00264c; --accent-soft: #0d2b38;
+    --danger: #ff8aa5; --ok: #6fd3a0;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #101010; --surface: #181818; --surface-2: #202020; --line: #2c2c2c;
+  --text: #ececec; --muted: #a0a0a0; --faint: #707070;
+  --accent: #00bfff; --accent-ink: #00264c; --accent-soft: #0d2b38;
+  --danger: #ff8aa5; --ok: #6fd3a0;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Figtree', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif; font-size: 15px; line-height: 1.45; }
+a { color: var(--accent); text-decoration: none; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.top { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.top .brand { font-weight: 700; }
+.grow { flex: 1; }
+.btn { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 4px 11px; cursor: pointer; font-size: .85rem; color: var(--muted); }
+main { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 20px; font-size: .9rem; }
+h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); margin: 26px 0 8px; font-weight: 700; }
+.list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 12px 14px; border-top: 1px solid var(--line); color: inherit; }
+.item:first-child { border-top: none; }
+.item:hover { background: var(--surface); text-decoration: none; }
+.item .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .t .repo { color: var(--muted); font-weight: 400; }
+.item .when { color: var(--faint); font-size: .8rem; text-align: right; white-space: nowrap; }
+.item .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--muted); font-size: .82rem; align-items: center; }
+.item .prs { display: flex; flex-wrap: wrap; gap: 4px; }
+.pr { font-family: var(--mono); font-size: .74rem; border: 1px solid var(--line); border-radius: 99px; padding: 0 7px; color: var(--muted); }
+.pr.posted { border-color: var(--ok); color: var(--ok); }
+.run { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); }
+.run.failed { color: var(--danger); }
+.spin { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.empty { color: var(--muted); padding: 22px; border: 1px dashed var(--line); border-radius: 12px; }
+.empty code { font-family: var(--mono); font-size: .82rem; }
+.stopped { max-width: 520px; margin: 18vh auto; padding: 0 16px; text-align: center; color: var(--muted); }
+.stopped h1 { color: var(--text); }
+</style>
+</head>
+<body>
+<header class="top"><span class="brand">Review guide</span><span class="grow"></span>
+  <button class="btn" type="button" id="theme" title="Toggle theme">◐</button>
+  <button class="btn" type="button" id="stop" title="Stop the local server. Running guides keep going and show up when it starts again.">Stop server</button></header>
+<main id="main"></main>
+<script>
+let REVIEWS = /*DATA*/null;
+const TOKEN = '/*TOKEN*/';
+
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v != null && v !== false) e.setAttribute(k, v);
+  }
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  return e;
+}
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+function ago(t) {
+  const s = Date.now() / 1000 - t;
+  if (s < 90) return 'just now';
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return new Date(t * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function item(r) {
+  const posted = r.prs.filter((p) => p.posted).length;
+  const nums = r.prs.length ? r.prs.map((p) => p.n) : r.refs.map((x) => +x.split('#')[1]);
+  const title = r.prs.length === 1 ? r.prs[0].title : `Stack of ${nums.length} PRs`;
+  const nw = r.newest;
+  const run = nw && nw.state === 'running' ? el('span', { class: 'run' }, el('span', { class: 'spin' }), `${nw.status || 'Starting'}…`)
+    : nw && nw.state === 'failed' ? el('span', { class: 'run failed', title: nw.error }, `Round ${nw.n} failed`) : null;
+  return el('a', { class: 'item', href: `/r/${r.id}` },
+    el('span', { class: 't' }, el('span', { class: 'repo' }, r.repo + ' · '), title),
+    el('span', { class: 'when' }, ago(r.updated)),
+    el('span', { class: 'meta' },
+      el('span', { class: 'prs' }, nums.map((n) => el('span', { class: 'pr' + (r.prs.find((p) => p.n === n)?.posted ? ' posted' : ''), title: r.prs.find((p) => p.n === n)?.title || '' }, `#${n}`))),
+      r.rounds > 1 ? el('span', {}, plural(r.rounds, 'round', 'rounds')) : null,
+      r.findings != null ? el('span', {}, plural(r.findings, 'finding', 'findings')) : null,
+      r.prs.length ? el('span', {}, posted === r.prs.length ? 'all posted' : posted ? `${posted} of ${r.prs.length} posted` : 'nothing posted') : null,
+      run));
+}
+
+function render() {
+  const open = REVIEWS.filter((r) => r.status !== 'done'), done = REVIEWS.filter((r) => r.status === 'done');
+  document.getElementById('main').replaceChildren(
+    el('h1', {}, 'Reviews'),
+    el('p', { class: 'sub' }, 'Every guide built on this machine. Running /review-guide again on the same PRs adds a round to the same review.'),
+    open.length ? el('div', { class: 'list' }, open.map(item))
+      : el('p', { class: 'empty' }, 'Nothing open. Run ', el('code', {}, '/review-guide <PR links>'), ' in Claude Code to start one.'),
+    ...(done.length ? [el('h2', {}, `Finished (${done.length})`), el('div', { class: 'list' }, done.map(item))] : []));
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/api/reviews', { cache: 'no-store' });
+    if (r.ok) { REVIEWS = (await r.json()).reviews; render(); }
+  } catch (e) {}
+  setTimeout(poll, REVIEWS.some((r) => r.newest?.state === 'running') ? 3000 : 15000);
+}
+
+document.getElementById('theme').onclick = () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  fetch('/api/prefs', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify({ theme: root.dataset.theme }) }).catch(() => {});
+};
+document.getElementById('stop').onclick = async () => {
+  if (!confirm('Stop the review-guide server? Open review pages stop updating. Your drafts are saved, and /review-guide starts it again.')) return;
+  try { await fetch('/api/stop', { method: 'POST', headers: { 'X-Review-Token': TOKEN } }); } catch (e) {}
+  document.body.replaceChildren(el('div', { class: 'stopped' }, el('h1', {}, 'Server stopped'), el('p', {}, 'Your drafts are saved. Run /review-guide again to start it.')));
+};
+render();
+poll();
+</script>
+</body>
+</html>

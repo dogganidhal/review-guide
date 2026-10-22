@@ -2,17 +2,19 @@
 """Run the review agents for a work directory without a Claude Code session: the one path both the skill and the
 page's Rerun button use.
 
-Usage: rerun.py WORKDIR [--effort quick|balanced|deep] [--no-fetch] [--focus TEXT]
+Usage: rerun.py WORKDIR [--effort quick|balanced|deep] [--refs REF... [--prev DIR]] [--focus TEXT]
 
-Without --no-fetch, fetches the PRs again first (new commits land in a new work directory). Then, per stack, it runs
+With --refs, fetches those PRs into WORKDIR first (serve.py starts each round this way; --prev is the previous round,
+for the lines changed since). Without, it runs the agents on WORKDIR as fetched. Then, per stack, it runs
 the guide writer and three reviewers (correctness, standards, spec) in parallel through `claude -p`, and once the
 reviewers are done, one comment verifier per finding (at most VERIFIERS at a time). The page is rebuilt as each part
 lands. The agents run in dontAsk mode: they write only inside the work directory and run only the read commands their
 prompts name.
 
 Prints `workdir <path>` once the page is ready, then `status <text>` per stage, and `done <summary>` at the end.
-Writes `progress.json` (each agent's state, tool calls and latest action, read by serve.py), one result line per
-agent to `agents.log`, and the run's duration to `~/.cache/review-guide/timings.json`.
+Writes `progress.json` (its pid, the latest status, each agent's state, tool calls and latest action, and `finished` or
+`error` at the end, read by serve.py), one result line per agent to `agents.log`, and the run's duration to
+`~/.cache/review-guide/timings.json`.
 """
 
 import argparse
@@ -41,8 +43,13 @@ DENY = ["Bash(git * --output*)", "Bash(git * -O*)", "Bash(git * --open-files-in-
         *[f"Bash(gh api * {flag}*)" for flag in ("-X", "--method", "-f", "-F", "--field", "--raw-field", "--input")]]
 
 
+PROGRESS = None
+
+
 def say(kind: str, text) -> None:
     print(kind, text, flush=True)
+    if kind == "status" and PROGRESS:
+        PROGRESS.set(status=str(text))
 
 
 def build(w: pathlib.Path, *args: str) -> bool:
@@ -81,12 +88,17 @@ class Progress:
 
     def __init__(self, w: pathlib.Path, effort: str):
         self.path, self.lock = w / "progress.json", threading.Lock()
-        self.data = {"started": time.time(), "effort": effort, "agents": {}}
+        self.data = {"pid": os.getpid(), "started": time.time(), "effort": effort, "status": "Starting", "agents": {}}
         self.save()
 
     def update(self, key: str, **fields) -> None:
         with self.lock:
             self.data["agents"].setdefault(key, {"state": "waiting", "calls": 0, "last": ""}).update(fields)
+            self.save()
+
+    def set(self, **fields) -> None:
+        with self.lock:
+            self.data.update(fields)
             self.save()
 
     def save(self) -> None:
@@ -106,26 +118,39 @@ def record_timing(effort: str, seconds: float) -> None:
 
 
 def main() -> None:
+    global PROGRESS
     ap = argparse.ArgumentParser()
     ap.add_argument("workdir", type=pathlib.Path)
     ap.add_argument("--effort", choices=EFFORTS)
-    ap.add_argument("--no-fetch", action="store_true", help="use the work directory as fetched (the skill fetches first)")
+    ap.add_argument("--refs", nargs="+", help="fetch these PRs into WORKDIR first")
+    ap.add_argument("--prev", type=pathlib.Path, help="the previous round's work directory")
     ap.add_argument("--focus", help="one sentence the user asked the agents to focus on")
     args = ap.parse_args()
-    started = time.time()
     w = args.workdir
-    run = json.loads((w / "run.json").read_text())
-    effort = args.effort or run.get("effort", "balanced")
+    w.mkdir(parents=True, exist_ok=True)
+    effort = args.effort or (json.loads((w / "run.json").read_text()).get("effort") if not args.refs else None) or "balanced"
+    PROGRESS = Progress(w, effort)
+    try:
+        run_round(args, w, effort, PROGRESS)
+    except SystemExit as e:
+        if e.code not in (None, 0):
+            PROGRESS.set(error=str(e.code).strip().splitlines()[-1][:300], finished=time.time())
+        raise
+    except Exception as e:
+        PROGRESS.set(error=f"{type(e).__name__}: {e}"[:300], finished=time.time())
+        raise
+    PROGRESS.set(finished=time.time())
 
-    if not args.no_fetch:
-        say("status", "Fetching the PRs again")
-        refs = [f"{run['repo']}#{p['n']}" for p in run["prs"]]
-        out = subprocess.run([sys.executable, str(HERE / "fetch.py"), "--effort", effort, *refs],
-                             cwd=run.get("checkout") or None, capture_output=True, text=True)
+
+def run_round(args, w: pathlib.Path, effort: str, progress: Progress) -> None:
+    started = progress.data["started"]
+    if args.refs:
+        say("status", "Fetching the PRs")
+        out = subprocess.run([sys.executable, str(HERE / "fetch.py"), "--workdir", str(w), "--effort", effort,
+                              *(["--prev", str(args.prev)] if args.prev else []), *args.refs], capture_output=True, text=True)
         if out.returncode:
             sys.exit(out.stderr.strip() or out.stdout.strip())
-        w = pathlib.Path(out.stdout.strip().splitlines()[-1])
-        run = json.loads((w / "run.json").read_text())
+    run = json.loads((w / "run.json").read_text())
     log, lock = (w / "agents.log").open("a"), threading.Lock()
     ids = [s["id"] for s in run["stacks"]]
     # Unchanged heads reuse the work directory: drop the old results so the agents write fresh ones.
@@ -134,7 +159,6 @@ def main() -> None:
             (w / sid / name).unlink(missing_ok=True)
         for f in (w / sid / "verify").glob("*.json"):
             f.unlink()
-    progress = Progress(w, effort)
     build(w, "--partial")
     say("workdir", w)
 

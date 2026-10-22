@@ -1,15 +1,15 @@
 # Status
 
-Last updated 2026-10-21. Read `docs/spec.md` first.
+Last updated 2026-10-22. Read `docs/spec.md` first.
 
 ## Built
 
 - `fetch.py`: stack detection, lagging-child handling, line attribution, brief generation. Takes about 8 s on a 31-file stack.
 - `guide-writer` and `comment-verifier` prompts, with budgets and the brief-first workflow.
 - `build.py`: validation, partial rendering, merging of verifier output, comment routing.
-- `serve.py`: local page, token, posting guards.
+- `serve.py`: one server per machine with an inbox of reviews, rounds, page state saved on disk with carry-over between rounds, token and posting guards. `serve.py open` is how the skill sends PRs to it.
 - `ui/template.html`: everything in the "Page" section of the spec.
-- `test_scripts.py`: an offline test on a scratch two-PR stack in git. It covers attribution, routing, validation errors, rendering, and the server's token and line guards. `--keep DIR` saves the built fixture so `serve.py DIR` can be used for UI work without agents.
+- `test_scripts.py`: an offline test on a scratch two-PR stack in git. It covers attribution, routing, validation errors, rendering, and the server: inbox, rounds, carry-over, saved state across a restart, and the token and line guards. `--keep DIR` saves a server home with the fixture as a two-round review, so `serve.py --home DIR --port 0` can be used for UI work without agents.
 - `claude plugin validate --strict` passes on the marketplace and the plugin.
 
 ## How the design got here

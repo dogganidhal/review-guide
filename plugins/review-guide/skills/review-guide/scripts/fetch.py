@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fetch a set of pull requests, group them into stacks, and write what the guide agents read.
 
-Usage: fetch.py [--workdir DIR] [--effort quick|balanced|deep] <pr-url | owner/repo#n>...
+Usage: fetch.py [--workdir DIR] [--prev DIR] [--effort quick|balanced|deep] <pr-url | owner/repo#n>...
 
 PRs whose base branch is another PR's head form a stack. A stack is reviewed as one change: the diff
 from the bottom PR's base to the top PR's head (the target). Each line the stack changed is attributed
@@ -20,6 +20,7 @@ Writes:
   <n>/pr.diff, <n>/hunks.json    the PR's own diff at its review commit, and the lines GitHub accepts comments on
   <n>/existing-comments.json     what reviewers already said
 A stack the viewer reviewed before carries `since`: the commit of their last review and the tip lines changed after it.
+With --prev (the previous round's work directory) and a head that moved since, `since` is that round instead (state ROUND).
 Prints the work directory on the last line.
 """
 
@@ -443,7 +444,13 @@ def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: 
                  (p["body"] or "(no description)").strip()[:2500], ""]
     if relevant := [w for w in warnings if any(f"#{n}" in w for n in chain)]:
         head += ["## Warnings", "", *[f"- {w}" for w in relevant], ""]
-    if since:
+    if since and since["state"] == "ROUND":
+        changed = sorted(since["files"])
+        # A different heading from the one below on purpose: the reviewers narrow to the delta only after a posted review.
+        head += ["## Changed since the previous round of this guide", "",
+                 f"The previous round saw the stack up to {since['sha'][:8]}. {len(changed)} files changed since: "
+                 + ", ".join(changed[:60]) + (" ..." if len(changed) > 60 else "") + ". Review the whole stack.", ""]
+    elif since:
         changed = sorted(since["files"])
         head += ["## Since the viewer's last review", "",
                  f"They last reviewed #{since['pr']} ({since['state'].lower()}) at {since['sha'][:8]} on {since['at'][:10]}. "
@@ -513,6 +520,22 @@ def last_seen(git: Git, chain: list[int], last: dict[int, dict | None]) -> tuple
     return seen, None
 
 
+def previous_round(prev: pathlib.Path, chains: list[list[int]], heads: dict[int, str]) -> dict[int, dict]:
+    """Per chain (keyed by its top PR) whose heads moved since the previous round: that round's review commits, in the
+    shape last_seen reads, so the lines changed since then get the "new" mark."""
+    try:
+        old = json.loads((prev / "run.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(old.get("fetched_at") or 0))
+    seen = {p["n"]: p for p in old["prs"]}
+    out = {}
+    for chain in chains:
+        if any(n in seen and seen[n]["sha"] != heads[n] for n in chain):
+            out[chain[-1]] = {n: {"state": "ROUND", "sha": seen[n]["review_sha"], "at": at} if n in seen else None for n in chain}
+    return out
+
+
 def checks_summary(rollup: list[dict]) -> dict:
     failed, pending, passed = [], 0, 0
     for c in rollup or []:
@@ -529,6 +552,7 @@ def checks_summary(rollup: list[dict]) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workdir")
+    ap.add_argument("--prev", type=pathlib.Path, help="the previous round's work directory")
     ap.add_argument("--effort", choices=EFFORTS, default="balanced")
     ap.add_argument("prs", nargs="+")
     args = ap.parse_args()
@@ -582,6 +606,7 @@ def main() -> None:
         existing, last[n] = existing_comments(repo, n, viewer)
         (prdir / "existing-comments.json").write_text(json.dumps(existing, indent=1))
 
+    round_seen = previous_round(args.prev, chains, heads) if args.prev else {}
     stacks = []
     for chain in chains:
         sid = "-".join(map(str, chain))
@@ -619,7 +644,7 @@ def main() -> None:
             text = git.text(tip, name)
             if text is not None:
                 (guidance / name.replace("/", "__")).write_text(text)
-        since, problem = last_seen(git, chain, last)
+        since, problem = last_seen(git, chain, round_seen.get(chain[-1]) or last)
         if problem:
             warnings.append(problem)
         if since:

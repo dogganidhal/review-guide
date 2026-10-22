@@ -15,9 +15,11 @@ plugins/review-guide/
     references/guide-schema.md             contract between agents and scripts
     scripts/fetch.py                       GitHub and git data, stacks, attribution, brief
     scripts/build.py                       validation and rendering
-    scripts/serve.py                       local page and posting
+    scripts/serve.py                       the one server: inbox, rounds, saved page state, posting
+    scripts/rerun.py                       one round: fetch, then the agents headless
     scripts/test_scripts.py                offline test
-    ui/template.html                       the page (data injected at /*DATA*/null)
+    ui/template.html                       the review page (data injected at /*DATA*/null)
+    ui/inbox.html                          the server's home: every review
 docs/spec.md, docs/status.md
 ```
 
@@ -40,8 +42,8 @@ claude plugin validate ./plugins/review-guide --strict
 To work on the UI without agents:
 
 ```bash
-python3 -I plugins/review-guide/skills/review-guide/scripts/test_scripts.py --keep /tmp/rg-fixture
-python3 plugins/review-guide/skills/review-guide/scripts/serve.py /tmp/rg-fixture
+python3 -I plugins/review-guide/skills/review-guide/scripts/test_scripts.py --keep /tmp/rg-home
+python3 plugins/review-guide/skills/review-guide/scripts/serve.py --home /tmp/rg-home --port 0
 ```
 
 For a real end-to-end run, follow `SKILL.md`. Running it from a clone of the reviewed repository lets the agents search code locally.

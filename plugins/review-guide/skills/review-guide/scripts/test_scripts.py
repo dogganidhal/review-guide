@@ -2,10 +2,11 @@
 """Offline check: a two-PR stack in a scratch git repo, where the top PR edits a file the bottom PR added.
 
 Covers line attribution across the stack, routing of tip lines to the right PR, build.py validation and
-rendering, and serve.py's token and line guards. Run: python3 -I test_scripts.py
+rendering, and serve.py: the inbox, rounds, saved page state across a restart, carry-over, and the token and line
+guards. Run: python3 -I test_scripts.py
 
-With --keep DIR, the built work directory is copied to DIR, so the page can be opened with
-`serve.py DIR` to work on the UI without running the agents.
+With --keep DIR, a server home holding the fixture as a review with two rounds is copied to DIR, so the page can be
+opened with `serve.py --home DIR` to work on the UI without running the agents.
 """
 
 import json
@@ -19,7 +20,7 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from fetch import Git, attribute, changed_files, changed_since, commit_owners, last_seen, leftovers, parse_diff, review_shas  # noqa: E402
+from fetch import Git, attribute, changed_files, changed_since, commit_owners, last_seen, leftovers, parse_diff, previous_round, review_shas  # noqa: E402
 
 
 def sh(cwd: pathlib.Path, *args: str) -> str:
@@ -47,6 +48,101 @@ def make_repo(root: pathlib.Path) -> dict[str, str]:
     return {"repo": str(repo), "base": base, "pr1": pr1, "pr2": pr2}
 
 
+def check_server(w: pathlib.Path, home: pathlib.Path) -> None:
+    """One review, two rounds of the fixture: round 2 has #2 moved, with A.java line 3 changed and line 4 kept."""
+    from serve import norm_refs, review_id  # noqa: E402
+    refs = norm_refs(["https://github.com/o/r/pull/2", "o/r#1"])
+    assert refs == ["o/r#1", "o/r#2"] and review_id(refs) == review_id(norm_refs(["o/r#2", "o/r#1"]))
+    rid = review_id(refs)
+    rev_dir = home / "reviews" / rid
+    r1, r2 = rev_dir / "rounds" / "1", rev_dir / "rounds" / "2"
+    shutil.copytree(w, r1)
+    shutil.copytree(w, r2)
+    for rdir in (r1, r2):
+        (rdir / "progress.json").unlink(missing_ok=True)
+    data2 = json.loads((r2 / "guide.json").read_text())
+    st = data2["stacks"][0]
+    st["prs"][1]["sha"] = "f" * 40
+    st["since"] = {"state": "ROUND", "pr": 2, "sha": "e" * 40, "at": "2026-10-20T00:00:00Z", "files": {"A.java": [3]}}
+    a = next(f for f in st["files"] if f["path"] == "A.java")
+    for row in (x for h in a["hunks"] for x in h):
+        if row.get("n") == 3 and row["k"] == "+":
+            row["t"] = "  short y;"
+    (r2 / "guide.json").write_text(json.dumps(data2))
+    (rev_dir / "review.json").write_text(json.dumps({"id": rid, "refs": refs, "created": 1, "status": "open",
+                                                    "rounds": [{"n": 1, "effort": "balanced", "created": 1}, {"n": 2, "effort": "deep", "created": 2}]}))
+    sid = st["id"]
+    # Round 1's state: a comment on line 4 (kept), one on line 3 (changed), an accepted finding, viewed files, a verdict.
+    (r1 / "ui.json").write_text(json.dumps({
+        "stack": sid, "viewed": {f"{sid}A.java": True, f"{sid}B.java": True}, "verdict": {"2": {"body": "Looks close.", "event": "COMMENT"}},
+        "extra": {sid: [{"id": f"{sid}-x1", "custom": True, "severity": "comment", "path": "A.java", "line": 4, "pr": 2, "pl": 4, "ps": None},
+                        {"id": f"{sid}-x2", "custom": True, "severity": "nit", "path": "A.java", "line": 3, "pr": 2, "pl": 3, "ps": None}]},
+        "cm": {f"{sid}-x1": {"on": True, "gone": False, "sev": "comment", "text": "Why empty?"},
+               f"{sid}-x2": {"on": True, "gone": False, "sev": "nit", "text": "long is wide"},
+               next(c["id"] for c in st["comments"] if c["id"].endswith("-x")): {"on": True, "gone": False, "sev": "question", "text": "Who reads x?"}}}))
+
+    def start():
+        proc = subprocess.Popen([sys.executable, str(HERE / "serve.py"), "--home", str(home), "--port", "0"], stdout=subprocess.PIPE, text=True)
+        return proc, proc.stdout.readline().strip()
+
+    def req(url, method="GET", body=None, tok=None):
+        r = urllib.request.Request(url, None if body is None else json.dumps(body).encode(), method=method,
+                                   headers={"Content-Type": "application/json", **({"X-Review-Token": tok} if tok else {})})
+        try:
+            with urllib.request.urlopen(r) as resp:
+                return resp.status, resp.read().decode()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode()
+
+    server, url = start()
+    try:
+        info = json.loads((home / "server.json").read_text())
+        assert url == f"http://127.0.0.1:{info['port']}/" and oct((home / "server.json").stat().st_mode)[-3:] == "600"
+        # A second server finds the first one and exits.
+        second = subprocess.run([sys.executable, str(HERE / "serve.py"), "--home", str(home), "--port", "0"], capture_output=True, text=True, timeout=10)
+        assert second.stdout.strip() == url, second.stdout
+        token = info["token"]
+        inbox = json.loads(req(url + "api/reviews")[1])["reviews"]
+        assert [(x["id"], x["rounds"], x["live"], x["status"]) for x in inbox] == [(rid, 2, 2, "open")], inbox
+        assert rid in req(url)[1]
+        page = req(url + f"r/{rid}")[1]
+        assert '"round": 2' in page and '"live": true' in page and token in page
+        ui = json.loads((r2 / "ui.json").read_text())
+        moved = ui["extra"][sid]
+        assert [(c["line"], c["pr"]) for c in moved] == [(2, 1), (4, 2)], moved
+        assert [c["text"] for c in ui["lost"]] == ["long is wide"], ui["lost"]
+        assert sorted(ui["cm"][c["id"]]["text"] for c in moved) == ["Who reads x?", "Why empty?"]
+        assert ui["viewed"] == {f"{sid}B.java": True}, ui["viewed"]
+        assert ui["verdict"] == {"2": {"body": "Looks close."}}, ui["verdict"]
+        assert '"live": false' in req(url + f"r/{rid}/1")[1]
+        base = url + f"api/r/{rid}"
+        assert req(base + "/2/ui", "PUT", {"stack": sid, "viewed": {"x": True}}, "wrong")[0] == 403
+        assert req(base + "/1/ui", "PUT", {"stack": sid}, token)[0] == 409
+        assert req(base + "/2/ui", "PUT", {"stack": sid, "viewed": {"saved": True}}, token)[0] == 200
+        state = json.loads(req(base + "/2/state")[1])
+        assert state["version"].startswith("2:") and state["live"] == 2 and not state["rerun"]["running"]
+        outside = {"pr": 2, "event": "COMMENT", "body": "x", "comments": [{"path": "A.java", "line": 99, "body": "y"}]}
+        assert req(base + "/2/review", "POST", outside, "wrong")[0] == 403
+        assert req(base + "/2/review", "POST", outside, token)[0] == 400
+        assert req(base + "/2/review", "POST", {**outside, "pr": 1, "event": "APPROVE", "comments": []}, token)[0] == 400
+        assert req(base + "/1/review", "POST", outside, token)[0] == 409
+        assert req(base + "/rerun", "POST", {"effort": "max"}, token)[0] == 400
+        assert req(base + "/finish", "POST", {}, token)[0] == 200
+        assert json.loads(req(url + "api/reviews")[1])["reviews"][0]["status"] == "done"
+        assert req(url + "api/stop", "POST", {}, token)[0] == 200
+        assert server.wait(timeout=5) == 0 and not (home / "server.json").exists()
+    finally:
+        server.terminate()
+    # A new server on another port: the saved state, the status and the review are all still there.
+    server, url = start()
+    try:
+        page = req(url + f"r/{rid}")[1]
+        assert '"saved": true' in page and '"status": "done"' in page, page[:200]
+    finally:
+        server.terminate()
+        server.wait()
+
+
 def main(keep: str | None = None) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
@@ -66,6 +162,14 @@ def main(keep: str | None = None) -> None:
         assert seen["pr"] == 1 and problem is None, (seen, problem)
         assert changed_since(git, r["pr1"], r["pr2"], {"A.java", "B.java"}) == {"A.java": [3, 4], "B.java": [1]}
         assert last_seen(git, [1, 2], {1: None, 2: None}) == (None, None)
+        # The previous round of the guide saw #2 at pr1: only #2's move counts, and it feeds last_seen like a review.
+        prev = root / "prev"
+        prev.mkdir()
+        (prev / "run.json").write_text(json.dumps({"fetched_at": 0, "prs": [{"n": 1, "sha": r["pr1"], "review_sha": r["pr1"]},
+                                                                             {"n": 2, "sha": r["pr1"], "review_sha": r["pr1"]}]}))
+        rounds = previous_round(prev, [[1, 2]], heads)
+        assert rounds[2][2]["state"] == "ROUND" and last_seen(git, [1, 2], rounds[2])[0]["sha"] == r["pr1"], rounds
+        assert previous_round(prev, [[1, 2]], {1: r["pr1"], 2: r["pr1"]}) == {}
 
         # A removal: a metric family nothing in the repo reads any more, a fixture key, and a two-hop chain
         # (Api.onDuty forwards to Store.onDuty) whose only caller the stack removed.
@@ -186,38 +290,10 @@ def main(keep: str | None = None) -> None:
         page = (w / "index.html").read_text()
         assert "/*DATA*/" not in page and "/*TOKEN*/" in page
 
-        server = subprocess.Popen([sys.executable, str(HERE / "serve.py"), str(w)], stdout=subprocess.PIPE, text=True)
-        try:
-            url = server.stdout.readline().strip()
-            served = urllib.request.urlopen(url).read().decode()
-            token = served.split("const TOKEN = '")[1].split("'")[0]
-            assert len(token) > 20
-
-            def post(body: dict, tok: str) -> int:
-                req = urllib.request.Request(url + "api/review", json.dumps(body).encode(), {"Content-Type": "application/json", "X-Review-Token": tok})
-                try:
-                    return urllib.request.urlopen(req).status
-                except urllib.error.HTTPError as e:
-                    return e.code
-
-            outside = {"pr": 2, "event": "COMMENT", "body": "x", "comments": [{"path": "A.java", "line": 99, "body": "y"}]}
-            assert post(outside, "wrong") == 403
-            assert post(outside, token) == 400
-            assert post({**outside, "pr": 1, "event": "APPROVE", "comments": []}, token) == 400
-            rerun = urllib.request.Request(url + "api/rerun", json.dumps({"effort": "max"}).encode(), {"X-Review-Token": "wrong"})
-            for tok, code in (("wrong", 403), (token, 400)):
-                rerun.headers["X-review-token"] = tok
-                try:
-                    urllib.request.urlopen(rerun)
-                except urllib.error.HTTPError as e:
-                    assert e.code == code, (tok, e.code)
-            close = urllib.request.Request(url + "api/close", b"", {"X-Review-Token": token})
-            assert urllib.request.urlopen(close).status == 200
-            assert server.wait(timeout=5) == 0
-        finally:
-            server.terminate()
+        home = root / "home"
+        check_server(w, home)
         if keep:
-            shutil.copytree(w, keep, dirs_exist_ok=True)
+            shutil.copytree(home, keep, dirs_exist_ok=True)
     print("ok" + (f", fixture in {keep}" if keep else ""))
 
 

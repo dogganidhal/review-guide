@@ -6,7 +6,6 @@
 <title>Review guide</title>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script>try { const t = localStorage.getItem('review-guide-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <style>
 :root {
   --bg: #ffffff; --surface: #f5f8fb; --surface-2: #eaf1f7; --line: #dbe4ec;
@@ -283,8 +282,13 @@ svg .hopnum { font: 700 10px 'Figtree', sans-serif; fill: #00264c; text-anchor: 
 .closebtn { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 4px 11px; cursor: pointer; color: var(--muted); font-size: .85rem; }
 .closebtn.quiet { border-color: transparent; background: transparent; color: var(--faint); }
 .closebtn.done { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
-.closed { max-width: 520px; margin: 18vh auto; padding: 0 16px; text-align: center; color: var(--muted); }
-.closed h1 { color: var(--text); }
+.top a.brand { color: var(--text); }
+.saveerr { color: var(--danger); font-size: .8rem; }
+.robox, .lostbox { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: .86rem; margin-bottom: 14px; background: var(--surface); }
+.lostbox { border-color: var(--warn); background: var(--warn-soft); }
+.lostbox .lost { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; }
+.lostbox .lost p { flex: 1; margin: 0; white-space: pre-wrap; }
+.lostbox .lost .where { color: var(--muted); font-family: var(--mono); font-size: .76rem; }
 .ftabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .ftab { border: 1px solid var(--line); background: var(--bg); border-radius: 99px; padding: 4px 12px; cursor: pointer; font-size: .84rem; font-weight: 600; color: var(--muted); }
 .ftab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
@@ -388,7 +392,9 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
 <script>
 const DATA = /*DATA*/null;
 const TOKEN = '/*TOKEN*/';
-const KEY = 'review-guide-v2-' + DATA.run_id;
+// Set by serve.py: where this round's API lives, its saved page state, and the review's rounds.
+const BOOT = /*BOOT*/null || { base: '/api', review: null, round: 1, live: true, status: 'open', ui: {}, rounds: [] };
+const API = BOOT.base;
 const CHAIN_MAX = 5;
 const PR_COLORS =['#107aca', '#ffcd4d', '#ff4773', '#00bfff', '#d0e9fb', '#ffecb2'];
 const PREFIX = { blocker: 'Blocker: ', should: 'Should fix: ', nit: 'Nit: ', question: '', comment: '' };
@@ -398,14 +404,20 @@ const LANG = { java: 'java', kt: 'kotlin', kts: 'kotlin', py: 'python', ts: 'typ
   go: 'go', rb: 'ruby', rs: 'rust', sql: 'sql', sh: 'bash', bash: 'bash', yml: 'yaml', yaml: 'yaml', xml: 'xml', html: 'xml', json: 'json', md: 'markdown',
   toml: 'ini', ini: 'ini', properties: 'ini', css: 'css', scss: 'scss', graphql: 'graphql', swift: 'swift', php: 'php', cs: 'csharp', c: 'c', h: 'c', cpp: 'cpp' };
 
-let state = {};
-try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
-const defaults = { stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {} };
-state = { ...defaults, ...state };
+const defaults = { stack: DATA.stacks[0].id, view: 'guide', file: null, filter: 'all', q: '', focus: null, open: {}, done: {}, viewed: {}, collapsed: {}, cm: {}, cmOpen: {}, extra: {}, verdict: {}, lost: [] };
+let state = { ...defaults, ...(BOOT.ui || {}) };
 if (!DATA.stacks.some((s) => s.id === state.stack)) state.stack = DATA.stacks[0].id;
 let posted = {};
 let hot = { nodes: new Set(), edges: new Set(), hops: new Map() };
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+// Saved on the server, next to the round, a moment after the last change; earlier rounds are read-only.
+let saveTimer = null, saveErr = '';
+const putState = (keepalive) => fetch(`${API}/ui`, { method: 'PUT', keepalive, headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(state) })
+  .then((r) => { const was = saveErr; saveErr = r.ok ? '' : 'Your changes could not be saved: ' + r.status; if (was !== saveErr) renderTop(); })
+  .catch(() => { if (!saveErr) { saveErr = 'Your changes could not be saved: the server does not answer.'; renderTop(); } });
+const save = () => { if (!BOOT.live) return; clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; putState(false); }, 400); };
+const flush = () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; putState(true); } };
+addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
 
 function el(tag, attrs, ...kids) {
   const e = document.createElement(tag);
@@ -478,29 +490,45 @@ function renderTop() {
       onclick: () => { state.focus = state.focus === p.n ? null : p.n; save(); render(); } },
       prDot(st, p.n), `#${p.n}`, el('span', { class: 't' }, p.title), posted[p.n] ? el('span', { class: 'st verified' }, '✓') : null)]));
   document.getElementById('top').replaceChildren(...[
-    el('span', { class: 'brand' }, 'Review guide'), stackPick, chain,
+    el('a', { class: 'brand', href: '/', title: 'All reviews' }, '← Reviews'), roundPick(), stackPick, chain,
     el('div', { class: 'tabs', role: 'tablist' },
       el('button', { class: 'tab', role: 'tab', type: 'button', 'aria-selected': String(state.view !== 'send'), onclick: () => { state.view = state.file ? 'file' : 'guide'; if (state.view === 'file' && !fileOf(st, state.file)) state.view = 'guide'; save(); render(); } }, 'Guide'),
       el('button', { class: 'tab', role: 'tab', type: 'button', 'aria-selected': String(state.view === 'send'), onclick: () => { state.view = 'send'; save(); render(); } }, `Your review (${n})`)),
-    el('button', { class: 'iconbtn', type: 'button', onclick: toggleTheme, title: 'Toggle theme' }, '◐'), closeButton()].filter(Boolean));
+    saveErr ? el('span', { class: 'saveerr', role: 'alert' }, saveErr) : null,
+    el('button', { class: 'iconbtn', type: 'button', onclick: toggleTheme, title: 'Toggle theme' }, '◐'), finishButton()].filter(Boolean));
+}
+
+function roundPick() {
+  const built = BOOT.rounds.filter((r) => r.built);
+  if (built.length < 2) return null;
+  const day = (t) => new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const pick = el('select', { 'aria-label': 'Round', title: 'Each run of the guide on these PRs is a round',
+    onchange: (e) => { flush(); location.href = `/r/${BOOT.review}/${e.target.value}`; } },
+    built.map((r, i) => el('option', { value: r.n }, `Round ${r.n} of ${built.length} · ${day(r.created)} · ${r.effort || ''}${i === built.length - 1 ? ' (latest)' : ''}`)));
+  pick.value = String(BOOT.round);
+  return pick;
 }
 
 // Quiet until something is posted, primary once every PR has a review.
-function closeButton() {
+function finishButton() {
+  if (!BOOT.live || !BOOT.review) return null;
+  if (BOOT.status === 'done') return el('button', { class: 'closebtn', type: 'button', onclick: () => setStatus('reopen'), title: 'Move this review back to the open ones' }, 'Reopen');
   const all = DATA.stacks.flatMap((s) => s.prs), n = all.filter((p) => posted[p.n]).length;
   const cls = n === all.length ? 'done' : n ? '' : 'quiet';
-  return el('button', { class: 'closebtn ' + cls, type: 'button', onclick: closeSession, title: 'Stop the local server and end this review' },
-    n === all.length ? 'Done · Close' : 'Close');
+  return el('button', { class: 'closebtn ' + cls, type: 'button', onclick: finishReview, title: 'Mark this review done and go back to the inbox' },
+    n === all.length ? 'Done · Finish review' : 'Finish review');
 }
 
-async function closeSession() {
+async function setStatus(action) {
+  flush();
+  try { const r = await fetch(`/api/r/${BOOT.review}/${action}`, { method: 'POST', headers: { 'X-Review-Token': TOKEN } }); if (r.ok) BOOT.status = (await r.json()).status; } catch (e) {}
+  return BOOT.status;
+}
+
+async function finishReview() {
   const left = DATA.stacks.flatMap((s) => s.prs).filter((p) => !posted[p.n]).length;
-  if (left && !confirm(`${plural(left, 'PR has', 'PRs have')} no review posted from this page. Close anyway? Your picks stay saved in this browser.`)) return;
-  save();
-  try { await fetch('/api/close', { method: 'POST', headers: { 'X-Review-Token': TOKEN } }); } catch (e) {}
-  closed = true;
-  document.body.replaceChildren(el('div', { class: 'closed' }, el('h1', {}, 'Review closed'), el('p', {}, 'The local server has stopped. You can close this tab.')));
-  window.close();
+  if (left && !confirm(`${plural(left, 'PR has', 'PRs have')} no review posted from this page. Finish anyway? Your drafts stay saved, and you can reopen the review from the inbox.`)) return;
+  if (await setStatus('finish') === 'done') location.href = '/';
 }
 
 document.addEventListener('click', (e) => document.querySelectorAll('.stackmenu[open]').forEach((d) => d.contains(e.target) || d.removeAttribute('open')));
@@ -880,7 +908,7 @@ function guideView(st) {
       el('span', {}, `${st.files.length} files · +${adds} −${dels}`),
       el('span', { class: failing.length ? 'bad' : '' }, ci),
       ext(st.compare, 'Whole stack on GitHub ↗'),
-      el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
+      !BOOT.live ? null : el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
     rerunBox(st),
     el('div', { class: 'runpanel', 'aria-live': 'polite' }),
     el('details', { class: 'prlist', open: state.open[listKey] ?? st.prs.length <= CHAIN_MAX, ontoggle: (e) => { state.open[listKey] = e.target.open; save(); } },
@@ -899,12 +927,15 @@ function guideView(st) {
 
 function sinceBox(st) {
   const s = st.since, n = Object.keys(s.files).length;
-  const verb = { APPROVED: 'approved', CHANGES_REQUESTED: 'requested changes on', COMMENTED: 'commented on', DISMISSED: 'reviewed' }[s.state] || 'reviewed';
   const lines = Object.values(s.files).reduce((t, l) => t + l.length, 0);
+  const go = n ? el('button', { class: 'btn', type: 'button', onclick: () => { state.filter = 'since'; save(); const f = st.files.find((x) => sinceLines(st, x.path)); if (f) openFile(f.path); else render(); } }, 'Review what changed →') : null;
+  if (s.state === 'ROUND') return el('div', { class: 'sincebox' },
+    el('span', {}, el('b', {}, 'Since the previous round. '), `The last guide saw this stack at ${s.sha.slice(0, 8)} on ${s.at.slice(0, 10)}. `,
+      n ? `${plural(n, 'file', 'files')} and ${plural(lines, 'line', 'lines')} changed since; they carry a “new” mark.` : 'Nothing in the stack changed since.'), go);
+  const verb = { APPROVED: 'approved', CHANGES_REQUESTED: 'requested changes on', COMMENTED: 'commented on', DISMISSED: 'reviewed' }[s.state] || 'reviewed';
   return el('div', { class: 'sincebox' },
     el('span', {}, el('b', {}, 'Since your last review. '), `You ${verb} #${s.pr} at ${s.sha.slice(0, 8)} on ${s.at.slice(0, 10)}. `,
-      n ? `${plural(n, 'file', 'files')} and ${plural(lines, 'line', 'lines')} changed since; they carry a “new” mark.` : 'Nothing in the stack changed since.'),
-    n ? el('button', { class: 'btn', type: 'button', onclick: () => { state.filter = 'since'; save(); const f = st.files.find((x) => sinceLines(st, x.path)); if (f) openFile(f.path); else render(); } }, 'Review what changed →') : null);
+      n ? `${plural(n, 'file', 'files')} and ${plural(lines, 'line', 'lines')} changed since; they carry a “new” mark.` : 'Nothing in the stack changed since.'), go);
 }
 
 function fileView(st) {
@@ -980,12 +1011,12 @@ let heads = {}, rerun = { running: false, status: '', error: '' }, rerunOpen = f
 const stale = (st) => st.prs.filter((p) => heads[p.n] && heads[p.n] !== p.sha);
 
 async function checkHeads() {
-  try { const r = await fetch('/api/heads', { cache: 'no-store' }); if (r.ok) { heads = (await r.json()).heads || {}; render(); } } catch (e) {}
+  try { const r = await fetch(`/api/r/${BOOT.review}/heads`, { cache: 'no-store' }); if (r.ok) { heads = (await r.json()).heads || {}; render(); } } catch (e) {}
 }
 
 async function startRerun() {
   try {
-    const r = await fetch('/api/rerun', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify({ effort }) });
+    const r = await fetch(`/api/r/${BOOT.review}/rerun`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify({ effort }) });
     const j = await r.json();
     rerun = r.ok ? j : { ...rerun, error: j.error || r.statusText };
   } catch (e) { rerun = { ...rerun, error: e.message }; }
@@ -993,11 +1024,12 @@ async function startRerun() {
 }
 
 function rerunBox(st) {
+  if (!BOOT.live) return null;
   const moved = stale(st);
   if (!moved.length && !rerun.running && !rerun.error && !rerunOpen) return null;
   if (rerun.running) return null;  // the run panel shows it
   const msg = moved.length ? `${moved.length === st.prs.length && moved.length > 1 ? 'Every PR' : moved.map((p) => '#' + p.n).join(', ')} ${moved.length === 1 ? 'has' : 'have'} new commits since this guide was built. Posting is blocked until it is rerun.`
-    : 'Write the guide again, with the same PRs.';
+    : 'Write the guide again as a new round. Your drafts and viewed files carry over, and this round stays readable.';
   return el('div', { class: 'rerunbox' + (moved.length ? ' stale' : '') },
     el('span', { class: 'msg' }, msg),
     el('span', { class: 'seg', role: 'group', 'aria-label': 'Effort' }, EFFORTS.map(([k, label]) =>
@@ -1040,7 +1072,7 @@ function reviewOf(st, p) {
 }
 
 async function sendReview(data) {
-  const r = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(data) });
+  const r = await fetch(`${API}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(data) });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j.url;
@@ -1054,6 +1086,7 @@ function describe(list) {
 }
 
 async function postMany(list) {
+  if (!BOOT.live) return;
   const inline = list.reduce((t, x) => t + x.data.comments.length, 0);
   const where = list.length === 1 ? `on #${list[0].data.pr}` : `on ${list.length} PRs`;
   if (!confirm(`Post ${describe(list)} ${where} as ${DATA.viewer}, with ${plural(inline, 'inline comment', 'inline comments')}? Authors are notified, and this page cannot edit or delete what it posts.`)) return;
@@ -1089,9 +1122,21 @@ function sendView(st) {
       el('button', { class: 'btn primary', type: 'button', disabled: busy || !ready.length, onclick: () => postMany(ready) },
         busy ? `Posting #${sending}…` : ready.length ? `Post ${plural(ready.length, 'review', 'reviews')}` : 'Post')),
     el('p', { class: 'hint' }, `Pick a verdict per PR; a PR without one is not posted. ✦ marks the suggestion: approve when nothing is open.${unclean ? ` ${plural(unclean, 'PR is', 'PRs are')} not clean (failing CI or an open point).` : ''}${st.reviewing.length ? ' Reviewers are still working, so suggestions can change.' : ''}`),
+    lostBox(st),
     open.length ? el('div', { class: 'sendlist' }, open.map((x) => prRow(st, x, busy))) : el('p', { class: 'empty' }, 'Every PR in this stack is posted.'),
     done.length ? el('details', { class: 'sendlist donelist', open: !!state.open['send:done'], ontoggle: (e) => { state.open['send:done'] = e.target.open; save(); } },
       el('summary', {}, `Posted (${done.length})`), done.map((x) => prRow(st, x, busy))) : null];
+}
+
+// Comments from the previous round whose line is gone from the new diff: shown with their text so nothing is lost silently.
+function lostBox(st) {
+  const mine = state.lost.filter((c) => st.prs.some((p) => p.n === c.pr));
+  if (!mine.length) return null;
+  return el('div', { class: 'lostbox' }, el('b', {}, `${plural(mine.length, 'comment', 'comments')} from the previous round could not be placed`),
+    ' on the new diff: the line changed or went away. Copy what still applies into a new comment.',
+    mine.map((c) => el('div', { class: 'lost' },
+      el('p', {}, el('span', { class: 'where' }, `#${c.pr} · ${c.path ? `${c.path.split('/').pop()}:${c.line}` : 'review summary'}`), el('br'), c.text),
+      el('button', { class: 'btn', type: 'button', onclick: () => { state.lost = state.lost.filter((x) => x !== c); save(); render(); } }, 'Dismiss'))));
 }
 
 function prRow(st, x, busy) {
@@ -1145,7 +1190,9 @@ function render() {
   if (state.view === 'file' && !fileOf(st, state.file)) state.view = 'guide';
   renderTop(); renderSide();
   const view = state.view === 'send' ? sendView(st) : state.view === 'file' ? fileView(st) : guideView(st);
-  document.getElementById('content').replaceChildren(...view.flat(Infinity).filter(Boolean));
+  const ro = BOOT.live ? null : el('div', { class: 'robox' }, el('b', {}, `Round ${BOOT.round}, an earlier round of this review. `),
+    'Read only: nothing is saved or posted from here. ', el('a', { href: `/r/${BOOT.review}` }, 'Open the latest round →'));
+  document.getElementById('content').replaceChildren(...[ro, view].flat(Infinity).filter(Boolean));
   paintStrip();
 }
 
@@ -1153,33 +1200,33 @@ function toggleTheme() {
   const r = document.documentElement;
   const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   r.dataset.theme = dark ? 'light' : 'dark';
-  try { localStorage.setItem('review-guide-theme', r.dataset.theme); } catch (e) {}
+  fetch('/api/prefs', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify({ theme: r.dataset.theme }) }).catch(() => {});
 }
 
 const style = document.createElement('style');
 style.textContent = '.arr{fill:var(--faint)}.arrnew{fill:var(--accent)}.arrhot{fill:var(--hot)}';
 document.head.append(style);
 render();
-let version = null, closed = false;
+let version = null;
 async function poll() {
-  if (closed) return;
   try {
-    const j = await (await fetch('/api/state', { cache: 'no-store' })).json();
+    const j = await (await fetch(`${API}/state`, { cache: 'no-store' })).json();
     posted = j.posted || {};
     stages = j.stages || []; usual = j.usual || {};
     const was = rerun.running;
     if (j.rerun) rerun = j.rerun;
     paintStrip();
     if (was && !rerun.running) render();
-    if (version !== null && j.version !== version) { save(); location.reload(); return; }
+    if (version !== null && j.version !== version) { flush(); location.href = `/r/${BOOT.review}`; return; }
     if (version === null) render();
     version = j.version;
   } catch (e) {}
-  if (rerun.running || stages.some(working) || DATA.stacks.some((s) => s.pending || s.reviewing.length || s.comments.some((c) => c.status === 'checking'))) setTimeout(poll, 3000);
+  const busy = rerun.running || stages.some(working) || DATA.stacks.some((s) => s.pending || s.reviewing.length || s.comments.some((c) => c.status === 'checking'));
+  // Slow polling otherwise, so a round started from Claude Code moves this page onto it too.
+  if (BOOT.live) setTimeout(poll, busy ? 3000 : 15000);
 }
 poll();
-checkHeads();
-document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && checkHeads());
+if (BOOT.live) { checkHeads(); document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && checkHeads()); }
 </script>
 </body>
 </html>

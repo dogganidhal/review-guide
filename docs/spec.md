@@ -14,6 +14,8 @@ The plugin turns one or more GitHub pull requests into a local review page. The 
 ## Pipeline
 
 ```
+serve.py open <refs> ──▶ the one server: finds or creates the review, adds a round, starts rerun.py detached
+   │
 fetch.py ──▶ page opens (tree + diffs)
    │
    ├─▶ guide-writer ─────────────────┐   (per stack, all four in parallel;
@@ -22,8 +24,8 @@ fetch.py ──▶ page opens (tree + diffs)
    ├─▶ reviewer: spec ──────────┤    │
    │                            └─▶ comment-verifier, one per finding (6 at a time) ──▶ build.py ──▶ page reloads
    │
-rerun.py runs every agent above headless (claude -p), for the skill and for the page's Rerun button alike
-serve.py: local page, live progress, posting through the user's gh login, reruns
+rerun.py fetches, then runs every agent above headless (claude -p), for the skill and for the page's Rerun button alike
+serve.py: the inbox, every review's pages, saved page state, live progress, posting through the user's gh login, rounds
 ```
 
 | Step | Kind | Output |
@@ -34,8 +36,8 @@ serve.py: local page, live progress, posting through the user's gh login, reruns
 | `build.py --check --only X` | script | validation errors each agent must fix in its own file |
 | `comment-verifier` ×findings | agent (sonnet, high effort) | `<stack>/verify/<axis>-<id>.json`: one finding's status, duplicates marked |
 | `build.py [--partial]` | script | `guide.json` (merged page data) and `index.html` |
-| `serve.py` | script | serves the page on `127.0.0.1`, posts reviews, and starts reruns |
-| `rerun.py` | script | runs the agents headless through `claude -p` (stream-json), writes `progress.json`, `agents.log` and timings; `--no-fetch` when the skill already fetched |
+| `serve.py` | script | the one server on `127.0.0.1`: inbox, review pages, page state, posting, rounds; `serve.py open` sends PRs to it |
+| `rerun.py` | script | one round: `fetch.py` into the round directory (with `--refs`), then the agents headless through `claude -p` (stream-json); writes `progress.json`, `agents.log` and timings |
 
 ### Effort
 
@@ -49,17 +51,44 @@ One level for the whole run, chosen in the skill's arguments (`quick`, `balanced
 
 Agents stop on coverage, not on a call count: a reviewer is done when its axis is checked against every changed file that holds behavior, the verifier when every finding has a status it can defend. A 40-call cap stays as a guard. The output limits do not change with the level.
 
+### Reviews, rounds and the inbox
+
+One server runs per machine, on port 7357 (a free port when that one is taken). It records its port, pid and token in `~/.cache/review-guide/server.json` (mode 0600) and holds a lock, so a second server exits and prints the first one's URL. The skill runs `serve.py open --wait <refs>`. That reuses the running server or starts one detached, then sends the refs, the effort, the focus and the current directory to `POST /api/reviews`. It opens the review in the browser and prints the round's status lines and findings for the skill's report.
+
+- **Review:** the set of PR refs given to one invocation, normalized to `owner/repo#n` and sorted. The same set in any order or form is the same review; a different set is a new one, even when it overlaps. Refs carry their repository, so a review can name several repositories later; for now the server refuses that with a clear message.
+- **Round:** each invocation on the same set, and each Rerun on the page, adds a round. A round is its own work directory, so earlier rounds stay as they were. Only one round of a review runs at a time.
+- **Inbox:** `GET /` lists the open reviews, most recently touched first, then the finished ones. Each row shows the repository, the title or "Stack of N PRs", the PR numbers (green when posted), rounds, findings, how many PRs are posted, and the newest round's state while it runs or when it failed. It has a theme toggle and "Stop server". Stopping does not stop running rounds; the next server picks them up.
+- **Review page:** `/r/<id>` is the latest round with a page; `/r/<id>/<n>` is a given round. The brand in the top bar goes back to the inbox. A round picker appears once two rounds have pages. An earlier round is read-only: a banner says so and links to the latest round, and the server refuses its saves and posts. While the first round is still fetching, the review URL shows a small page with the runner's status that reloads itself.
+- **Finish review:** replaces Close. It marks the review done and goes back to the inbox, after a confirmation when some PRs have no review. A finished review shows "Reopen" instead. Its styling follows the old Close button: faint until a review is posted, primary ("Done · Finish review") once every PR has one.
+
 ### Rerun from the page
 
-The page asks `serve.py` for the PRs' current heads (one GraphQL call, cached a minute) when it opens and each time the tab becomes visible. When a head moved, both tabs show a banner: which PRs have new commits, that posting is blocked, an effort picker, and "Rerun the guide". The meta chips also carry "<effort> guide · Rerun ↻" to rerun on unchanged heads.
+The page asks the server for the PRs' current heads (one GraphQL call, cached a minute) when it opens and each time the tab becomes visible. When a head moved, both tabs show a banner: which PRs have new commits, that posting is blocked, an effort picker, and "Rerun the guide". The meta chips also carry "<effort> guide · Rerun ↻" to rerun on unchanged heads.
 
-`POST /api/rerun` (same token as posting, one rerun at a time) starts `rerun.py`, the same runner the skill uses. It fetches again, which lands in a new work directory when heads moved, and `serve.py` switches to that directory as soon as it holds a page. The open page reloads onto it and follows the agents as in a first run. Unchanged heads reuse the directory and replace its guides. The agents run with `--permission-mode dontAsk`, no user settings, hooks or MCP servers, writes limited to the work directory, and an allowlist of the read commands their prompts name (`git -C <checkout> show|grep|log`, `gh api -H`, `gh search code`, `build.py`); `gh api` with a method, fields or input is denied. Their output goes to `agents.log` in the work directory. Each agent is retried once. A failed reviewer marks its axis skipped, and a failed verifier leaves its finding `unverified` with a note.
+`POST /api/r/<id>/rerun` (same token as posting) adds a round and starts `rerun.py` for it, detached from the server, the same way `serve.py open` does. The open page keeps working on its round and shows the new round's progress until the new round has a page. It then moves to the new round, whose first load carries the page state over (below). The agents run with:
+- `--permission-mode dontAsk`, and no user settings, hooks or MCP servers;
+- writes limited to the work directory;
+- an allowlist of the read commands their prompts name: `git -C <checkout> show|grep|log`, `gh api -H`, `gh search code` and `build.py`. `gh api` with a method, fields or input is denied.
+
+Their output goes to `agents.log` in the work directory, and the runner's own to `runner.log`. Each agent is retried once. A failed reviewer marks its axis skipped, and a failed verifier leaves its finding `unverified` with a note.
+
+### Saved page state and carry-over
+
+Everything the page used to keep in `localStorage` is saved on disk next to its round, in `ui.json`: the stack, view, filters, viewed and reviewed marks, comment states and edits, your comments, verdicts and summaries, and open sections. The page sends it with `PUT /api/r/<id>/<n>/ui` 400 ms after the last change, and flushes it when the tab hides. A failed save shows in the top bar. The theme goes to `prefs.json` through `PUT /api/prefs`, and the server sets it on every page it serves. Nothing lives in the browser any more, so state survives server restarts, port changes and other browsers.
+
+The first load of a new round builds its `ui.json` from the newest earlier round that has one:
+- **Comments:** your comments and the findings you added to your review become your comments in the new round. A line comment moves to the added line in the same file with the same text, nearest its old line number, and takes the PR and line of the new diff. A comment whose line is gone is listed in "Your review" with its text, under "N comments from the previous round could not be placed", with a Dismiss button.
+- **Verdicts:** verdict summaries carry over; the verdict choice does not.
+- **Viewed marks:** these carry over for files that did not change since that round.
+- **Posted PRs:** nothing is carried for a PR that round posted on. A posted review whose head did not move stays posted, so the same PR is not reviewed twice.
 
 The contract between the agents and the scripts is `plugins/review-guide/skills/review-guide/references/guide-schema.md`. Change the schema doc, `build.py` validation and the prompts together.
 
 ### Work directory
 
-`~/.cache/review-guide/<owner>-<repo>-<prs>-<hash of head SHAs>/`. A rerun on unchanged heads reuses it. `posted.json` records reviews posted from the page, so a PR cannot be posted twice. The viewer's latest review on each PR comes from GitHub, so a new round knows what they last saw: `fetch.py` diffs that commit against the new tip and stores the changed lines as the stack's `since`. The brief tells the writer to focus on them.
+`~/.cache/review-guide/reviews/<id>/rounds/<n>/`, where `<id>` is a slug of the repositories and PR numbers plus a hash of the refs. `reviews/<id>/review.json` holds the refs, the directory the review was started from (fetches run there, so a clone of the repository is used), the status (open or done) and the rounds. `posted.json` records reviews posted from the page, so a PR cannot be posted twice.
+
+The stack's `since` says what the viewer last saw. When the heads moved since the previous round, `fetch.py --prev` diffs that round's review commits against the new tip (`state: ROUND`, "Since the previous round" on the page). Otherwise it uses the viewer's latest review on GitHub ("Since your last review"). The brief tells the reviewers to narrow to the delta only after a posted review; after a round they review the whole stack.
 
 When the current directory is a clone of the reviewed repository, `fetch.py` uses it: it fetches PR heads into `refs/review-guide/<n>` and never checks out a branch or modifies the working tree. Otherwise it keeps a blobless bare clone under `~/.cache/review-guide/repos/`, authenticated through `gh auth git-credential`.
 
@@ -149,7 +178,7 @@ Single self-contained HTML file. Figtree from Google Fonts and highlight.js 11.9
 
 ### Layout
 
-- **Top bar:** stack picker (when there are several), the PR chain as chips with a color dot per PR (above five PRs, one dropdown listing them with their CI state), the tabs "Guide" and "Your review (N)", the theme toggle, and Close. Clicking a PR chip dims everything the other PRs wrote. Close stops the local server after a confirmation when some PRs have no review; it is faint until a review is posted and becomes the primary "Done · Close" once every PR has one.
+- **Top bar:** "← Reviews" back to the inbox, the round picker (from two rounds), stack picker (when there are several), the PR chain as chips with a color dot per PR (above five PRs, one dropdown listing them with their CI state), the tabs "Guide" and "Your review (N)", the theme toggle, and "Finish review". Clicking a PR chip dims everything the other PRs wrote.
 - **Scrolling:** no panel on the page shows a scrollbar; content still scrolls by wheel, trackpad and keyboard.
 - **Left sidebar:** file tree with collapsible folders, compressed single-child folders, a search box, read/skim/skip filter chips, a viewed count, a role marker per file, and a drafted-comment count. The PR dots sit pinned to the right edge, over a fade, so they stay visible while the tree scrolls sideways.
 - **Guide view:**
@@ -165,7 +194,7 @@ Single self-contained HTML file. Figtree from Google Fonts and highlight.js 11.9
 - **File view:** the full stack diff with old and new line numbers, a color strip per line for the PR that wrote it, drafted comments under their lines, a "Viewed" checkbox, and prev/next buttons. Clicking a line number adds a comment there, routed to the owning PR.
 - **Your review:** one compact row per PR waiting to be posted, then a collapsed "Posted (N)" list. A row shows the title, picked comment count with suggestions still waiting, a CI failure mark, and a Comment / Approve / Changes switch. No verdict is selected until the reviewer picks one (clicking it again clears it) or adds a comment, which brings the suggestion along; a PR without a verdict is not posted. ✦ marks the suggestion, recomputed from the live comments: request changes with a blocker, comment with a should-fix or question, approve otherwise (only Comment on the viewer's own PR). Opening a row shows the reason (the open findings by title, or "Nothing open"), the routed findings, the summary (empty, with a placeholder), "Post only #N" and "Copy as markdown". Above the list: "Approve all clean (N)" (not the viewer's PR, CI not failing, suggestion is approve), "Use the suggested verdicts", "Clear verdicts", "Add N suggestions checked in the code", and "Post N reviews", which asks once and posts each PR with a verdict in order, showing each result on its row.
 - **Since your last review:** when the viewer already reviewed a PR of the stack, the guide shows when and how (the highest PR they reviewed), with "Review what changed". Files changed since carry a "new" mark and a "New N" filter, and the tip lines added since have a highlighted line number. Each row of "Your review" shows the viewer's last verdict on that PR.
-- **Theme:** the toggle is remembered across reloads and runs.
+- **Theme:** the toggle is saved on the server, for every page and run.
 
 ### Comment states
 
@@ -180,7 +209,7 @@ Nothing is pre-added to the review. Severity prefixes ("Should fix: ", "Nit: ", 
 
 ### Live updates
 
-The page polls `/api/state` every 3 seconds while a stack is pending, an agent is running, or a comment is being checked. When `index.html` changes on disk, it saves state and reloads.
+The page polls `/api/r/<id>/<n>/state` every 3 seconds while a stack is pending, an agent is running, or a comment is being checked, and every 15 seconds otherwise. When the latest round's `index.html` changes, or a newer round gets a page, it flushes its state and loads the latest round. The inbox polls `/api/reviews` the same way.
 
 ### Progress strip
 
@@ -188,7 +217,7 @@ While agents work, both tabs show a run panel under the meta chips. Its header n
 
 - Stage states come from the files the agents write (`build.stages()`): a file means done, a reviewer file with `skipped` means skipped, and `progress.json` from the runner says which agents are running or failed and what each did last.
 - Live actions come from `claude -p --output-format stream-json --verbose`: the runner counts each `tool_use` block in the `assistant` events and rewrites `progress.json` atomically.
-- Timings: at the end of a run the runner appends its duration to `~/.cache/review-guide/timings.json` (last ten per effort level). `/api/state` returns the averages, shown as "usually about N min" in the strip and next to the effort picker. State lives in `localStorage` under `review-guide-v2-<run_id>`.
+- Timings: at the end of a run the runner appends its duration to `~/.cache/review-guide/timings.json` (last ten per effort level). The state endpoint returns the averages, shown as "usually about N min" in the strip and next to the effort picker.
 
 ### Design
 
@@ -203,8 +232,9 @@ The design is hardcoded in `ui/template.html`, so every user gets the same look.
 
 ## Posting (`serve.py`)
 
-- Binds `127.0.0.1` only, on a random port unless `--port` is given.
-- Every POST must carry a per-process token embedded in the served page. Without it the server answers 403, so another site open in the browser cannot post as the user.
+- Binds `127.0.0.1` only, on port 7357 unless `--port` is given or the port is taken.
+- Every write (POST and PUT) must carry a per-process token embedded in the served pages and in `server.json`. Without it the server answers 403, so another site open in the browser cannot post as the user or change saved state.
+- Only the latest round of a review with a page takes posts and saves.
 - Before posting it checks:
   - the PR head still equals the SHA the guide was built on;
   - every inline line is in the PR's `commentable` set;

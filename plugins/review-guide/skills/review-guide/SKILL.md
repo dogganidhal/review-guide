@@ -16,50 +16,42 @@ Take PR references from the arguments: `https://github.com/<owner>/<repo>/pull/<
 
 Take the effort from the arguments too: `quick` (blockers only, the fastest), `balanced` (the default) or `deep` (reads callers and tests, slower). Words like "quick look" or "go deep" count.
 
-## 2. Fetch
+## 2. Send them to the review server
 
-Run from the user's clone of the repository when the current directory is one. Otherwise `fetch.py` keeps a blobless clone under `~/.cache/review-guide/repos/`, authenticated through `gh`.
+Before sending, check whether the repository could hold patient or personal data in fixtures or test data. If it could, say so and ask the user to confirm.
 
-```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/fetch.py" --effort <effort> <pr-ref>...
-```
-
-The last line is the work directory `W`. Earlier lines list the stacks (`stack 3564-3565: #3564 -> #3565`) and warnings, such as a PR built on an older version of the one below it. Relay the warnings to the user at the end.
-
-## 3. Open the page now
-
-Build the page without guides and start the server, so the reviewer can browse the file tree and diffs while the agents work. The page reloads itself each time a later build lands.
+Run from the user's clone of the repository when the current directory is one; the fetch runs there and never touches the working tree. Otherwise it uses a blobless clone under `~/.cache/review-guide/repos/`, authenticated through `gh`.
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/build.py" <W> --partial
-python3 "${CLAUDE_SKILL_DIR}/scripts/serve.py" <W>    # in the background; open the URL it prints
+python3 "${CLAUDE_SKILL_DIR}/scripts/serve.py" open --wait --effort <effort> [--focus "<focus>"] <pr-ref>...
 ```
 
-## 4. Run the agents
+This reuses the one review-guide server, or starts it, and adds a round to the review of these PRs. The same PRs again add a round to the same review, carrying the user's drafts over. It opens the review in the browser and prints:
+- `review <url>` and `inbox <url>`;
+- `status <text>` lines as the round moves (fetching, writing the guide and reviewing, checking findings);
+- `done <stack>: <summary>` per stack;
+- `warning: <text>` for stack problems, such as a PR built on an older version of the one below it;
+- one `finding #<pr> <severity> <axis> <status>: <title>` line per finding.
 
-Start the runner in the background on the work directory, with the effort and, when the user stated one, a focus sentence:
+Run it in the background and wait for it to exit; relay the status lines only if the user asks.
 
-```bash
-python3 "${CLAUDE_SKILL_DIR}/scripts/rerun.py" <W> --no-fetch --effort <effort> [--focus "<focus>"]
-```
+The page opens on the file tree and diffs right after the fetch. Each finished part lands on it on its own: the guide, the three reviewers' findings (correctness, standards, spec), and one fact check per finding. `deep` runs the agents on Opus.
 
-Per stack it runs the guide writer and three reviewers (correctness, standards, spec) in parallel, then one verifier per finding, at most six at a time. `deep` runs them on Opus. The page shows a live strip of each stage, the tool calls of the agents still working, and "3 of 7 checked" for the fact check. Each finished part lands on the page on its own.
+On a non-zero exit, the last line names `runner.log` and `agents.log` in the round directory. `agents.log` has one line per agent with its reply, turns, duration, cost and denied calls. Read them and report which step failed.
 
-The runner prints `status <text>` as stages start, `done <stack>: <summary>` per stack, and exits 0 when every guide is written. Relay the status lines only if the user asks; wait for the exit. On a non-zero exit, read `<W>/agents.log` (one line per agent with its reply, turns, duration, cost and denied calls) and report which agent failed.
-
-## 6. Report
+## 3. Report
 
 Tell the user, in a few lines:
 
-- the URL, and that nothing is posted until they pick verdicts and press "Post" in the "Your review" tab;
+- the review URL, and that nothing is posted until they pick verdicts and press "Post" in the "Your review" tab;
 - per stack: the one or two findings that matter most, and how many go to each PR;
-- findings the verifiers refuted or could not verify, and any axis that was skipped (the `done` lines give the counts);
-- that the server runs until they press Close on the page, or `pkill -f "review-guide.*serve.py"`.
+- findings the fact check disproved or could not confirm, any skipped axis (from the `done` lines), and the warnings;
+- that every review lives in the inbox at the `inbox` URL. "Finish review" files a review there. The server keeps running until they press "Stop server" in the inbox.
 
 Never post a review yourself. The reviewer posts from the page.
 
 ## Notes
 
-- Data leaves the machine only through `gh` (GitHub) and the model. Before fetching, check whether the repository could hold patient or personal data in fixtures or test data. If it could, say so and ask the user to confirm.
-- The page warns, and the server refuses, when a PR receives new commits after the guide was built. The page has a "Rerun the guide" button with an effort picker: `serve.py` runs `rerun.py`, which fetches again and runs the same agents through `claude -p`, and the open page moves to the new guide. Rerunning the skill does the same.
-- The work directory holds a cache per PR set and head SHA under `~/.cache/review-guide/`. A rerun on unchanged heads reuses its files; delete the directory to start clean.
+- Data leaves the machine only through `gh` (GitHub) and the model.
+- The page warns, and the server refuses to post, when a PR receives new commits after the guide was built. The page's "Rerun the guide" button, with an effort picker, adds a round the same way this skill does, and the open page moves to it.
+- Everything is saved under `~/.cache/review-guide/reviews/`, one folder per review and one per round: the guides, the findings, what was posted, and the page state (drafts, verdicts, viewed files). Earlier rounds stay readable from the round picker.
