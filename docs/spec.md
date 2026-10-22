@@ -31,7 +31,7 @@ serve.py: the inbox, every review's pages, saved page state, live progress, post
 | Step | Kind | Output |
 | --- | --- | --- |
 | `fetch.py` | script | `run.json`, per stack `target.diff`, `tip/`, `attribution.json`, `brief.md`, `spec.md`, `repo-guidance/`; per PR `pr.diff`, `hunks.json`, `existing-comments.json` |
-| `guide-writer` | agent (sonnet, medium effort) | `<stack>/guide.json`: the explanation |
+| `guide-writer` | agent (opus, medium effort) | `<stack>/guide.json`: the explanation |
 | `reviewer` ×3 | agent (sonnet, high effort) | `<stack>/review-<axis>.json`: findings on one axis |
 | `build.py --check --only X` | script | validation errors each agent must fix in its own file |
 | `comment-verifier` ×findings | agent (sonnet, high effort) | `<stack>/verify/<axis>-<id>.json`: one finding's status, duplicates marked |
@@ -45,11 +45,11 @@ One level for the whole run, chosen in the skill's arguments (`quick`, `balanced
 
 | Level | Writer | Reviewers | Verifier | Model |
 | --- | --- | --- | --- | --- |
-| `quick` | brief and spec only | brief and spec only; `blocker` and `should` | `unverified` rather than reading far | agents' own, low effort |
-| `balanced` | brief, spec, code where the diff is unclear | reads what each candidate finding needs, and the consumers of each risky change | reads the code behind each finding | agents' own (sonnet) |
-| `deep` | also the code around entry points | also tests and config around each change; follows each changed contract to every reader | callers, config and tests for every finding | opus, high effort |
+| `quick` | brief and spec only | brief and spec only; `blocker` and `should` | `unverified` rather than reading far | sonnet, low effort, for every agent |
+| `balanced` | brief, spec, and about 12 reads around the entry points and the code its diagrams cite | reads what each candidate finding needs, and the consumers of each risky change | reads the code behind each finding | agents' own: opus (medium) for the writer, sonnet (high) for the others |
+| `deep` | about 25 reads | also tests and config around each change; follows each changed contract to every reader | callers, config and tests for every finding | opus, high effort, for every agent |
 
-Agents stop on coverage, not on a call count: a reviewer is done when its axis is checked against every changed file that holds behavior, the verifier when every finding has a status it can defend. A 40-call cap stays as a guard. The output limits do not change with the level.
+`rerun.py` passes `--model` and `--effort` per level (`MODELS`); at `balanced` it passes neither, so each agent's frontmatter decides. Reviewers and the verifier stop on coverage, not on a call count: a reviewer is done when its axis is checked against every changed file that holds behavior, the verifier when every finding has a status it can defend. A 40-call cap stays as a guard. The writer's read budget is set in its prompt only; it runs alongside the reviewers, which take longer, so Opus adds no wait as long as it batches its reads. The output limits do not change with the level.
 
 ### Reviews, rounds and the inbox
 
@@ -148,9 +148,12 @@ Explaining and finding are separate agents, and finding is split by axis, after 
 
 ### guide-writer
 
-- Reads `brief.md` and `spec.md`, and code only where the diff is unclear. Writes no findings.
-- Produces `summary`, 2 to 4 `key_facts`, a role for every changed file, and 1 to 5 `sections` chosen for the change from six types: `diagram`, `risks`, `before_after`, `table`, `list` and `steps` (a reading order with anchored excerpts). A `diagram` has a `kind` picked by its question: `sequence` (who calls whom, with `alt`/`opt`/`loop` frames for outcomes), `flowchart` (decisions and routing), `states` (a lifecycle), `structure` (dependencies grouped by layer, removals included) or `data` (records and payloads, field by field). `risks` lists 1 to 6 cards with a status. The prompt gives each type a "use when / not when" and common shapes (outcomes of a request get a sequence with `alt` frames, a removal gets before/after, a structure with the removed parts and what still depends on them). `components` feed `sequence` participants and `structure` nodes and are left out when neither is used.
-- Cites a tip line (`at`) for every arrow and box that stands for code.
+- Runs on Opus at `balanced` and `deep`, Sonnet at `quick`. Reads `brief.md` and `spec.md`, then the code its diagrams need: the entry points and each hop it draws (about 12 reads at `balanced`, 25 at `deep`, none at `quick`). Writes no findings.
+- Starts from the reader: it lists the questions a reviewer new to the code will ask (what it does, how it runs, what can break, what they must decide), and each section answers one, named in its title.
+- Picks each section's shape from its question, with no default: outcomes of a request are a `sequence` with `alt` frames, a lifecycle is `states`, routing and pipelines are a `flowchart`, a removal or refactor is a `structure` with the removed parts plus `before_after`, a payload or migration is `data`; then `table`, `list`, `risks` and `steps` (a reading order with anchored excerpts). A table never stands in for a diagram. Most guides have one or two diagrams; none only for a mechanical change.
+- Grounds every arrow in the code: it reads the line that makes the hop and cites it as `at: "path:line"`, and leaves out a hop it cannot cite or keeps it uncited, drawn lighter. One question per diagram, at most 12 nodes.
+- Rereads the summary and key facts against its diagrams before writing, and fixes what they contradict.
+- Produces `summary`, 2 to 4 `key_facts`, a role for every changed file, and 1 to 8 sections of six types: `diagram` (with a `kind` of `sequence`, `flowchart`, `states`, `structure` or `data`), `risks` (1 to 6 cards with a status), `before_after`, `table`, `list` and `steps`. `components` feed `sequence` participants and `structure` nodes and are left out when neither is used.
 
 ### reviewer (one per axis)
 
