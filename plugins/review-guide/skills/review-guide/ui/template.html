@@ -950,7 +950,9 @@ function stageText(x) {
 
 // Painted in place on every poll, so progress moves without reloading the page.
 function paintStrip() {
-  const st = ST(), row = stages.find((r) => r.id === st.id);
+  const st = ST(), found = stages.find((r) => r.id === st.id);
+  // A server started before this page's version still sends a Fetched row and no stack time.
+  const row = found && { secs: found.secs ?? Math.max(0, ...found.stages.map((x) => x.secs || 0)), stages: found.stages.filter((x) => x.key !== 'fetch') };
   for (const box of document.querySelectorAll('.runpanel')) {
     if (!working(row)) {
       // A rerun is fetching before any agent starts: show its status line alone.
