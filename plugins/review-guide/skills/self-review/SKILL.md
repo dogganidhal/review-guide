@@ -2,7 +2,7 @@
 name: self-review
 description: Opens a guided review page on the work in progress in this session, the local branch stack and its uncommitted changes, with a guide and findings from three reviewers (correctness, standards, spec) that a fourth agent tried to disprove. The user reviews it in the browser and presses "Send to the agent"; the feedback comes back to this session as file:line comments to act on. Nothing goes to GitHub.
 when_to_use: The user, in the session implementing a change, wants to review that work before or alongside opening PRs, asks for a self-review or a review of "what you wrote", or wants to give the agent line-by-line feedback from the review page.
-argument-hint: [quick|balanced|deep] [--branch <top branch>] [focus]
+argument-hint: [quick|balanced|deep] [--branch <top branch>] [--base <ref>] [focus]
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../review-guide/scripts/*), Read
 ---
 
@@ -12,17 +12,17 @@ The user reviews what this session wrote, on the same page as a PR review, and s
 
 ## 1. Start the review
 
-Take the effort from the arguments (`quick`, `balanced` by default, `deep`), a `--branch` if the user named the top branch, and any other words as a focus sentence.
+Take the effort from the arguments (`quick`, `balanced` by default, `deep`), a `--branch` if the user named the top branch, a `--base` if the stack sits on a branch that is not theirs to review (someone else's unmerged PR, say), and any other words as a focus sentence.
 
 Before starting, check whether the repository could hold patient or personal data in fixtures or test data. If it could, say so and ask the user to confirm. Code goes to the model only; nothing goes to GitHub.
 
 Run this from the repository you are working in, in the background:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/../review-guide/scripts/serve.py" open --self --wait-feedback --effort <effort> [--branch <branch>] [--focus "<focus>"]
+python3 "${CLAUDE_SKILL_DIR}/../review-guide/scripts/serve.py" open --self --wait-feedback --effort <effort> [--branch <branch>] [--base <ref>] [--focus "<focus>"]
 ```
 
-It reviews the local branch stack: each local branch between the default branch and the current one is a layer, and uncommitted changes are a top layer. Your index, working tree and branches are not touched. Running it again on the same branch adds a round to the same review: the user's drafts carry over, and what changed since the last round is marked "new".
+It reviews the local branch stack: each local branch between the default branch (or `--base`) and the current one is a layer, and uncommitted changes are a top layer. Your index, working tree and branches are not touched. Running it again on the same branch adds a round to the same review: the user's drafts carry over, and what changed since the last round is marked "new".
 
 When it prints `review <url>`, tell the user, in two lines:
 - the URL;

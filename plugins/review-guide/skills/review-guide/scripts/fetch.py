@@ -582,11 +582,12 @@ def snapshot(git: Git, root: str, parent: str) -> str | None:
     return sha
 
 
-def local_layers(git: Git, root: str, branch: str) -> tuple[str, list[dict], list[str]]:
+def local_layers(git: Git, root: str, branch: str, base_ref: str | None = None) -> tuple[str, list[dict], list[str]]:
     """The base commit and the layers of a local branch stack, bottom first: each local branch whose tip lies between
-    the merge base with the default branch and `branch`, then the uncommitted changes when `branch` is checked out."""
+    the merge base with `base_ref` (the default branch unless given) and `branch`, then the uncommitted changes when
+    `branch` is checked out."""
     top = git("rev-parse", f"{branch}^{{commit}}").strip()
-    base_ref = default_base(git)
+    base_ref = base_ref or default_base(git)
     base = git("merge-base", top, base_ref).strip()
     if base == top and branch != "HEAD":
         warnings = [f"{branch} has no commits on top of {base_ref}"]
@@ -677,10 +678,13 @@ def main() -> None:
     local = SELF_REF.match(args.prs[0]) if len(args.prs) == 1 else None
     if local:
         root, branch = local.group(1), local.group(2)
+        # `base..branch`: only the layers above `base`, for a stack that sits on someone else's unmerged branch.
+        base_ref, _, top = branch.rpartition("..")
+        branch = top if base_ref else branch
         git, checkout, cached = Git(root, via_gh=False), root, False
         repo = github_repo(root)
         viewer = (gh("api", "user", "--jq", ".login", check=False) or "").strip() or (run(["git", "-C", root, "config", "user.name"], check=False) or "me").strip()
-        base, layers, warnings = local_layers(git, root, branch)
+        base, layers, warnings = local_layers(git, root, branch, base_ref or None)
         prs = local_prs(git, root, repo, base, layers, viewer)
         numbers = sorted(prs)
         heads = review = {n: p["headRefOid"] for n, p in prs.items()}
@@ -801,7 +805,7 @@ def main() -> None:
     run_data = {"repo": repo, "viewer": viewer, "effort": args.effort, "run_id": run_id, "fetched_at": int(time.time()), "checkout": checkout,
                 "mode": "self" if local else "pr", "warnings": warnings, "prs": out_prs, "stacks": stacks}
     if local:
-        run_data["source"] = {"root": root, "branch": branch}
+        run_data["source"] = {"root": root, "branch": branch, "base": base_ref or None}
     (workdir / "run.json").write_text(json.dumps(run_data, indent=1))
 
     for s in stacks:

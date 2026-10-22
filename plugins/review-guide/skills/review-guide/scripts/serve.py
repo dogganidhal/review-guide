@@ -6,7 +6,7 @@ Usage:
   serve.py open [--home DIR] [--effort quick|balanced|deep] [--focus TEXT] [--wait] [--no-browser] <pr-ref>...
                                          send PRs to the running server, starting one when none answers; print the
                                          review URL and open it; with --wait, follow the round and print its summary
-  serve.py open --self [--branch B] [--wait-feedback] [...]
+  serve.py open --self [--branch B] [--base REF] [--wait-feedback] [...]
                                          a self-review of the local branch stack in the current repository: the
                                          feedback goes to the agent instead of GitHub; with --wait-feedback, wait until
                                          it is sent from the page (or the review is finished) and print it
@@ -49,6 +49,17 @@ HOME = pathlib.Path.home() / ".cache" / "review-guide"
 DEFAULT_PORT = 7357
 EFFORTS = ("quick", "balanced", "deep")
 TOKEN = secrets.token_urlsafe(24)
+
+
+def code_version() -> str:
+    """A hash of the scripts and pages this server runs, so `open` can tell a server started before an update."""
+    h = hashlib.sha1(usedforsecurity=False)
+    for f in sorted([*HERE.glob("*.py"), *UI.glob("*.html")]):
+        h.update(f.name.encode() + f.read_bytes())
+    return h.hexdigest()[:12]
+
+
+VERSION = code_version()
 ID = r"[\w-][\w.-]*"
 
 
@@ -361,7 +372,7 @@ def handler(home: Home):
         def do_GET(self) -> None:
             path = self.path.split("?")[0]
             if path == "/api/ping":
-                return self.reply(200, {"app": "review-guide", "pid": os.getpid()})
+                return self.reply(200, {"app": "review-guide", "pid": os.getpid(), "version": VERSION})
             if path in ("/", "/index.html"):
                 html = (UI / "inbox.html").read_text().replace("/*TOKEN*/", TOKEN, 1)
                 html = html.replace("/*DATA*/null", json.dumps(home.reviews()).replace("<", "\\u003c"), 1)
@@ -554,18 +565,35 @@ def handler(home: Home):
     return Handler
 
 
-def find_server(home: pathlib.Path) -> tuple[str, str] | None:
-    """The running server's base URL and token, from server.json, when it answers."""
+def find_server(home: pathlib.Path, current: bool = False) -> tuple[str, str] | None:
+    """The running server's base URL and token, from server.json, when it answers. With `current`, only a server
+    running this code."""
     info = read(home / "server.json")
     if not info:
         return None
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{info['port']}/api/ping", timeout=2) as r:
-            if json.load(r).get("pid") == info["pid"]:
+            ping = json.load(r)
+            if ping.get("pid") == info["pid"] and (not current or ping.get("version") == VERSION):
                 return f"http://127.0.0.1:{info['port']}", info["token"]
     except (OSError, ValueError, KeyError):
         pass
     return None
+
+
+def replace_old_server(home: pathlib.Path) -> None:
+    """Stop a server started before the code was updated, so the next one runs the new code on the same port. Rounds
+    are detached, so a running one keeps going and the new server picks it up."""
+    found = find_server(home)
+    if not found or find_server(home, current=True):
+        return
+    base, token = found
+    print("restarting the review-guide server on the updated code", flush=True)
+    call(base, token, "POST", "/api/stop", {})
+    for _ in range(50):
+        if not find_server(home):
+            return
+        time.sleep(0.1)
 
 
 def serve(home_path: pathlib.Path, port: int) -> None:
@@ -614,6 +642,7 @@ def open_review(argv: list[str]) -> None:
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--self", action="store_true", help="review the local branch stack; feedback goes to the agent")
     ap.add_argument("--branch", help="with --self, the top branch (default: the current one)")
+    ap.add_argument("--base", help="with --self, review only the layers above this ref instead of the default branch")
     ap.add_argument("--wait-feedback", action="store_true", help="with --self, wait for the feedback and print it")
     ap.add_argument("prs", nargs="*")
     args = ap.parse_args(argv)
@@ -622,7 +651,7 @@ def open_review(argv: list[str]) -> None:
         if not root:
             sys.exit("--self runs inside the repository being worked on")
         branch = args.branch or subprocess.run(["git", "-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], capture_output=True, text=True).stdout.strip() or "HEAD"
-        refs = [f"self:{root}@{branch}"]
+        refs = [f"self:{root}@{args.base + '..' if args.base else ''}{branch}"]
         if uncollected(args.home, review_id(refs)):
             sys.exit(0)
     elif not args.prs:
@@ -632,6 +661,7 @@ def open_review(argv: list[str]) -> None:
             refs = norm_refs(args.prs)
         except ValueError as e:
             sys.exit(str(e))
+    replace_old_server(args.home)
     found = find_server(args.home)
     if not found:
         args.home.mkdir(parents=True, exist_ok=True)

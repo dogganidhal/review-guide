@@ -81,6 +81,8 @@ def check_local(root: pathlib.Path) -> None:
     owners = commit_owners(git, base, [1, 2, 3], {n: p["headRefOid"] for n, p in prs.items()})
     attr = attribute(git, base, [1, 2, 3], {n: p["headRefOid"] for n, p in prs.items()}, owners, "A.java")
     assert attr == {"2": [1, 2], "3": [3, 3]}, attr
+    # Above feat-a only: feat-a is the base, not a layer.
+    assert [x["branch"] for x in local_layers(git, str(repo), "feat-b", "feat-a")[1]] == ["feat-b", UNCOMMITTED]
     # A clean working tree: no uncommitted layer. (A scratch repo, so its stash is its own.)
     sh(repo, "git", "stash", "push", "-q", "-u", "-m", "rg-test")
     assert [x["branch"] for x in local_layers(git, str(repo), "feat-b")[1]] == ["feat-a", "feat-b"]
@@ -223,6 +225,17 @@ def check_server(w: pathlib.Path, home: pathlib.Path) -> None:
     try:
         page = req(url + f"r/{rid}")[1]
         assert '"saved": true' in page and '"status": "done"' in page, page[:200]
+        # A server whose code differs from the installed code is stopped by the next `open`, so it comes back updated.
+        import serve  # noqa: E402
+        assert serve.find_server(home, current=True)
+        real, serve.VERSION = serve.VERSION, "older"
+        try:
+            assert serve.find_server(home) and not serve.find_server(home, current=True)
+            with contextlib.redirect_stdout(io.StringIO()):
+                serve.replace_old_server(home)
+            assert server.wait(timeout=5) == 0 and not serve.find_server(home)
+        finally:
+            serve.VERSION = real
     finally:
         server.terminate()
         server.wait()
