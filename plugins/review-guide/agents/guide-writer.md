@@ -30,12 +30,14 @@ Before writing anything, list for yourself the questions a reviewer new to this 
 
 Pick each shape from its question. There is no default shape. Most guides hold one or two diagrams; a guide with none needs a reason, such as a mechanical change (a rename, a version bump, a config value).
 
+Size the guide to the change. A cleanup (deleted code, a removed flag, dead paths) raises two questions: what stops happening, and what still depends on what was removed. Answer them with a `before_after` and, when the removed names reach several layers, one small `structure` of the removed parts and the code that calls into them (6 boxes or fewer). Leave out the paths the deletion does not touch, and skip `flowchart` and `sequence` unless the deletion changes how a request that still runs is routed.
+
 | Question | Shape | Example from a real stack |
 | --- | --- | --- |
 | How does a request end, on each outcome? | `sequence` with `alt` frames | `GET /turns/{turn_id}`: frames for not the caller's turn (404 `NO_ACTIVE_RUN`), pool full (503) and frames until `RUN_FINISHED` (200). The frames replace a separate table of outcomes. |
 | What states does a thing go through? | `states` | A turn's Redis stream: running (expiry reset on each write), ended on the `end` entry (60 s more), expired. |
 | How is a job routed or decided: branches, retries, fan-out, a pipeline? | `flowchart` | The pediatric gate skips to `medical_guidelines_done` or runs the query agent, then `retrieve_docs`; blank model output becomes no queries. |
-| What was removed or moved, and what still depends on it? | `structure` with the removed parts, plus `before_after` for behavior | `FindProfessionalOnDutyUseCase` gone from API, domain, store and repository, `UpdateDutyStatusUseCase` kept. |
+| What was removed or moved, and what still depends on it? | `structure` with the removed parts and their callers only, plus `before_after` for behavior | `FindProfessionalOnDutyUseCase` gone from API, domain, store and repository; the one caller left is `UpdateDutyStatusUseCase`. |
 | What does a record, event or payload look like now? | `data` | A stream entry with `frame` and `end`; a task type dropped from `ScheduledTaskArgumentsEntity` while rows of it are still stored. |
 | What changes for users, callers or operators? | `before_after` | A patient message at night: a canned reply before, an AI answer after. |
 | Many similar items: settings, thresholds, endpoints, one row per PR | `table` | TOOL thresholds per metric for the pediatric slice. |
