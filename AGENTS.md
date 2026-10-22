@@ -10,12 +10,14 @@ plugins/review-guide/
   .claude-plugin/plugin.json
   agents/guide-writer.md                   writes <stack>/guide.json
   agents/comment-verifier.md               writes <stack>/verify.json
+  agents/answerer.md                       answers a question asked from the page; read-only, proposes an action block
   skills/review-guide/
     SKILL.md                               PR review: sends PRs to the server, reports
     references/guide-schema.md             contract between agents and scripts
     scripts/fetch.py                       GitHub and git data, stacks, attribution, brief
     scripts/build.py                       validation and rendering
     scripts/serve.py                       the one server: inbox, rounds, saved page state, posting
+    scripts/ask.py                         questions from the page: threads, the answering agent, proposed actions
     scripts/rerun.py                       one round: fetch, then the agents headless
     scripts/test_scripts.py                offline test
     ui/template.html                       the review page (data injected at /*DATA*/null)

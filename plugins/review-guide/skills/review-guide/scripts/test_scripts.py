@@ -241,6 +241,190 @@ def check_server(w: pathlib.Path, home: pathlib.Path) -> None:
         server.wait()
 
 
+STUB = '''#!{python}
+import json, os, pathlib, random, sys, time
+argv = sys.argv[1:]
+with open(os.environ["STUB_ARGV"], "a") as f:
+    f.write(json.dumps(argv) + "\\n")
+sid = argv[argv.index("--resume") + 1] if "--resume" in argv else "sess-%06d" % random.randrange(10**6)
+reply = pathlib.Path(os.environ["STUB_REPLY"]).read_text()
+gate = pathlib.Path(os.environ["STUB_GATE"])
+out = lambda o: (print(json.dumps(o), flush=True), time.sleep(0.12))
+out({{"type": "system", "subtype": "init", "session_id": sid}})
+out({{"type": "assistant", "message": {{"content": [{{"type": "tool_use", "name": "Read", "input": {{"file_path": "/w/tip/A.java"}}}}]}}}})
+while gate.exists():
+    time.sleep(0.05)
+out({{"type": "stream_event", "event": {{"type": "message_start"}}}})
+for word in reply.split(" "):
+    out({{"type": "stream_event", "event": {{"type": "content_block_delta", "delta": {{"type": "text_delta", "text": word + " "}}}}}})
+out({{"type": "assistant", "message": {{"content": [{{"type": "text", "text": reply}}]}}}})
+out({{"type": "result", "subtype": "success", "is_error": False, "result": reply, "session_id": sid}})
+'''
+
+
+def check_ask(w: pathlib.Path, root: pathlib.Path) -> None:
+    """Questions: threads on disk, a stubbed agent whose stream is replayed, resume, the concurrency cap, proposals and their
+    apply, the read-only and token guards, and carry-over of threads to a new round."""
+    import os
+    import time
+    home = root / "ask-home"
+    stub, argv_log, reply, gate = root / "stub_claude", root / "stub-argv.jsonl", root / "stub-reply.txt", root / "stub-gate"
+    stub.write_text(STUB.format(python=sys.executable))
+    stub.chmod(0o755)
+    reply.write_text("The caller is `A.f` at `A.java:4`. It is empty. ")
+    rid = "ask-test"
+    r1, r2 = home / "reviews" / rid / "rounds" / "1", home / "reviews" / rid / "rounds" / "2"
+    shutil.copytree(w, r1)
+    (r1 / "progress.json").unlink(missing_ok=True)
+    sid = json.loads((r1 / "guide.json").read_text())["stacks"][0]["id"]
+    (r1 / "ui.json").write_text(json.dumps({"stack": sid}))
+    review = {"id": rid, "refs": ["o/r#1", "o/r#2"], "created": 1, "status": "open", "rounds": [{"n": 1, "effort": "balanced", "created": 1}]}
+    (home / "reviews" / rid / "review.json").write_text(json.dumps(review))
+    env = {**os.environ, "REVIEW_GUIDE_CLAUDE": str(stub), "STUB_ARGV": str(argv_log), "STUB_REPLY": str(reply), "STUB_GATE": str(gate)}
+    proc = subprocess.Popen([sys.executable, str(HERE / "serve.py"), "--home", str(home), "--port", "0"], stdout=subprocess.PIPE, text=True, env=env)
+    url = proc.stdout.readline().strip()
+    token = json.loads((home / "server.json").read_text())["token"]
+
+    def req(path, body=None, tok=token):
+        r = urllib.request.Request(url + "api/r/" + rid + path, None if body is None else json.dumps(body).encode(),
+                                   method="GET" if body is None else "POST", headers={"Content-Type": "application/json", **({"X-Review-Token": tok} if tok else {})})
+        try:
+            with urllib.request.urlopen(r) as resp:
+                return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or "{}")
+
+    def wait(rnd, tid, until="idle", seen=None):
+        for _ in range(300):
+            t = req(f"/{rnd}/threads/{tid}")[1]
+            if seen is not None and t["messages"][-1]["role"] == "agent":
+                seen.append(t["messages"][-1]["text"])
+            if t["status"] == until:
+                return t
+            time.sleep(0.03)
+        raise AssertionError(f"thread {tid} stayed {t['status']}: {t}")
+
+    def ask(rnd, tid=None, target=None, q="Why?", deep=False):
+        code, out = req(f"/{rnd}/ask", {"question": q, **({"thread": tid} if tid else {"target": target}), **({"deep": True} if deep else {})})
+        return code, out
+
+    def runs():
+        return [json.loads(x) for x in argv_log.read_text().splitlines()]
+
+    finding, line = {"kind": "finding", "ref": f"{sid}-correctness-x"}, {"kind": "line", "path": "A.java", "start": 3, "end": 4}
+    try:
+        assert req("/1/ask", {"question": "x", "target": finding}, tok=None)[0] == 403
+        for bad in ({"kind": "line", "path": "A.java", "start": 3, "end": 99}, {"kind": "line", "path": "Z.java", "start": 1}, {"kind": "finding", "ref": "nope"},
+                    {"kind": "section", "ref": 9}, {"kind": "step", "ref": "nope"}, {"kind": "poem"}, "x"):
+            assert ask(1, target=bad)[0] == 400, bad
+        assert ask(1, target=finding, q="  ")[0] == 400 and ask(1, tid="nope")[0] == 404 and not argv_log.exists()
+
+        # A finding: the streamed answer grows, the session id is stored, the text and target are in the prompt.
+        gate.touch()
+        code, out = ask(1, target=finding, q="Is this real?")
+        assert code == 202, out
+        tid, partial = out["thread"], []
+        assert ask(1, tid=tid, q="again")[0] == 409
+        gate.unlink()
+        t = wait(1, tid, seen=partial)
+        text = "The caller is `A.f` at `A.java:4`. It is empty."
+        assert t["messages"][-1]["text"] == text and t["messages"][0]["text"] == "Is this real?" and t["session_id"].startswith("sess-"), t
+        assert any(p and p != text and text.startswith(p.strip()) for p in partial), partial
+        assert t["target"]["label"] == "Who reads x?" and t["proposal"] is None and not t.get("error") and t["messages"][-1]["model"] == "sonnet", t
+        first = runs()[0]
+        prompt = first[first.index("-p") + 1]
+        assert "Question: Is this real?" in prompt and "Who reads `x`?" in prompt and "brief.md" in prompt, prompt
+        assert "--resume" not in first and "--no-session-persistence" not in first and first[first.index("--model") + 1] == "sonnet"
+        assert first[first.index("--agent") + 1] == "review-guide:answerer" and "--include-partial-messages" in first
+        assert first[first.index("--tools") + 1] == "Read,Grep,Glob,Bash" and "mcp__*" in first and first[first.index("--permission-mode") + 1] == "dontAsk"
+        assert [r["id"] for r in req("/1/threads")[1]["threads"]] == [tid]
+
+        # A follow-up resumes the session; "dig deeper" runs Opus.
+        assert ask(1, tid=tid, q="And the test?")[0] == 202
+        t2 = wait(1, tid)
+        assert [m["role"] for m in t2["messages"]] == ["user", "agent", "user", "agent"] and t2["session_id"] == t["session_id"]
+        follow = runs()[1]
+        assert follow[follow.index("--resume") + 1] == t["session_id"] and "--plugin-dir" in follow and follow[follow.index("-p") + 1] == "Question: And the test?"
+        assert ask(1, tid=tid, q="Dig", deep=True)[0] == 202
+        assert wait(1, tid)["messages"][-1]["deep"]
+        deep = runs()[2]
+        assert deep[deep.index("--model") + 1] == "opus" and deep[deep.index("--effort") + 1] == "high" and "Depth: deep" in deep[deep.index("-p") + 1]
+
+        # A line, and the cap: four answers, three running, one queued; a thread answers one turn at a time.
+        gate.touch()
+        ids = [ask(1, target=line, q=f"q{i}")[1]["thread"] for i in range(4)]
+        for _ in range(100):
+            states = sorted(req(f"/1/threads/{i}")[1]["status"] for i in ids)
+            if states == ["queued", "running", "running", "running"]:
+                break
+            time.sleep(0.05)
+        assert states == ["queued", "running", "running", "running"], states
+        gate.unlink()
+        for i in ids:
+            wait(1, i)
+        lt = req(f"/1/threads/{ids[0]}")[1]["target"]
+        assert lt["label"] == "A.java:3-4" and lt["text"] == "  long y;\n  void f() {}", lt
+
+        # Proposals: a comment on a line the stack wrote, a re-judge that does not belong on a line thread, one that does, a guide fix.
+        def propose(tid_or_target, action, q="Settle it"):
+            reply.write_text("It does. " + "```action\n" + json.dumps(action) + "\n```")
+            tid = ask(1, tid=tid_or_target, q=q)[1]["thread"] if isinstance(tid_or_target, str) else ask(1, target=tid_or_target, q=q)[1]["thread"]
+            return wait(1, tid)
+
+        c = propose(line, {"type": "comment", "path": "A.java", "line": 3, "body": "`long` doubles the field width.", "severity": "nit"})
+        assert c["messages"][-1]["text"] == "It does." and c["proposal"]["pr"] == 2 and c["proposal"]["pl"] == 3 and not c["proposal"]["applied"], c
+        assert propose(line, {"type": "comment", "path": "A.java", "line": 1, "body": "x"})["proposal"] is None
+        bad = propose(line, {"type": "rejudge", "finding": finding["ref"], "status": "refuted", "note": "n"})
+        assert bad["proposal"] is None and "finding thread" in bad["proposal_error"], bad
+        rj = {"type": "rejudge", "finding": finding["ref"], "status": "refuted", "note": "`A.java:2` is read."}
+        assert propose(finding, {**rj, "finding": "other"})["proposal"] is None
+        j = propose(finding, rj)
+        assert j["proposal"]["status"] == "refuted" and not j["proposal"]["applied"], j
+        assert req(f"/1/threads/{j['id']}/apply", {}, tok=None)[0] == 403 and req(f"/1/threads/{ids[0]}/apply", {})[0] == 409
+        code, out = req(f"/1/threads/{j['id']}/apply", {})
+        assert code == 200 and out["applied"], out
+        assert json.loads((r1 / sid / "rejudged.json").read_text()) == {"correctness-x": {"status": "refuted", "note": "`A.java:2` is read.", "thread": j["id"]}}
+        assert req(f"/1/threads/{j['id']}")[1]["proposal"]["applied"] and req(f"/1/threads/{c['id']}/apply", {})[1]["proposal"]["type"] == "comment"
+        fact = {"kind": "fact", "ref": 0}
+        assert propose(fact, {"type": "guide_fix", "ref": {"kind": "fact"}, "replacement": {"title": "t" * 80, "text": "x"}})["proposal"] is None
+        fx = propose(fact, {"type": "guide_fix", "ref": {"kind": "fact"}, "replacement": {"title": "`x` is write-only.", "text": "Nothing reads it yet."}})
+        assert fx["proposal"]["ref"] == {"kind": "fact", "stack": sid, "index": 0}, fx
+        assert req(f"/1/threads/{fx['id']}/apply", {})[0] == 200
+        fixes = json.loads((r1 / sid / "guide-fixes.json").read_text())
+        assert len(fixes) == 1 and fixes[0]["replacement"]["title"] == "`x` is write-only." and fixes[0]["thread"] == fx["id"]
+        step = {"kind": "step", "ref": f"{sid}-fields"}
+        st = propose(step, {"type": "guide_fix", "ref": {"kind": "step"}, "replacement": {"kind": "read", "title": "Fields", "why": "New state.", "nodes": ["zz"], "test": None,
+                                                                                         "anchor": {"path": "A.java", "start": 1, "end": 5}}})
+        assert st["proposal"] is None and "nodes not in components" in st["proposal_error"], st
+
+        # Round 2 (A.java gains a header line, `long y` becomes `short y`): the thread on `void f` follows it one line down, the
+        # finding thread stays, the ones on the changed lines are listed as lost, and an unapplied proposal does not carry.
+        keep = ask(1, target={"kind": "line", "path": "A.java", "start": 4, "end": 4}, q="What is f for?")[1]["thread"]
+        wait(1, keep)
+        shutil.copytree(w, r2)
+        (r2 / "progress.json").unlink(missing_ok=True)
+        tip = r2 / sid / "tip" / "A.java"
+        tip.write_text("// header\n" + tip.read_text().replace("long y", "short y"))
+        review["rounds"].append({"n": 2, "effort": "balanced", "created": 2})
+        (home / "reviews" / rid / "review.json").write_text(json.dumps(review))
+        urllib.request.urlopen(url + f"r/{rid}").read()
+        ui2 = json.loads((r2 / "ui.json").read_text())
+        kept = {f.stem: json.loads(f.read_text()) for f in (r2 / "threads").glob("*.json")}
+        assert {tid, keep, j["id"], fx["id"]} <= set(kept) and not {*ids, c["id"]} & set(kept), sorted(kept)
+        assert (kept[keep]["target"]["start"], kept[keep]["target"]["text"]) == (5, "  void f() {}") and kept[keep]["session_id"], kept[keep]
+        assert kept[tid]["session_id"] == t["session_id"] and kept[j["id"]]["proposal"]["applied"] and kept[fx["id"]]["proposal"]["applied"], kept
+        assert {x["id"] for x in ui2["lost_threads"]} >= {*ids, c["id"]} and not {x["id"] for x in ui2["lost_threads"]} & set(kept), ui2["lost_threads"]
+        assert ask(1, target=finding)[0] == 409 and req(f"/1/threads/{tid}/apply", {})[0] == 409  # round 1 is read-only now
+        assert ask(2, tid=keep, q="Still there?")[0] == 202
+        wait(2, keep)
+        last = runs()[-1]
+        assert last[last.index("--resume") + 1] == kept[keep]["session_id"] and f"Work directory: {r2}" in last[last.index("-p") + 1]
+    finally:
+        gate.unlink(missing_ok=True)
+        proc.terminate()
+        proc.wait()
+
+
 def main(keep: str | None = None) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
@@ -394,6 +578,7 @@ def main(keep: str | None = None) -> None:
         home = root / "home"
         check_server(w, home)
         check_self_server(w, root / "self-home")
+        check_ask(w, root)
         if keep:
             shutil.copytree(home, keep, dirs_exist_ok=True)
     print("ok" + (f", fixture in {keep}" if keep else ""))

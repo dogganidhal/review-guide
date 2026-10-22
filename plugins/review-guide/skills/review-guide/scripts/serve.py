@@ -40,6 +40,7 @@ import urllib.error
 import urllib.request
 import webbrowser
 
+from ask import Asker, carry_threads
 from build import stages
 from fetch import PR_REF
 
@@ -185,6 +186,7 @@ class Home:
     def __init__(self, path: pathlib.Path):
         self.path, self.lock, self.procs = path, threading.RLock(), {}
         self.counts: dict[tuple, int] = {}
+        self.asker = Asker()
 
     def rdir(self, rid: str, n: int) -> pathlib.Path:
         return self.path / "reviews" / rid / "rounds" / str(n)
@@ -250,6 +252,9 @@ class Home:
                 prev_data, new_data = read(src / "guide.json"), read(rdir / "guide.json")
                 prev_posted = read(src / "posted.json") or {}
                 ui = carry_over(read(src / "ui.json") or {}, prev_data, new_data, prev_posted)
+                # Questions carry like drafts: each thread's target moves with its text, and a thread whose target is gone is listed.
+                ui["lost_threads"] = [{"id": t["id"], "target": t["target"], "question": t["messages"][0]["text"], "messages": t["messages"]}
+                                      for t in carry_threads(src, rdir, new_data)]
                 heads = {p["n"]: p["sha"] for st in new_data["stacks"] for p in st["prs"]}
                 old = {p["n"]: p["sha"] for st in prev_data["stacks"] for p in st["prs"]}
                 # A review posted on a head that did not move stays posted, so the same PR is not reviewed twice. Feedback
@@ -413,6 +418,14 @@ def handler(home: Home):
                 version = f"{live}:{(home.rdir(rid, live) / 'index.html').stat().st_mtime_ns}" if n == live else f"{n}"
                 return self.reply(200, {"posted": read(rdir / "posted.json") or {}, "version": version, "live": live, "rerun": rerun,
                                         "stages": progress, "usual": usual(home.path)})
+            if m := re.fullmatch(rf"/api/r/({ID})/(\d+)/threads(?:/([\w-]+))?", path):
+                if not self.found(m.group(1)):
+                    return
+                rdir = home.rdir(m.group(1), int(m.group(2)))
+                if not m.group(3):
+                    return self.reply(200, {"threads": home.asker.threads(rdir)})
+                t = home.asker.load(rdir, m.group(3))
+                return self.reply(200 if t else 404, t or {"error": f"no thread {m.group(3)}"})
             if m := re.fullmatch(rf"/api/r/({ID})/heads", path):
                 if not (rev := self.found(m.group(1))):
                     return
@@ -455,6 +468,8 @@ def handler(home: Home):
                         home.save_review(rev)
                         n, started = home.start_round(rid, effort, req.get("focus"))
                     return self.reply(200, {"id": rid, "round": n, "started": started, "url": f"/r/{rid}"})
+                if m := re.fullmatch(rf"/api/r/({ID})/(\d+)/(?:(ask)|threads/([\w-]+)/(apply))", path):
+                    return self.ask(m)
                 m = re.fullmatch(rf"/api/r/({ID})(?:/(\d+))?/(\w+)", path)
                 if not m:
                     return self.reply(404, {"error": "not found"})
@@ -502,6 +517,17 @@ def handler(home: Home):
                 self.reply(400, {"error": f"bad request: {e}"})
             except RuntimeError as e:
                 self.reply(502, {"error": str(e)})
+
+        def ask(self, m: re.Match) -> None:
+            """A question about the page, or accepting the action an answer proposed. Latest round only; no GitHub calls."""
+            rid, n = m.group(1), int(m.group(2))
+            if not (rev := self.found(rid)):
+                return
+            if n != home.live(rid, rev):
+                return self.reply(409, {"error": "this is an earlier round of the review; open the latest one"})
+            rdir = home.rdir(rid, n)
+            code, out = home.asker.start(rdir, self.body()) if m.group(3) else home.asker.apply(rdir, m.group(4))
+            self.reply(code, out)
 
         def send_feedback(self, rdir: pathlib.Path, rev: dict) -> None:
             """Write the self-review's feedback for the waiting `serve.py open --wait-feedback`, once per round."""
