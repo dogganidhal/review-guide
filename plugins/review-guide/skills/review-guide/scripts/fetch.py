@@ -2,11 +2,16 @@
 """Fetch a set of pull requests, group them into stacks, and write what the guide agents read.
 
 Usage: fetch.py [--workdir DIR] [--prev DIR] [--effort quick|balanced|deep] <pr-url | owner/repo#n>...
+       fetch.py [--workdir DIR] [--prev DIR] [--effort ...] self:<repo root>@<branch>
 
 PRs whose base branch is another PR's head form a stack. A stack is reviewed as one change: the diff
 from the bottom PR's base to the top PR's head (the target). Each line the stack changed is attributed
 to the PR that wrote its final version, with its line number in that PR, so a comment placed on the
 target can be posted on the right PR. A PR on its own is a stack of one.
+
+A `self:` ref reviews local work instead, for a self-review: the local branches stacked between the default branch and
+<branch> become the layers, numbered 1..k and handled like PRs, plus a top layer for uncommitted changes. A layer whose
+branch has an open PR with the same head takes that PR's title, description, linked issues and CI.
 
 Writes:
   run.json                       repo, viewer, effort, checkout, warnings, prs, stacks (bottom PR first)
@@ -438,9 +443,14 @@ def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: 
     head = [f"# Brief for stack {sdir.name}", "",
             "Line numbers are the tip's. `#N+` marks an added line and the PR that wrote it; only those lines take inline comments.", "",
             "## PRs, bottom first", ""]
+    if any(prs[n].get("label") for n in chain):
+        head[-2:-2] = ["This is a self-review of local work in progress, before or alongside its PRs. `#N` is layer N of the local "
+                       "branch stack (bottom first), not a GitHub PR number; use it as `pr` the same way. The feedback goes to the "
+                       "agent writing the code, not to GitHub.", ""]
     for n in chain:
         p = prs[n]
-        head += [f"### #{n}: {p['title']}", f"{p['author']['login']} · {p['headRefName']} → {p['baseRefName']}", "",
+        head += [f"### #{n}: {p['title']}" + (f" (layer: {p['label']})" if p.get("label") else ""),
+                 f"{p['author']['login']} · {p['headRefName']} → {p['baseRefName']}", "",
                  (p["body"] or "(no description)").strip()[:2500], ""]
     if relevant := [w for w in warnings if any(f"#{n}" in w for n in chain)]:
         head += ["## Warnings", "", *[f"- {w}" for w in relevant], ""]
@@ -520,20 +530,127 @@ def last_seen(git: Git, chain: list[int], last: dict[int, dict | None]) -> tuple
     return seen, None
 
 
-def previous_round(prev: pathlib.Path, chains: list[list[int]], heads: dict[int, str]) -> dict[int, dict]:
+def previous_round(prev: pathlib.Path, chains: list[list[int]], heads: dict[int, str], names: dict[int, str]) -> dict[int, dict]:
     """Per chain (keyed by its top PR) whose heads moved since the previous round: that round's review commits, in the
-    shape last_seen reads, so the lines changed since then get the "new" mark."""
+    shape last_seen reads, so the lines changed since then get the "new" mark. PRs are matched by head branch, which
+    also matches the layers of a self-review when one was added or removed below."""
     try:
         old = json.loads((prev / "run.json").read_text())
     except (OSError, ValueError):
         return {}
     at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(old.get("fetched_at") or 0))
-    seen = {p["n"]: p for p in old["prs"]}
+    seen = {p.get("head") or p["n"]: p for p in old["prs"]}
     out = {}
     for chain in chains:
-        if any(n in seen and seen[n]["sha"] != heads[n] for n in chain):
-            out[chain[-1]] = {n: {"state": "ROUND", "sha": seen[n]["review_sha"], "at": at} if n in seen else None for n in chain}
+        if any(names[n] in seen and seen[names[n]]["sha"] != heads[n] for n in chain):
+            out[chain[-1]] = {n: {"state": "ROUND", "sha": seen[names[n]]["review_sha"], "at": at} if names[n] in seen else None for n in chain}
     return out
+
+
+SELF_REF = re.compile(r"^self:(.+)@([^@]+)$")
+SNAPSHOT_REF = "refs/review-guide/self-snapshot"
+UNCOMMITTED = "(uncommitted)"
+
+
+def default_base(git: Git) -> str:
+    for ref in ("origin/HEAD", "origin/main", "origin/master", "main", "master"):
+        if git.ok("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"):
+            return ref
+    sys.exit("no default branch found (origin/HEAD, main or master)")
+
+
+def snapshot(git: Git, root: str, parent: str) -> str | None:
+    """A commit holding the working tree's staged, unstaged and untracked changes on top of `parent`, built in a
+    throwaway index so the real index, the working tree and the branches stay as they are. Fixed dates make the same
+    changes give the same commit, so an unchanged working tree does not count as a new version."""
+    index = pathlib.Path(git("rev-parse", "--git-path", "review-guide-index").strip())
+    if not index.is_absolute():
+        index = pathlib.Path(root) / index
+    env = {**os.environ, "GIT_INDEX_FILE": str(index), "GIT_AUTHOR_DATE": "@0 +0000", "GIT_COMMITTER_DATE": "@0 +0000"}
+    try:
+        for args in (["read-tree", parent], ["add", "-A"]):
+            subprocess.run([*git.prefix, *args], env=env, check=True, capture_output=True)
+        tree = subprocess.run([*git.prefix, "write-tree"], env=env, check=True, capture_output=True, text=True).stdout.strip()
+    finally:
+        index.unlink(missing_ok=True)
+    if tree == git("rev-parse", f"{parent}^{{tree}}").strip():
+        return None
+    sha = subprocess.run([*git.prefix, "commit-tree", tree, "-p", parent, "-m", "Uncommitted changes"], env=env,
+                         check=True, capture_output=True, text=True).stdout.strip()
+    # Keeps the newest snapshot reachable, for the agents' git grep and the next round's diff.
+    git("update-ref", SNAPSHOT_REF, sha)
+    return sha
+
+
+def local_layers(git: Git, root: str, branch: str) -> tuple[str, list[dict], list[str]]:
+    """The base commit and the layers of a local branch stack, bottom first: each local branch whose tip lies between
+    the merge base with the default branch and `branch`, then the uncommitted changes when `branch` is checked out."""
+    top = git("rev-parse", f"{branch}^{{commit}}").strip()
+    base_ref = default_base(git)
+    base = git("merge-base", top, base_ref).strip()
+    if base == top and branch != "HEAD":
+        warnings = [f"{branch} has no commits on top of {base_ref}"]
+    else:
+        warnings = []
+    current = (git("symbolic-ref", "--quiet", "--short", "HEAD", check=False) or "").strip() or "HEAD"
+    names: dict[str, list[str]] = defaultdict(list)
+    for line in git("for-each-ref", "--format=%(objectname) %(refname:short)", "refs/heads").splitlines():
+        sha, name = line.split(" ", 1)
+        if sha != base and git.ok("merge-base", "--is-ancestor", sha, top) and git.ok("merge-base", "--is-ancestor", base, sha):
+            names[sha].append(name)
+    if top != base and top not in names:
+        names[top].append(branch)
+    layers = []
+    for sha, ns in names.items():
+        name = branch if branch in ns else current if current in ns else sorted(ns)[0]
+        layers.append({"sha": sha, "branch": name, "count": int(git("rev-list", "--count", f"{base}..{sha}").strip())})
+    layers.sort(key=lambda x: x["count"])
+    if current == branch or (branch == "HEAD" and current == "HEAD"):
+        snap = snapshot(git, root, top)
+        if snap:
+            layers.append({"sha": snap, "branch": UNCOMMITTED, "count": None})
+    if not layers:
+        sys.exit(f"nothing to review: {branch} is at {base_ref} and the working tree is clean")
+    return base, layers, warnings
+
+
+def github_repo(root: str) -> str:
+    origin = (run(["git", "-C", root, "remote", "get-url", "origin"], check=False) or "").strip()
+    m = re.search(r"github\.com[:/]([\w.-]+)/([\w.-]+?)(?:\.git)?$", origin)
+    return f"{m.group(1)}/{m.group(2)}" if m else f"local/{pathlib.Path(root).name}"
+
+
+def local_prs(git: Git, root: str, repo: str, base: str, layers: list[dict], viewer: str) -> dict[int, dict]:
+    """The layers in the shape `gh pr view` returns, so the rest of the fetch treats them like PRs."""
+    fields = "number,title,body,closingIssuesReferences,author,headRefOid,url,statusCheckRollup,isDraft"
+
+    def open_pr(branch: str) -> dict | None:
+        if branch == UNCOMMITTED or repo.startswith("local/"):
+            return None
+        out = gh("pr", "list", "-R", repo, "--head", branch, "--state", "open", "--json", fields, check=False)
+        found = json.loads(out or "[]")
+        return found[0] if found else None
+
+    with concurrent.futures.ThreadPoolExecutor(6) as pool:
+        found = list(pool.map(lambda x: open_pr(x["branch"]), layers))
+    prs, below = {}, base
+    for n, (layer, pr) in enumerate(zip(layers, found), 1):
+        log = git("log", "--format=- %s", f"{below}..{layer['sha']}").strip()
+        subjects = log.splitlines()
+        same = pr is not None and pr["headRefOid"] == layer["sha"]
+        title = pr["title"] if pr else ("Uncommitted changes" if layer["branch"] == UNCOMMITTED else subjects[-1][2:] if len(subjects) == 1 else layer["branch"])
+        body = (pr["body"] or "") if pr else ""
+        if not same:
+            body = (body + "\n\n" if body else "") + ("Changes in the working tree, not committed yet." if layer["branch"] == UNCOMMITTED
+                                                    else f"Local commits{' (not all pushed)' if pr else ''}:\n{log}")
+        prs[n] = {"number": n, "title": title, "body": body, "closingIssuesReferences": (pr or {}).get("closingIssuesReferences") or [],
+                  "author": {"login": viewer}, "baseRefName": layers[n - 2]["branch"] if n > 1 else "base", "baseRefOid": below,
+                  "headRefName": layer["branch"], "headRefOid": layer["sha"], "isDraft": False, "state": "LOCAL",
+                  "additions": 0, "deletions": 0, "url": pr["url"] if same else "", "statusCheckRollup": pr["statusCheckRollup"] if same else None,
+                  "label": (f"#{pr['number']} · " if pr else "") + ("Uncommitted changes" if layer["branch"] == UNCOMMITTED else layer["branch"]),
+                  "pr_number": pr["number"] if pr else None, "pushed": same}
+        below = layer["sha"]
+    return prs
 
 
 def checks_summary(rollup: list[dict]) -> dict:
@@ -557,36 +674,50 @@ def main() -> None:
     ap.add_argument("prs", nargs="+")
     args = ap.parse_args()
 
-    refs = []
-    for arg in args.prs:
-        m = PR_REF.search(arg)
-        if not m:
-            sys.exit(f"not a PR reference: {arg}")
-        refs.append((f"{m.group(1)}/{m.group(2)}", int(m.group(3))))
-    if len({r for r, _ in refs}) != 1:
-        sys.exit(f"all PRs must be in one repository, got {sorted({r for r, _ in refs})}")
-    repo = refs[0][0]
-    numbers = sorted({n for _, n in refs})
-
-    fields = "number,title,body,closingIssuesReferences,author,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,state,additions,deletions,url,statusCheckRollup"
-    prs = {n: json.loads(gh("pr", "view", str(n), "-R", repo, "--json", fields)) for n in numbers}
-    heads = {n: p["headRefOid"] for n, p in prs.items()}
-    viewer = gh("api", "user", "--jq", ".login").strip()
+    local = SELF_REF.match(args.prs[0]) if len(args.prs) == 1 else None
+    if local:
+        root, branch = local.group(1), local.group(2)
+        git, checkout, cached = Git(root, via_gh=False), root, False
+        repo = github_repo(root)
+        viewer = (gh("api", "user", "--jq", ".login", check=False) or "").strip() or (run(["git", "-C", root, "config", "user.name"], check=False) or "me").strip()
+        base, layers, warnings = local_layers(git, root, branch)
+        prs = local_prs(git, root, repo, base, layers, viewer)
+        numbers = sorted(prs)
+        heads = review = {n: p["headRefOid"] for n, p in prs.items()}
+        chains = [numbers]
+        base_of = {n: p["baseRefOid"] for n, p in prs.items()}
+    else:
+        refs = []
+        for arg in args.prs:
+            m = PR_REF.search(arg)
+            if not m:
+                sys.exit(f"not a PR reference: {arg}")
+            refs.append((f"{m.group(1)}/{m.group(2)}", int(m.group(3))))
+        if len({r for r, _ in refs}) != 1:
+            sys.exit(f"all PRs must be in one repository, got {sorted({r for r, _ in refs})}")
+        repo = refs[0][0]
+        numbers = sorted({n for _, n in refs})
+        fields = "number,title,body,closingIssuesReferences,author,baseRefName,baseRefOid,headRefName,headRefOid,isDraft,state,additions,deletions,url,statusCheckRollup"
+        prs = {n: json.loads(gh("pr", "view", str(n), "-R", repo, "--json", fields)) for n in numbers}
+        heads = {n: p["headRefOid"] for n, p in prs.items()}
+        viewer = gh("api", "user", "--jq", ".login").strip()
+        base_of = {n: f"refs/review-guide/base/{n}" for n in numbers}
     run_id = hashlib.sha1(json.dumps(sorted(heads.items())).encode(), usedforsecurity=False).hexdigest()[:10]
     workdir = pathlib.Path(args.workdir or CACHE / f"{repo.replace('/', '-')}-{'-'.join(map(str, numbers))}-{run_id}")
     workdir.mkdir(parents=True, exist_ok=True)
 
-    git, checkout = open_repo(repo)
-    cached = checkout is None
-    checkout = checkout or git.prefix[2]
-    specs = [f"+pull/{n}/head:refs/review-guide/{n}" for n in numbers] + [f"+{p['baseRefOid']}:refs/review-guide/base/{n}" for n, p in prs.items()]
-    git("fetch", "--quiet", "--no-tags", "origin", *specs)
-    chains, warnings = link_stacks(git, prs, heads)
-    review: dict[int, str] = {}
-    for chain in chains:
-        shas, lag_warnings = review_shas(git, chain, heads)
-        review |= shas
-        warnings += lag_warnings
+    if not local:
+        git, checkout = open_repo(repo)
+        cached = checkout is None
+        checkout = checkout or git.prefix[2]
+        specs = [f"+pull/{n}/head:refs/review-guide/{n}" for n in numbers] + [f"+{p['baseRefOid']}:refs/review-guide/base/{n}" for n, p in prs.items()]
+        git("fetch", "--quiet", "--no-tags", "origin", *specs)
+        chains, warnings = link_stacks(git, prs, heads)
+        review: dict[int, str] = {}
+        for chain in chains:
+            shas, lag_warnings = review_shas(git, chain, heads)
+            review |= shas
+            warnings += lag_warnings
     if cached:
         # The cache clone is blobless: fetch each tip's tree once, so symbol search and the agents' git grep stay local.
         for chain in chains:
@@ -598,21 +729,27 @@ def main() -> None:
         prdir = workdir / str(n)
         prdir.mkdir(exist_ok=True)
         # The PR's own diff at the commit it is reviewed at, which is what a comment on it is anchored to.
-        diff = git("diff", "--no-color", "-M", git("merge-base", f"refs/review-guide/base/{n}", review[n]).strip(), review[n])
+        diff = git("diff", "--no-color", "-M", git("merge-base", base_of[n], review[n]).strip(), review[n])
         parsed = parse_diff(diff)
         pr_files[n] = set(parsed) | {f["old"] for f in parsed.values() if f["old"]}
         (prdir / "pr.diff").write_text(diff)
         (prdir / "hunks.json").write_text(json.dumps({p: {"added": f["added"], "commentable": f["commentable"]} for p, f in parsed.items()}))
-        existing, last[n] = existing_comments(repo, n, viewer)
+        if local:
+            pr = prs[n]["pr_number"]
+            existing, last[n] = (existing_comments(repo, pr, viewer)[0], None) if pr else ([], None)
+            prs[n]["additions"] = sum(len(f["added"]) for f in parsed.values())
+            prs[n]["deletions"] = sum(line["k"] == "-" for f in parsed.values() for hunk in f["hunks"] for line in hunk)
+        else:
+            existing, last[n] = existing_comments(repo, n, viewer)
         (prdir / "existing-comments.json").write_text(json.dumps(existing, indent=1))
 
-    round_seen = previous_round(args.prev, chains, heads) if args.prev else {}
+    round_seen = previous_round(args.prev, chains, heads, {n: p["headRefName"] for n, p in prs.items()}) if args.prev else {}
     stacks = []
     for chain in chains:
         sid = "-".join(map(str, chain))
         sdir = workdir / sid
         (sdir / "tip").mkdir(parents=True, exist_ok=True)
-        base = git("merge-base", f"refs/review-guide/base/{chain[0]}", review[chain[0]]).strip()
+        base = git("merge-base", base_of[chain[0]], review[chain[0]]).strip()
         tip = review[chain[-1]]
         diff = git("diff", "--no-color", "-M", base, tip)
         (sdir / "target.diff").write_text(diff)
@@ -659,14 +796,16 @@ def main() -> None:
         "n": n, "url": p["url"], "title": p["title"], "body": p["body"] or "", "author": p["author"]["login"],
         "base": p["baseRefName"], "head": p["headRefName"], "sha": p["headRefOid"], "review_sha": review[n], "draft": p["isDraft"], "state": p["state"],
         "adds": p["additions"], "dels": p["deletions"], "stack": stack_of[n], "checks": checks_summary(p["statusCheckRollup"]),
-        "last_review": last[n],
+        "last_review": last[n], **({k: p[k] for k in ("label", "pr_number", "pushed")} if local else {}),
     } for n, p in prs.items()]
     run_data = {"repo": repo, "viewer": viewer, "effort": args.effort, "run_id": run_id, "fetched_at": int(time.time()), "checkout": checkout,
-                "warnings": warnings, "prs": out_prs, "stacks": stacks}
+                "mode": "self" if local else "pr", "warnings": warnings, "prs": out_prs, "stacks": stacks}
+    if local:
+        run_data["source"] = {"root": root, "branch": branch}
     (workdir / "run.json").write_text(json.dumps(run_data, indent=1))
 
     for s in stacks:
-        print(f"stack {s['id']}: {' -> '.join(f'#{n}' for n in s['prs'])}, {len(s['files'])} files in the target")
+        print(f"stack {s['id']}: {' -> '.join(prs[n].get('label') or f'#{n}' for n in s['prs'])}, {len(s['files'])} files in the target")
     for w in warnings:
         print(f"warning: {w}")
     print(f"code search runs in {checkout}")

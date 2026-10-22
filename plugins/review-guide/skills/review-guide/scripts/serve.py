@@ -6,6 +6,10 @@ Usage:
   serve.py open [--home DIR] [--effort quick|balanced|deep] [--focus TEXT] [--wait] [--no-browser] <pr-ref>...
                                          send PRs to the running server, starting one when none answers; print the
                                          review URL and open it; with --wait, follow the round and print its summary
+  serve.py open --self [--branch B] [--wait-feedback] [...]
+                                         a self-review of the local branch stack in the current repository: the
+                                         feedback goes to the agent instead of GitHub; with --wait-feedback, wait until
+                                         it is sent from the page (or the review is finished) and print it
 
 A review is the set of PR refs given to one invocation: the same set again adds a round to it. Each round is a work
 directory (fetch.py, then the agents through rerun.py, then build.py) under DIR/reviews/<id>/rounds/<n>/. The page state
@@ -68,8 +72,14 @@ def gh(*args: str, stdin: str | None = None) -> str:
     return r.stdout
 
 
+SELF_REF = re.compile(r"^self:(.+)@([^@]+)$")
+
+
 def norm_refs(refs: list[str]) -> list[str]:
-    """`owner/repo#n` for each PR, sorted, so the same PRs in any order or form name the same review."""
+    """`owner/repo#n` for each PR, sorted, so the same PRs in any order or form name the same review. A self-review is
+    one `self:<repo root>@<branch>` ref."""
+    if len(refs) == 1 and SELF_REF.match(refs[0]):
+        return refs
     out = set()
     for ref in refs:
         m = PR_REF.search(ref)
@@ -80,6 +90,9 @@ def norm_refs(refs: list[str]) -> list[str]:
 
 
 def review_id(refs: list[str]) -> str:
+    if m := SELF_REF.match(refs[0]):
+        slug = re.sub(r"[^\w.-]", "-", f"self-{pathlib.Path(m.group(1)).name}-{m.group(2)}")[:80]
+        return f"{slug}-{hashlib.sha1(refs[0].encode(), usedforsecurity=False).hexdigest()[:8]}"
     repos = sorted({r.split("#")[0].split("/")[1] for r in refs})
     slug = re.sub(r"[^\w.-]", "-", "-".join(repos) + "-" + "-".join(r.split("#")[1] for r in refs))[:80]
     key = "\n".join(refs).lower().encode()
@@ -228,8 +241,9 @@ class Home:
                 ui = carry_over(read(src / "ui.json") or {}, prev_data, new_data, prev_posted)
                 heads = {p["n"]: p["sha"] for st in new_data["stacks"] for p in st["prs"]}
                 old = {p["n"]: p["sha"] for st in prev_data["stacks"] for p in st["prs"]}
-                # A review posted on a head that did not move stays posted, so the same PR is not reviewed twice.
-                if keep := {k: v for k, v in prev_posted.items() if old.get(int(k)) == heads.get(int(k))}:
+                # A review posted on a head that did not move stays posted, so the same PR is not reviewed twice. Feedback
+                # sent to the agent does not carry: each self-review round can send its own.
+                if not SELF_REF.match(rev["refs"][0]) and (keep := {k: v for k, v in prev_posted.items() if old.get(int(k)) == heads.get(int(k))}):
                     write(rdir / "posted.json", (read(rdir / "posted.json") or {}) | keep)
             write(rdir / "ui.json", ui)
             return ui
@@ -249,8 +263,10 @@ class Home:
             findings = self.counts[key]
         touched = max([rev.get("updated", 0)] + [int((self.rdir(rid, r["n"]) / "ui.json").stat().st_mtime)
                                                  for r in rev["rounds"] if (self.rdir(rid, r["n"]) / "ui.json").is_file()])
-        prs = [{"n": p["n"], "title": p["title"], "author": p["author"], "posted": str(p["n"]) in posted} for p in run.get("prs", [])]
-        return {"id": rid, "refs": rev["refs"], "repo": run.get("repo") or rev["refs"][0].split("#")[0], "status": rev.get("status", "open"),
+        prs = [{"n": p["n"], "title": p["title"], "author": p["author"], "label": p.get("label"), "posted": str(p["n"]) in posted} for p in run.get("prs", [])]
+        self_ref = SELF_REF.match(rev["refs"][0])
+        return {"id": rid, "refs": rev["refs"], "mode": "self" if self_ref else "pr", "branch": self_ref and self_ref.group(2),
+                "sent": (read(rdir / "feedback.json") or {}).get("sent_at"), "repo": run.get("repo") or rev["refs"][0].split("#")[0], "status": rev.get("status", "open"),
                 "created": rev.get("created"), "updated": touched, "rounds": len(rev["rounds"]), "live": live, "prs": prs, "findings": findings,
                 "newest": self.round_info(rid, newest) if newest else None}
 
@@ -291,11 +307,21 @@ def handler(home: Home):
         return html.replace('<html lang="en">', f'<html lang="en" data-theme="{theme}">', 1) if theme in ("light", "dark") else html
 
     def heads(rdir: pathlib.Path) -> dict:
-        """The PRs' current head SHAs on GitHub, in one GraphQL call, cached for a minute."""
+        """The PRs' current head SHAs on GitHub, in one GraphQL call, cached for a minute. For a self-review, the local
+        branch tips; uncommitted changes are not watched."""
         hit = heads_cache.get(rdir)
         if hit and time.time() - hit[0] < 60:
             return hit[1]
         data = read(rdir / "guide.json")
+        if data.get("mode") == "self":
+            root = data["source"]["root"]
+            tips = {}
+            for p in (p for st in data["stacks"] for p in st["prs"] if p.get("head") != "(uncommitted)"):
+                r = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "--quiet", f"refs/heads/{p['head']}"], capture_output=True, text=True)
+                if r.returncode == 0:
+                    tips[str(p["n"])] = r.stdout.strip()
+            heads_cache[rdir] = (time.time(), tips)
+            return tips
         owner, name = data["repo"].split("/")
         fields = " ".join(f"p{p['n']}: pullRequest(number: {p['n']}) {{ headRefOid }}" for st in data["stacks"] for p in st["prs"])
         out = json.loads(gh("api", "graphql", "-f", f"query=query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ {fields} }} }}"))
@@ -439,7 +465,7 @@ def handler(home: Home):
                     if not started:
                         return self.reply(409, {"error": "a round is already running"})
                     return self.reply(200, {"running": True, "status": "Starting", "error": "", "round": n})
-                if n is None or action not in ("ui", "review"):
+                if n is None or action not in ("ui", "review", "feedback"):
                     return self.reply(404, {"error": "not found"})
                 live, rdir = home.live(rid, rev), home.rdir(rid, n)
                 built = home.built(rid, rev)
@@ -453,11 +479,36 @@ def handler(home: Home):
                         return self.reply(400, {"error": "expected an object"})
                     write(rdir / "ui.json", state)
                     return self.reply(200, {"ok": True})
+                is_self = bool(SELF_REF.match(rev["refs"][0]))
+                if action == "feedback":
+                    if not is_self:
+                        return self.reply(400, {"error": "feedback goes to an agent only in a self-review"})
+                    return self.send_feedback(rdir, rev)
+                if is_self:
+                    return self.reply(400, {"error": "a self-review is never posted to GitHub"})
                 return self.post_review(rdir, rev)
             except (KeyError, ValueError, TypeError) as e:
                 self.reply(400, {"error": f"bad request: {e}"})
             except RuntimeError as e:
                 self.reply(502, {"error": str(e)})
+
+        def send_feedback(self, rdir: pathlib.Path, rev: dict) -> None:
+            """Write the self-review's feedback for the waiting `serve.py open --wait-feedback`, once per round."""
+            req = self.body()
+            layers = req["layers"]
+            if not isinstance(layers, list) or not all(isinstance(x, dict) for x in layers):
+                return self.reply(400, {"error": "layers must be a list"})
+            with write_lock:
+                if (rdir / "feedback.json").is_file():
+                    return self.reply(409, {"error": "feedback was already sent for this round; rerun the guide for the next pass"})
+                at = int(time.time())
+                write(rdir / "feedback.json", {"sent_at": at, "text": str(req.get("text") or ""), "layers": layers})
+                write(rdir / "posted.json", (read(rdir / "posted.json") or {}) | {str(x["n"]): f"sent:{at}" for x in layers if "n" in x})
+                with home.lock:
+                    rev = home.review(rev["id"])
+                    rev["updated"] = at
+                    home.save_review(rev)
+            self.reply(200, {"sent_at": at})
 
         def post_review(self, rdir: pathlib.Path, rev: dict) -> None:
             req = self.body()
@@ -561,12 +612,26 @@ def open_review(argv: list[str]) -> None:
     ap.add_argument("--focus")
     ap.add_argument("--wait", action="store_true", help="follow the round and print its summary")
     ap.add_argument("--no-browser", action="store_true")
-    ap.add_argument("prs", nargs="+")
+    ap.add_argument("--self", action="store_true", help="review the local branch stack; feedback goes to the agent")
+    ap.add_argument("--branch", help="with --self, the top branch (default: the current one)")
+    ap.add_argument("--wait-feedback", action="store_true", help="with --self, wait for the feedback and print it")
+    ap.add_argument("prs", nargs="*")
     args = ap.parse_args(argv)
-    try:
-        refs = norm_refs(args.prs)
-    except ValueError as e:
-        sys.exit(str(e))
+    if args.self:
+        root = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+        if not root:
+            sys.exit("--self runs inside the repository being worked on")
+        branch = args.branch or subprocess.run(["git", "-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"], capture_output=True, text=True).stdout.strip() or "HEAD"
+        refs = [f"self:{root}@{branch}"]
+        if uncollected(args.home, review_id(refs)):
+            sys.exit(0)
+    elif not args.prs:
+        sys.exit("give PR references, or --self for the local branch stack")
+    else:
+        try:
+            refs = norm_refs(args.prs)
+        except ValueError as e:
+            sys.exit(str(e))
     found = find_server(args.home)
     if not found:
         args.home.mkdir(parents=True, exist_ok=True)
@@ -586,8 +651,68 @@ def open_review(argv: list[str]) -> None:
     print(f"round {out['round']} {'started' if out['started'] else 'already running; following it'}", flush=True)
     if not args.no_browser:
         webbrowser.open(base + out["url"])
-    if args.wait:
-        sys.exit(follow(args.home / "reviews" / out["id"] / "rounds" / str(out["round"])))
+    rdir = args.home / "reviews" / out["id"] / "rounds" / str(out["round"])
+    if args.wait or args.wait_feedback:
+        code = follow(rdir)
+        if code or not args.wait_feedback:
+            sys.exit(code)
+        print(f"waiting for feedback from {base}{out['url']}", flush=True)
+        sys.exit(wait_feedback(args.home, out["id"], rdir))
+
+
+def feedback_text(rdir: pathlib.Path, fb: dict) -> str:
+    rev_round = rdir.name
+    sent = time.strftime("%H:%M", time.localtime(fb["sent_at"]))
+    out = [f"review-guide feedback, round {rev_round}, sent at {sent}", ""]
+    if fb.get("text"):
+        out += [fb["text"].strip(), ""]
+    for layer in fb["layers"]:
+        out.append(f"## {layer.get('label') or layer.get('n')}" + (f": {layer['verdict']}" if layer.get("verdict") else ""))
+        if layer.get("summary"):
+            out.append(f"Summary: {layer['summary'].strip()}")
+        for c in layer.get("comments") or []:
+            where = f"{c['path']}:{c['line']}" if c.get("path") else "general"
+            if c.get("start_line"):
+                where = f"{c['path']}:{c['start_line']}-{c['line']}"
+            out.append(f"- {where} ({c.get('severity') or 'comment'}): {c['body'].strip()}")
+            if c.get("code"):
+                out.append(f"  at: `{c['code'].strip()[:160]}`")
+        out.append("")
+    if not any(layer.get("comments") or layer.get("summary") for layer in fb["layers"]):
+        out.append("No comment: the reviewer sent their verdicts only.")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def uncollected(home: pathlib.Path, rid: str) -> str | None:
+    """Feedback sent after the waiting command stopped (its session ended): printed by the next --self run instead
+    of starting a round, then marked collected."""
+    for rdir in sorted((home / "reviews" / rid / "rounds").glob("*"), key=lambda d: int(d.name) if d.name.isdigit() else 0, reverse=True):
+        fb = read(rdir / "feedback.json")
+        if fb and not fb.get("collected"):
+            text = "Feedback from an earlier self-review round was never delivered:\n\n" + feedback_text(rdir, fb)
+            print(text, flush=True)
+            # Marked only once printed, so a failed print leaves it for the next run.
+            write(rdir / "feedback.json", fb | {"collected": int(time.time())})
+            return text
+    return None
+
+
+def wait_feedback(home: pathlib.Path, rid: str, rdir: pathlib.Path) -> int:
+    """Block until the page sends feedback, or the review is finished without it. A Rerun from the page moves the wait
+    to the newer round."""
+    while True:
+        rev = read(home / "reviews" / rid / "review.json") or {}
+        if rev.get("rounds") and rev["rounds"][-1]["n"] > int(rdir.name):
+            rdir = rdir.parent / str(rev["rounds"][-1]["n"])
+        fb = read(rdir / "feedback.json")
+        if fb:
+            print(feedback_text(rdir, fb), flush=True)
+            write(rdir / "feedback.json", fb | {"collected": int(time.time())})
+            return 0
+        if rev.get("status") == "done":
+            print("The review was finished without sending feedback.", flush=True)
+            return 0
+        time.sleep(2)
 
 
 def follow(rdir: pathlib.Path) -> int:

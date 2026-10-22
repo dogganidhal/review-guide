@@ -381,8 +381,9 @@ def diff_anchor(path: str) -> str:
     return "diff-" + hashlib.sha256(path.encode()).hexdigest()
 
 
-def render_stack(st: Stack, repo: str, guide: dict, findings: list[dict], skipped: dict[str, str], reviewing: list[str]) -> dict:
-    compare = f"https://github.com/{repo}/compare/{st.base}...{st.tip}"
+def render_stack(st: Stack, repo: str, guide: dict, findings: list[dict], skipped: dict[str, str], reviewing: list[str], local: bool = False) -> dict:
+    # A self-review's commits may exist only on this machine: no GitHub link points at them.
+    compare = None if local else f"https://github.com/{repo}/compare/{st.base}...{st.tip}"
 
     def located(path: str, line: int) -> dict:
         own = st.owner(path, line)
@@ -401,7 +402,7 @@ def render_stack(st: Stack, repo: str, guide: dict, findings: list[dict], skippe
             pr, pl, ps = st.route(c["path"], c["line"], c.get("start_line"))
             info = st.pr_info[pr]
             out |= {"pr": pr, "pl": pl, "ps": ps,
-                    "link": f"https://github.com/{repo}/blob/{info['review_sha']}/{c['path']}#L{ps or pl}" + (f"-L{pl}" if ps else "")}
+                    "link": None if local else f"https://github.com/{repo}/blob/{info['review_sha']}/{c['path']}#L{ps or pl}" + (f"-L{pl}" if ps else "")}
         else:
             out |= {"pr": c["pr"], "pl": None, "ps": None, "link": None}
         comments.append(out)
@@ -417,7 +418,7 @@ def render_stack(st: Stack, repo: str, guide: dict, findings: list[dict], skippe
                     "id": f"{st.id}-{s['id']}", "kind": s["kind"], "title": s["title"], "why": s["why"], "nodes": s.get("nodes") or [],
                     "test": s.get("test", False), "path": a["path"], "start": a["start"], "end": a["end"],
                     "lines": line_rows(a["path"], a["start"], a["end"]),
-                    "link": f"{compare}#{diff_anchor(a['path'])}R{a['start']}-R{a['end']}",
+                    "link": compare and f"{compare}#{diff_anchor(a['path'])}R{a['start']}-R{a['end']}",
                 })
             sec["steps"] = steps
         sections.append(sec)
@@ -427,11 +428,11 @@ def render_stack(st: Stack, repo: str, guide: dict, findings: list[dict], skippe
         hunks = [[{**line, **(located(path, line["n"]) if line["k"] == "+" else {})} for line in hunk] for hunk in st.target.get(path, {}).get("hunks", [])]
         g = guide["files"][path]
         files.append({**f, "role": g["role"], "why": g["why"], "hunks": hunks,
-                      "link": f"{compare}#{diff_anchor(path)}",
-                      "pr_links": {n: f"{st.pr_info[n]['url']}/files#{diff_anchor(path)}" for n in f["prs"]}})
+                      "link": compare and f"{compare}#{diff_anchor(path)}",
+                      "pr_links": {n: st.pr_info[n]["url"] and f"{st.pr_info[n]['url']}/files#{diff_anchor(path)}" for n in f["prs"]}})
 
     prs = [{**{k: st.pr_info[n][k] for k in ("n", "url", "title", "author", "sha", "review_sha", "draft", "checks")},
-            "last_review": st.pr_info[n].get("last_review")} for n in st.prs]
+            **{k: st.pr_info[n].get(k) for k in ("last_review", "label", "pr_number", "pushed", "head")}} for n in st.prs]
     return {"id": st.id, "pending": bool(guide.get("pending")), "reviewing": reviewing, "skipped": skipped,
             "base": st.base, "tip": st.tip, "since": st.since, "compare": compare, "summary": guide["summary"],
             "key_facts": guide.get("key_facts") or [], "components": guide.get("components"), "sections": sections,
@@ -477,8 +478,8 @@ def main() -> None:
         findings, skipped, warns = collect_findings(st, reports[st.id])
         warnings += warns
         reviewing = [a for a in AXES if a not in reports[st.id]]
-        rendered.append(render_stack(st, run["repo"], guides[st.id], findings, skipped, reviewing))
-    data = {"repo": run["repo"], "viewer": run["viewer"], "effort": run.get("effort", "balanced"), "run_id": run["run_id"], "warnings": run.get("warnings") or [],
+        rendered.append(render_stack(st, run["repo"], guides[st.id], findings, skipped, reviewing, run.get("mode") == "self"))
+    data = {"repo": run["repo"], "viewer": run["viewer"], "mode": run.get("mode", "pr"), "source": run.get("source"), "effort": run.get("effort", "balanced"), "run_id": run["run_id"], "warnings": run.get("warnings") or [],
             "stacks": rendered}
     (args.workdir / "guide.json").write_text(json.dumps(data, indent=1))
     embedded = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")

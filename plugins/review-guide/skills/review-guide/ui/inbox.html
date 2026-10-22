@@ -54,6 +54,7 @@ h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: 
 .item .prs { display: flex; flex-wrap: wrap; gap: 4px; }
 .pr { font-family: var(--mono); font-size: .74rem; border: 1px solid var(--line); border-radius: 99px; padding: 0 7px; color: var(--muted); }
 .pr.posted { border-color: var(--ok); color: var(--ok); }
+.selftag { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent-ink); background: var(--accent); border-radius: 4px; padding: 1px 5px; margin-right: 6px; vertical-align: 1px; }
 .run { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); }
 .run.failed { color: var(--danger); }
 .spin { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin 1s linear infinite; }
@@ -95,18 +96,21 @@ function ago(t) {
 function item(r) {
   const posted = r.prs.filter((p) => p.posted).length;
   const nums = r.prs.length ? r.prs.map((p) => p.n) : r.refs.map((x) => +x.split('#')[1]);
-  const title = r.prs.length === 1 ? r.prs[0].title : `Stack of ${nums.length} PRs`;
+  const self = r.mode === 'self';
+  const title = self ? r.branch : r.prs.length === 1 ? r.prs[0].title : `Stack of ${nums.length} PRs`;
   const nw = r.newest;
   const run = nw && nw.state === 'running' ? el('span', { class: 'run' }, el('span', { class: 'spin' }), `${nw.status || 'Starting'}…`)
     : nw && nw.state === 'failed' ? el('span', { class: 'run failed', title: nw.error }, `Round ${nw.n} failed`) : null;
   return el('a', { class: 'item', href: `/r/${r.id}` },
-    el('span', { class: 't' }, el('span', { class: 'repo' }, r.repo + ' · '), title),
+    el('span', { class: 't' }, self ? el('span', { class: 'selftag' }, 'self') : null, el('span', { class: 'repo' }, r.repo + ' · '), title),
     el('span', { class: 'when' }, ago(r.updated)),
     el('span', { class: 'meta' },
-      el('span', { class: 'prs' }, nums.map((n) => el('span', { class: 'pr' + (r.prs.find((p) => p.n === n)?.posted ? ' posted' : ''), title: r.prs.find((p) => p.n === n)?.title || '' }, `#${n}`))),
+      el('span', { class: 'prs' }, (self ? r.prs.map((p) => p.n) : nums).map((n) => { const p = r.prs.find((x) => x.n === n);
+        return el('span', { class: 'pr' + (p?.posted ? ' posted' : ''), title: p?.title || '' }, self ? p.label : `#${n}`); })),
       r.rounds > 1 ? el('span', {}, plural(r.rounds, 'round', 'rounds')) : null,
       r.findings != null ? el('span', {}, plural(r.findings, 'finding', 'findings')) : null,
-      r.prs.length ? el('span', {}, posted === r.prs.length ? 'all posted' : posted ? `${posted} of ${r.prs.length} posted` : 'nothing posted') : null,
+      self ? el('span', {}, r.sent ? 'feedback sent' : 'no feedback sent yet')
+        : r.prs.length ? el('span', {}, posted === r.prs.length ? 'all posted' : posted ? `${posted} of ${r.prs.length} posted` : 'nothing posted') : null,
       run));
 }
 

@@ -11,7 +11,7 @@ plugins/review-guide/
   agents/guide-writer.md                   writes <stack>/guide.json
   agents/comment-verifier.md               writes <stack>/verify.json
   skills/review-guide/
-    SKILL.md                               the coordinator: fetch, page, agents, rebuilds
+    SKILL.md                               PR review: sends PRs to the server, reports
     references/guide-schema.md             contract between agents and scripts
     scripts/fetch.py                       GitHub and git data, stacks, attribution, brief
     scripts/build.py                       validation and rendering
@@ -20,6 +20,7 @@ plugins/review-guide/
     scripts/test_scripts.py                offline test
     ui/template.html                       the review page (data injected at /*DATA*/null)
     ui/inbox.html                          the server's home: every review
+  skills/self-review/SKILL.md              self-review of local work; feedback goes back to the session
 docs/spec.md, docs/status.md
 ```
 

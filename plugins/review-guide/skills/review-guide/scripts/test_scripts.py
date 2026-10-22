@@ -9,6 +9,8 @@ With --keep DIR, a server home holding the fixture as a review with two rounds i
 opened with `serve.py --home DIR` to work on the UI without running the agents.
 """
 
+import contextlib
+import io
 import json
 import pathlib
 import shutil
@@ -20,7 +22,7 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-from fetch import Git, attribute, changed_files, changed_since, commit_owners, last_seen, leftovers, parse_diff, previous_round, review_shas  # noqa: E402
+from fetch import UNCOMMITTED, Git, attribute, changed_files, changed_since, commit_owners, github_repo, last_seen, leftovers, local_layers, local_prs, parse_diff, previous_round, review_shas  # noqa: E402
 
 
 def sh(cwd: pathlib.Path, *args: str) -> str:
@@ -46,6 +48,89 @@ def make_repo(root: pathlib.Path) -> dict[str, str]:
     sh(repo, "git", "commit", "-qm", "pr2")
     pr2 = sh(repo, "git", "rev-parse", "HEAD")
     return {"repo": str(repo), "base": base, "pr1": pr1, "pr2": pr2}
+
+
+def check_local(root: pathlib.Path) -> None:
+    """A self-review's layers: feat-a and feat-b stacked on main, plus uncommitted changes, without touching the index."""
+    repo = root / "local"
+    repo.mkdir()
+    sh(repo, "git", "init", "-q", "-b", "main")
+    sh(repo, "git", "config", "user.email", "t@t")
+    sh(repo, "git", "config", "user.name", "t")
+    (repo / "A.java").write_text("class A {\n}\n")
+    sh(repo, "git", "add", ".")
+    sh(repo, "git", "commit", "-qm", "base")
+    for branch, body in (("feat-a", "  int x;\n"), ("feat-b", "  int x;\n  int y;\n")):
+        sh(repo, "git", "checkout", "-qb", branch)
+        (repo / "A.java").write_text(f"class A {{\n{body}}}\n")
+        sh(repo, "git", "commit", "-qam", f"work on {branch}")
+    (repo / "B.java").write_text("class B {}\n")
+    (repo / "A.java").write_text("class A {\n  int x;\n  long y;\n}\n")
+    sh(repo, "git", "add", "A.java")
+    before = sh(repo, "git", "status", "--porcelain")
+    git = Git(str(repo), via_gh=False)
+    base, layers, warnings = local_layers(git, str(repo), "feat-b")
+    assert [x["branch"] for x in layers] == ["feat-a", "feat-b", UNCOMMITTED] and not warnings, layers
+    assert sh(repo, "git", "status", "--porcelain") == before, "the index or working tree changed"
+    # The same working tree gives the same snapshot, so an untouched tree is not a new version.
+    assert local_layers(git, str(repo), "feat-b")[1][-1]["sha"] == layers[-1]["sha"]
+    assert github_repo(str(repo)) == "local/local"
+    prs = local_prs(git, str(repo), "local/local", base, layers, "me")
+    assert [p["label"] for p in prs.values()] == ["feat-a", "feat-b", "Uncommitted changes"] and prs[1]["title"] == "work on feat-a", prs
+    assert prs[3]["baseRefOid"] == layers[1]["sha"] and not prs[1]["pushed"] and prs[1]["url"] == ""
+    owners = commit_owners(git, base, [1, 2, 3], {n: p["headRefOid"] for n, p in prs.items()})
+    attr = attribute(git, base, [1, 2, 3], {n: p["headRefOid"] for n, p in prs.items()}, owners, "A.java")
+    assert attr == {"2": [1, 2], "3": [3, 3]}, attr
+    # A clean working tree: no uncommitted layer. (A scratch repo, so its stash is its own.)
+    sh(repo, "git", "stash", "push", "-q", "-u", "-m", "rg-test")
+    assert [x["branch"] for x in local_layers(git, str(repo), "feat-b")[1]] == ["feat-a", "feat-b"]
+
+
+def check_self_server(w: pathlib.Path, home: pathlib.Path) -> None:
+    """A self-review round: never posts to GitHub, sends its feedback once, and the waiting command prints it."""
+    from serve import feedback_text, review_id, uncollected, wait_feedback  # noqa: E402
+    refs = ["self:/repo@feat-b"]
+    rid = review_id(refs)
+    assert rid.startswith("self-repo-feat-b-") and rid == review_id(["self:/repo@feat-b"]) != review_id(["self:/repo@feat-c"])
+    rdir = home / "reviews" / rid / "rounds" / "1"
+    shutil.copytree(w, rdir)
+    (rdir / "progress.json").unlink(missing_ok=True)
+    data = json.loads((rdir / "guide.json").read_text())
+    data |= {"mode": "self", "source": {"root": "/repo", "branch": "feat-b"}}
+    (rdir / "guide.json").write_text(json.dumps(data))
+    (home / "reviews" / rid / "review.json").write_text(json.dumps({"id": rid, "refs": refs, "created": 1, "status": "open",
+                                                                    "rounds": [{"n": 1, "effort": "quick", "created": 1}]}))
+    proc = subprocess.Popen([sys.executable, str(HERE / "serve.py"), "--home", str(home), "--port", "0"], stdout=subprocess.PIPE, text=True)
+    url = proc.stdout.readline().strip()
+    token = json.loads((home / "server.json").read_text())["token"]
+
+    def post(path, body):
+        r = urllib.request.Request(url + path, json.dumps(body).encode(), {"Content-Type": "application/json", "X-Review-Token": token})
+        try:
+            return urllib.request.urlopen(r).status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    try:
+        base = f"api/r/{rid}/1"
+        assert post(base + "/review", {"pr": 1, "event": "COMMENT", "body": "x", "comments": []}) == 400
+        fb = {"layers": [{"n": 1, "label": "feat-a", "verdict": "looks good", "summary": "", "comments": []},
+                         {"n": 2, "label": "feat-b", "verdict": "needs changes", "summary": "Tighten y.",
+                          "comments": [{"path": "A.java", "line": 3, "severity": "nit", "body": "long is wide", "code": "  long y;"}]}]}
+        assert post(base + "/feedback", fb) == 200
+        assert post(base + "/feedback", fb) == 409
+        assert set(json.loads((rdir / "posted.json").read_text())) == {"1", "2"}
+        text = feedback_text(rdir, json.loads((rdir / "feedback.json").read_text()))
+        assert "## feat-b: needs changes" in text and "- A.java:3 (nit): long is wide" in text and "at: `long y;`" in text, text
+        with contextlib.redirect_stdout(io.StringIO()):
+            assert uncollected(home, rid).startswith("Feedback from an earlier")
+            assert uncollected(home, rid) is None
+            assert wait_feedback(home, rid, rdir) == 0
+        inbox = json.loads(urllib.request.urlopen(url + "api/reviews").read())["reviews"][0]
+        assert inbox["mode"] == "self" and inbox["branch"] == "feat-b" and inbox["sent"], inbox
+    finally:
+        proc.terminate()
+        proc.wait()
 
 
 def check_server(w: pathlib.Path, home: pathlib.Path) -> None:
@@ -167,9 +252,10 @@ def main(keep: str | None = None) -> None:
         prev.mkdir()
         (prev / "run.json").write_text(json.dumps({"fetched_at": 0, "prs": [{"n": 1, "sha": r["pr1"], "review_sha": r["pr1"]},
                                                                              {"n": 2, "sha": r["pr1"], "review_sha": r["pr1"]}]}))
-        rounds = previous_round(prev, [[1, 2]], heads)
+        names = {1: 1, 2: 2}
+        rounds = previous_round(prev, [[1, 2]], heads, names)
         assert rounds[2][2]["state"] == "ROUND" and last_seen(git, [1, 2], rounds[2])[0]["sha"] == r["pr1"], rounds
-        assert previous_round(prev, [[1, 2]], {1: r["pr1"], 2: r["pr1"]}) == {}
+        assert previous_round(prev, [[1, 2]], {1: r["pr1"], 2: r["pr1"]}, names) == {}
 
         # A removal: a metric family nothing in the repo reads any more, a fixture key, and a two-hop chain
         # (Api.onDuty forwards to Store.onDuty) whose only caller the stack removed.
@@ -191,6 +277,8 @@ def main(keep: str | None = None) -> None:
         assert "odc.review.sms.* (2 names)" in left and "no use left here" in left, left
         assert "external_id" not in left, left
         assert "onDuty has no caller left" in left and "Api.java:3" in left and "Store.java:2" in left, left
+
+        check_local(root)
 
         w = root / "w"
         sid = "1-2"
@@ -292,6 +380,7 @@ def main(keep: str | None = None) -> None:
 
         home = root / "home"
         check_server(w, home)
+        check_self_server(w, root / "self-home")
         if keep:
             shutil.copytree(home, keep, dirs_exist_ok=True)
     print("ok" + (f", fixture in {keep}" if keep else ""))

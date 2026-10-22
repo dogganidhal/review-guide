@@ -459,7 +459,13 @@ const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, 
 const ST = () => DATA.stacks.find((s) => s.id === state.stack);
 const prIndex = (st, n) => st.prs.findIndex((p) => p.n === n);
 const prColor = (st, n) => PR_COLORS[prIndex(st, n) % PR_COLORS.length];
-const prDot = (st, n) => el('span', { class: 'dot', style: `background:${prColor(st, n)}`, title: `#${n}` });
+const SELF = DATA.mode === 'self';
+// A PR's short name: `#3564`, or in a self-review the layer's branch (with its PR number when it has one).
+const prOf = (n) => DATA.stacks.flatMap((s) => s.prs).find((p) => p.n === n);
+const tag = (n) => (SELF ? prOf(n)?.label || `layer ${n}` : `#${n}`);
+// The title next to a tag, left out when the tag already says it (an uncommitted layer, or a branch named like its commit).
+const ptitle = (p) => (SELF && p.title === tag(p.n) ? '' : p.title);
+const prDot = (st, n) => el('span', { class: 'dot', style: `background:${prColor(st, n)}`, title: tag(n) });
 const fileOf = (st, path) => st.files.find((f) => f.path === path);
 const sinceLines = (st, path) => st.since?.files[path];
 const inFilter = (st, f) => state.filter === 'all' || (state.filter === 'since' ? !!sinceLines(st, f.path) : f.role === state.filter);
@@ -511,18 +517,18 @@ function renderTop() {
   const st = ST();
   const n = comments(st).filter((c) => cmState(c).on && !cmState(c).gone).length;
   const stackPick = DATA.stacks.length > 1 ? el('select', { 'aria-label': 'Stack', onchange: (e) => { state.stack = e.target.value; state.file = null; state.view = 'guide'; state.focus = null; save(); render(); } },
-    DATA.stacks.map((s) => el('option', { value: s.id }, s.prs.map((p) => '#' + p.n).join(' → ')))) : null;
+    DATA.stacks.map((s) => el('option', { value: s.id }, s.prs.map((p) => tag(p.n)).join(' → ')))) : null;
   if (stackPick) stackPick.value = st.id;
   const fp = st.prs.find((p) => p.n === state.focus);
   const failingPrs = st.prs.filter((p) => p.checks.failed.length).length;
   const chain = st.prs.length > CHAIN_MAX ? el('details', { class: 'stackmenu' },
-    el('summary', {}, fp ? [prDot(st, fp.n), `#${fp.n}`, el('span', { class: 't' }, fp.title)] : `All ${st.prs.length} PRs`,
+    el('summary', {}, fp ? [prDot(st, fp.n), tag(fp.n), el('span', { class: 't' }, ptitle(fp))] : `All ${st.prs.length} ${SELF ? 'layers' : 'PRs'}`,
       failingPrs ? el('span', { class: 'ci bad' }, `✕ ${failingPrs}`) : null, el('span', { class: 'chev' }, '▾')),
     el('div', { class: 'panel' }, prRows(st))) : el('div', { class: 'chain' }, st.prs.map((p, i) => [
     i ? el('span', { class: 'arrow' }, '→') : null,
     el('button', { class: 'prchip', type: 'button', 'aria-pressed': String(state.focus === p.n), title: `Show only what #${p.n} wrote`,
       onclick: () => { state.focus = state.focus === p.n ? null : p.n; save(); render(); } },
-      prDot(st, p.n), `#${p.n}`, el('span', { class: 't' }, p.title), posted[p.n] ? el('span', { class: 'st verified' }, '✓') : null)]));
+      prDot(st, p.n), tag(p.n), el('span', { class: 't' }, ptitle(p)), posted[p.n] ? el('span', { class: 'st verified' }, '✓') : null)]));
   document.getElementById('top').replaceChildren(...[
     el('a', { class: 'brand', href: '/', title: 'All reviews' }, '← Reviews'), roundPick(), stackPick, chain,
     el('div', { class: 'tabs', role: 'tablist' },
@@ -561,7 +567,7 @@ async function setStatus(action) {
 
 async function finishReview() {
   const left = DATA.stacks.flatMap((s) => s.prs).filter((p) => !posted[p.n]).length;
-  if (left && !confirm(`${plural(left, 'PR has', 'PRs have')} no review posted from this page. Finish anyway? Your drafts stay saved, and you can reopen the review from the inbox.`)) return;
+  if (left && !confirm(SELF ? 'No feedback was sent to the agent from this round. Finish anyway? The agent stops waiting, and your drafts stay saved.' : `${plural(left, 'PR has', 'PRs have')} no review posted from this page. Finish anyway? Your drafts stay saved, and you can reopen the review from the inbox.`)) return;
   if (await setStatus('finish') === 'done') location.href = '/';
 }
 
@@ -575,11 +581,11 @@ function prRows(st) {
       el('span', { class: 'i' }, i + 1),
       el('button', { class: 'pick', type: 'button', 'aria-pressed': String(on), title: on ? 'Show the whole stack' : `Show only what #${p.n} wrote`,
         onclick: () => { state.focus = on ? null : p.n; save(); render(); } },
-        prDot(st, p.n), el('b', {}, `#${p.n}`), el('span', { class: 't', title: p.title }, p.title), posted[p.n] ? el('span', { class: 'st verified' }, '✓') : null),
+        prDot(st, p.n), el('b', {}, tag(p.n)), el('span', { class: 't', title: p.title }, ptitle(p)), posted[p.n] ? el('span', { class: 'st verified' }, '✓') : null),
       c.failed.length ? el('span', { class: 'ci bad', title: c.failed.join('\n') }, `✕ ${c.failed.length} failing`)
         : c.pending ? el('span', { class: 'ci wait' }, `${c.pending} pending`)
         : c.passed ? el('span', { class: 'ci ok' }, '✓ green') : el('span', { class: 'ci none' }, 'no CI'),
-      ext(p.url, '↗', 'gh'),
+      p.url ? ext(p.url, '↗', 'gh') : el('span', { class: 'gh' }),
       c.failed.length ? el('div', { class: 'fails' }, c.failed.join(' · ')) : null);
   });
 }
@@ -883,7 +889,7 @@ function commentCard(st, c, { inDiff } = {}) {
   const cs = cmState(c);
   const rerender = () => { save(); render(); };
   const where = c.path ? `${c.path.split('/').pop()}:${c.line}` : 'review summary';
-  const target = el('span', { class: 'to', title: c.path ? `Posted on #${c.pr}` : `Posted on #${c.pr}, in the review summary: no line the stack changed carries it` }, '→', prDot(st, c.pr), `#${c.pr}`, ' · ', c.link ? ext(c.link, where) : where);
+  const target = el('span', { class: 'to', title: SELF ? `Sent to the agent with ${tag(c.pr)}` : c.path ? `Posted on #${c.pr}` : `Posted on #${c.pr}, in the review summary: no line the stack changed carries it` }, '→', prDot(st, c.pr), tag(c.pr), ' · ', c.link ? ext(c.link, where) : where);
   // General comments show the code they cite up front; line comments sit on their line already.
   const cites = !c.path && c.evidence?.length ? el('div', { class: 'cites' }, 'In ', evLinks(st, c)) : null;
   const proof = c.status ? el('div', { class: 'proof' }, el('b', { class: 'st ' + c.status }, STATUS[c.status]), c.note ? [' ', c.note] : null,
@@ -914,7 +920,7 @@ function commentCard(st, c, { inDiff } = {}) {
     el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, DATA.viewer.slice(0, 1).toUpperCase()), c.custom ? 'Your comment' : 'In your review'),
       types, el('span', { class: 'grow' }), target),
     inDiff ? null : snippet(st, c),
-    el('div', { class: 'cmb' }, ta, PREFIX[cs.sev] ? el('div', { class: 'ev' }, `Posted as “${PREFIX[cs.sev]}…”`) : null, cites && el('div', { class: 'ev' }, 'Posted with links to the code it cites.'), c.custom ? null : proof),
+    el('div', { class: 'cmb' }, ta, PREFIX[cs.sev] && !SELF ? el('div', { class: 'ev' }, `Posted as “${PREFIX[cs.sev]}…”`) : null, cites && !SELF ? el('div', { class: 'ev' }, 'Posted with links to the code it cites.') : null, c.custom ? null : proof),
     el('div', { class: 'acts' },
       c.custom
         ? el('button', { class: 'btn', type: 'button', onclick: () => { state.extra[st.id] = extras(st).filter((x) => x.id !== c.id); rerender(); } }, 'Delete')
@@ -975,7 +981,8 @@ function tiles(st) {
   const failing = st.prs.filter((p) => p.checks.failed.length);
   const pending = st.prs.reduce((t, p) => t + p.checks.pending, 0), passed = st.prs.reduce((t, p) => t + p.checks.passed, 0);
   const failedNames = failing.flatMap((p) => p.checks.failed);
-  const ci = failing.length ? { cls: 'bad', v: `✕ ${plural(failedNames.length, 'check', 'checks')} failing`, s: (st.prs.length > 1 ? failing.map((p) => '#' + p.n).join(', ') + ': ' : '') + failedNames.join(', ') }
+  const unpushed = SELF && st.prs.every((p) => !p.pushed);
+  const ci = unpushed ? { cls: '', v: 'Not pushed', s: 'no CI run on this local work yet' } : failing.length ? { cls: 'bad', v: `✕ ${plural(failedNames.length, 'check', 'checks')} failing`, s: (st.prs.length > 1 ? failing.map((p) => tag(p.n)).join(', ') + ': ' : '') + failedNames.join(', ') }
     : pending ? { cls: 'wait', v: `◌ ${pending} pending`, s: `${passed} passed so far` }
     : { cls: 'ok', v: '✓ Green', s: passed ? `all ${plural(passed, 'check', 'checks')} passed` : 'no checks reported' };
   const live = comments(st).filter((c) => c.axis && c.status !== 'refuted' && !cmState(c).gone);
@@ -991,7 +998,7 @@ function tiles(st) {
     tile('', 'Time to review', `about ${duration(est.mins)}`,
       st.pending ? 'a first estimate; the guide sorts the files next' : `read ${est.nRead}, skim ${est.nSkim}${est.nSkip ? `, skip ${est.nSkip}` : ''} files`),
     tile('', 'Size', [el('span', { class: 'add' }, `+${num(adds)}`), el('span', { class: 'del' }, `−${num(dels)}`)],
-      `${plural(st.files.length, 'file', 'files')}${st.prs.length > 1 ? ` in ${st.prs.length} PRs` : ''}`,
+      `${plural(st.files.length, 'file', 'files')}${st.prs.length > 1 ? ` in ${st.prs.length} ${SELF ? 'layers' : 'PRs'}` : ''}`,
       el('div', { class: 'sizebar', 'aria-hidden': 'true' }, el('span', { class: 'a', style: `width:${adds / Math.max(1, adds + dels) * 100}%` }), el('span', { class: 'd', style: `flex:1` }))),
     tile(ci.cls, 'CI', ci.v, ci.s),
     tile(found.cls, 'Reviewers found', [busy ? el('span', { class: 'spin' }) : null, found.v],
@@ -1007,16 +1014,16 @@ function guideView(st) {
   const listKey = 'prs:' + st.id;
   const warnings = DATA.warnings.filter((w) => st.prs.some((p) => w.includes('#' + p.n)));
   return [
-    el('h1', {}, st.prs.length > 1 ? `Stack of ${st.prs.length} PRs` : st.prs[0].title),
+    el('h1', {}, SELF ? `Self-review of ${DATA.source?.branch || 'local work'}${st.prs.length > 1 ? `, ${st.prs.length} layers` : ''}` : st.prs.length > 1 ? `Stack of ${st.prs.length} PRs` : st.prs[0].title),
     el('p', { class: 'summary' }, st.summary),
     tiles(st),
     el('div', { class: 'meta' },
-      ext(st.compare, st.prs.length > 1 ? 'Whole stack on GitHub ↗' : 'On GitHub ↗'),
+      st.compare ? ext(st.compare, st.prs.length > 1 ? 'Whole stack on GitHub ↗' : 'On GitHub ↗') : null,
       !BOOT.live ? null : el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
     rerunBox(st),
     el('div', { class: 'runpanel', 'aria-live': 'polite' }),
     el('details', { class: 'prlist', open: state.open[listKey] ?? st.prs.length <= CHAIN_MAX, ontoggle: (e) => { state.open[listKey] = e.target.open; save(); } },
-      el('summary', {}, st.prs.length > 1 ? `${st.prs.length} PRs in this stack · ` : 'Pull request · ', el('span', { class: 'ci ' + (failing.length ? 'bad' : pending ? 'wait' : 'ok') }, ci)),
+      el('summary', {}, SELF ? `${plural(st.prs.length, 'layer', 'layers')} · ` : st.prs.length > 1 ? `${st.prs.length} PRs in this stack · ` : 'Pull request · ', SELF && st.prs.every((p) => !p.pushed) ? el('span', { class: 'ci none' }, 'not pushed') : el('span', { class: 'ci ' + (failing.length ? 'bad' : pending ? 'wait' : 'ok') }, ci)),
       prRows(st)),
     st.since ? sinceBox(st) : null,
     warnings.length ? el('details', { class: 'warnbox' }, el('summary', {}, warnings.length === 1 ? 'One thing about this stack' : `${warnings.length} things about this stack`),
@@ -1057,7 +1064,7 @@ function fileView(st) {
       nav(-1), nav(1),
       el('span', { class: 'why' }, el('span', { class: 'role ' + f.role, style: 'display:inline-block;margin-right:6px' }), `${f.role} · ${f.why} · `,
         f.status !== 'modified' ? `${f.status} · ` : '', `+${f.adds} −${f.dels} · `,
-        f.prs.map((n, j) => [j ? ', ' : 'changed by ', ext(f.pr_links[n], `#${n}`)]), ' · ', ext(f.link, 'stack diff ↗'),
+        f.prs.map((n, j) => [j ? ', ' : 'changed by ', f.pr_links[n] ? ext(f.pr_links[n], tag(n)) : tag(n)]), ' · ', f.link ? ext(f.link, 'stack diff ↗') : null,
         sinceLines(st, f.path) ? [' · ', el('span', { class: 'newmark' }, 'new'), ` ${plural(sinceLines(st, f.path).length, 'line', 'lines')} changed since your last review`] : null)),
     general.map((c) => commentCard(st, c, { inDiff: true })),
     f.hunks.length ? codeBlock(st, f.hunks, f.path) : el('div', { class: 'empty' }, f.status === 'deleted' ? 'Deleted in this stack.' : 'No text diff to show (binary, too large, or rename only). Open it on GitHub.')];
@@ -1132,7 +1139,8 @@ function rerunBox(st) {
   const moved = stale(st);
   if (!moved.length && !rerun.running && !rerun.error && !rerunOpen) return null;
   if (rerun.running) return null;  // the run panel shows it
-  const msg = moved.length ? `${moved.length === st.prs.length && moved.length > 1 ? 'Every PR' : moved.map((p) => '#' + p.n).join(', ')} ${moved.length === 1 ? 'has' : 'have'} new commits since this guide was built. Posting is blocked until it is rerun.`
+  const msg = SELF && moved.length ? `${moved.map((p) => tag(p.n)).join(', ')} ${moved.length === 1 ? 'has' : 'have'} new commits since this guide was built. Rerun it for a new round; your drafts carry over.`
+    : moved.length ? `${moved.length === st.prs.length && moved.length > 1 ? 'Every PR' : moved.map((p) => tag(p.n)).join(', ')} ${moved.length === 1 ? 'has' : 'have'} new commits since this guide was built. Posting is blocked until it is rerun.`
     : 'Write the guide again as a new round. Your drafts and viewed files carry over, and this round stays readable.';
   return el('div', { class: 'rerunbox' + (moved.length ? ' stale' : '') },
     el('span', { class: 'msg' }, msg),
@@ -1201,7 +1209,77 @@ async function postMany(list) {
   sending = null; render();
 }
 
+// A self-review sends one message to the implementing agent instead of posting per PR.
+const SELF_VERDICTS = [['APPROVE', 'Looks good'], ['REQUEST_CHANGES', 'Needs changes']];
+let feedbackErr = '', feedbackBusy = false;
+
+function selfPayload(st) {
+  const layers = st.prs.map((p) => {
+    const vs = verdictState(p);
+    const sel = comments(st).filter((c) => c.pr === p.n && cmState(c).on && !cmState(c).gone && cmState(c).text.trim());
+    const code = (c) => c.path ? fileOf(st, c.path)?.hunks.flat().find((r) => r.k !== '-' && r.n === c.line)?.t || '' : '';
+    return { n: p.n, label: tag(p.n), verdict: { APPROVE: 'looks good', REQUEST_CHANGES: 'needs changes' }[vs.event] || null, summary: vs.body.trim(),
+      comments: sel.map((c) => ({ path: c.path, line: c.line, start_line: c.start_line || null, severity: SEV[cmState(c).sev], body: cmState(c).text.trim(), code: code(c) })) };
+  });
+  return { layers, text: '' };
+}
+
+async function sendFeedback(st) {
+  const data = selfPayload(st);
+  const n = data.layers.reduce((t, x) => t + x.comments.length, 0);
+  if (!confirm(`Send ${plural(n, 'comment', 'comments')} and your verdicts to the agent? Nothing leaves this machine, and this round cannot send again.`)) return;
+  feedbackBusy = true; feedbackErr = ''; render();
+  try {
+    flush();
+    const r = await fetch(`${API}/feedback`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': TOKEN }, body: JSON.stringify(data) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    for (const x of data.layers) posted[x.n] = `sent:${j.sent_at}`;
+  } catch (e) { feedbackErr = e.message; }
+  feedbackBusy = false; render();
+}
+
+function selfSendView(st) {
+  const data = selfPayload(st);
+  const sentAt = Object.values(posted).find((v) => String(v).startsWith('sent:'));
+  const n = data.layers.reduce((t, x) => t + x.comments.length, 0), judged = data.layers.filter((x) => x.verdict).length;
+  const waiting = comments(st).filter((c) => !cmState(c).on && !cmState(c).gone && c.status === 'verified');
+  const time = sentAt && new Date(+sentAt.slice(5) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return [el('h1', {}, 'Your review'),
+    el('p', { class: 'summary' }, sentAt ? `Sent to the agent at ${time}. Rerun the guide once it has worked on it, for the next round.`
+      : `${plural(n, 'comment', 'comments')} · ${judged} of ${plural(data.layers.length, 'layer', 'layers')} with a verdict. This goes to the agent working on the code, never to GitHub.`),
+    rerunBox(st),
+    el('div', { class: 'runpanel', 'aria-live': 'polite' }),
+    sentAt ? null : el('div', { class: 'bulk' },
+      waiting.length ? el('button', { class: 'btn', type: 'button', disabled: feedbackBusy, onclick: () => { waiting.forEach((c) => { cmState(c).on = true; }); save(); render(); } },
+        `Add ${plural(waiting.length, 'suggestion', 'suggestions')} checked in the code`) : null,
+      el('span', { class: 'grow' }),
+      el('button', { class: 'btn primary', type: 'button', disabled: feedbackBusy || (!n && !judged), onclick: () => sendFeedback(st) },
+        feedbackBusy ? 'Sending…' : 'Send to the agent')),
+    feedbackErr ? el('p', { class: 'status err' }, feedbackErr) : null,
+    lostBox(st),
+    el('div', { class: 'sendlist' }, st.prs.map((p) => {
+      const vs = verdictState(p), key = 'send:' + p.n, open = state.open[key] ?? true, mine = comments(st).filter((c) => c.pr === p.n);
+      const count = data.layers.find((x) => x.n === p.n).comments.length;
+      const seg = el('span', { class: 'seg', role: 'group', 'aria-label': 'Verdict' }, SELF_VERDICTS.map(([v, l]) =>
+        el('button', { type: 'button', class: v, 'aria-pressed': String(vs.event === v), disabled: !!sentAt, onclick: () => { vs.event = vs.event === v ? null : v; save(); render(); } }, l)));
+      const row = el('div', { class: 'srow' + (sentAt ? ' done' : '') },
+        el('button', { class: 'pick', type: 'button', 'aria-expanded': String(open), onclick: () => { state.open[key] = !open; save(); render(); } },
+          el('span', { class: 'chev' }, open ? '▾' : '▸'), prDot(st, p.n), el('b', {}, tag(p.n)), el('span', { class: 't', title: p.title }, ptitle(p))),
+        el('span', { class: 'cnt' }, count ? plural(count, 'comment', 'comments') : 'no comment'), seg);
+      if (!open) return row;
+      const body = el('textarea', { 'aria-label': 'Summary for the agent', placeholder: 'Optional: what the agent should keep in mind for this layer', disabled: !!sentAt,
+        oninput: (e) => { vs.body = e.target.value; save(); } });
+      body.value = vs.body;
+      row.append(el('div', { class: 'sbody' },
+        mine.length ? mine.map((m) => commentCard(st, m)) : el('p', { class: 'verdict' }, 'No comment on this layer.'),
+        el('div', { class: 'sec' }, 'Summary for the agent'), body));
+      return row;
+    }))];
+}
+
 function sendView(st) {
+  if (SELF) return selfSendView(st);
   const rows = st.prs.map((p) => ({ p, ...reviewOf(st, p) }));
   const open = rows.filter((x) => !posted[x.p.n]), done = rows.filter((x) => posted[x.p.n]);
   const ready = open.filter((x) => x.ready);
@@ -1239,7 +1317,7 @@ function lostBox(st) {
   return el('div', { class: 'lostbox' }, el('b', {}, `${plural(mine.length, 'comment', 'comments')} from the previous round could not be placed`),
     ' on the new diff: the line changed or went away. Copy what still applies into a new comment.',
     mine.map((c) => el('div', { class: 'lost' },
-      el('p', {}, el('span', { class: 'where' }, `#${c.pr} · ${c.path ? `${c.path.split('/').pop()}:${c.line}` : 'review summary'}`), el('br'), c.text),
+      el('p', {}, el('span', { class: 'where' }, `${tag(c.pr)} · ${c.path ? `${c.path.split('/').pop()}:${c.line}` : 'review summary'}`), el('br'), c.text),
       el('button', { class: 'btn', type: 'button', onclick: () => { state.lost = state.lost.filter((x) => x !== c); save(); render(); } }, 'Dismiss'))));
 }
 
@@ -1260,7 +1338,7 @@ function prRow(st, x, busy) {
     : last ? el('span', { class: 'status faint' }, `Last round you ${VERB[{ APPROVED: 'APPROVE', CHANGES_REQUESTED: 'REQUEST_CHANGES' }[last.state] || 'COMMENT']}${last.state === 'APPROVED' ? 'd' : 'ed'} on ${last.at.slice(0, 10)}.`) : null;
   const row = el('div', { class: 'srow' + (done ? ' done' : '') },
     el('button', { class: 'pick', type: 'button', 'aria-expanded': String(open), onclick: toggle },
-      el('span', { class: 'chev' }, open ? '▾' : '▸'), prDot(st, p.n), el('b', {}, `#${p.n}`), el('span', { class: 't', title: p.title }, p.title)),
+      el('span', { class: 'chev' }, open ? '▾' : '▸'), prDot(st, p.n), el('b', {}, tag(p.n)), el('span', { class: 't', title: p.title }, ptitle(p))),
     info, done ? el('span') : seg,
     status ? el('div', { class: 'sline' }, status) : null);
   if (!open) return row;

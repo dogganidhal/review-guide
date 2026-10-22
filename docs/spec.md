@@ -61,7 +61,30 @@ One server runs per machine, on port 7357 (a free port when that one is taken). 
 - **Review page:** `/r/<id>` is the latest round with a page; `/r/<id>/<n>` is a given round. The brand in the top bar goes back to the inbox. A round picker appears once two rounds have pages. An earlier round is read-only: a banner says so and links to the latest round, and the server refuses its saves and posts. While the first round is still fetching, the review URL shows a small page with the runner's status that reloads itself.
 - **Finish review:** replaces Close. It marks the review done and goes back to the inbox, after a confirmation when some PRs have no review. A finished review shows "Reopen" instead. Its styling follows the old Close button: faint until a review is posted, primary ("Done · Finish review") once every PR has one.
 
-### Rerun from the page
+### Self-review (`/review-guide:self-review`)
+
+The same review, run from the session that is implementing the change, with the feedback going back to that session instead of GitHub. The skill runs `serve.py open --self --wait-feedback` in the background and ends its turn. When the user sends feedback from the page, the command exits and prints it, and Claude Code wakes the agent with it.
+
+- **Source:** the local branch stack of the repository the session works in.
+  - Layers are every local branch whose tip lies between the merge base with the default branch and the current branch (or `--branch`), bottom first, plus "Uncommitted changes" when the working tree differs. The uncommitted layer is a snapshot commit built in a throwaway index with fixed dates, so the real index, working tree and branches are untouched, and an unchanged tree gives the same commit. The newest snapshot is kept at `refs/review-guide/self-snapshot`.
+  - Layers are numbered 1..k and handled like PRs by attribution, routing and the agents. The brief says it is a self-review, and that `#N` is a layer, not a GitHub PR.
+  - A layer whose branch has an open PR takes the PR's title, description and linked issues. It takes the PR's CI only when the PR head equals the local tip; otherwise it is described from its commit messages.
+- **Review id:** `self:<repo root>@<branch>`. The same branch run again is a new round of the same review, with drafts carried over and "Since the previous round" marking what the agent changed. Layers are matched across rounds by branch name.
+- **Page** (`mode: self`):
+  - layer labels (branch, or `#123 · branch` with a PR) replace PR numbers everywhere;
+  - the title is "Self-review of <branch>";
+  - the CI tile says "Not pushed" when no layer has a matching PR;
+  - GitHub links are shown only where a pushed PR exists;
+  - the heads check compares local branch tips.
+- **Your review:** one row per layer with "Looks good" or "Needs changes", a summary for the agent, and the layer's findings, then one "Send to the agent" button. It sends once per round (`POST /api/r/<id>/<n>/feedback`, which writes `feedback.json` and marks the layers sent); the next pass is a new round. The server refuses GitHub posting on a self-review.
+- **What the agent gets:** per layer, the verdict and summary, then one `- path:line (severity): comment` line per comment with `at:` quoting the line it was written on, since the agent may have edited the file since. The skill tells the agent to address every comment, answer questions, run the checks, and not commit or push unless asked.
+- **Edge cases:**
+  - Finishing the review without sending ends the wait with a note.
+  - A Rerun from the page moves the wait to the new round.
+  - Feedback sent after the waiting session ended is printed by the next `--self` run, before any new round starts.
+- **Inbox:** a "self" tag, the branch name as title, the layers as chips, and "feedback sent" or "no feedback sent yet".
+
+
 
 The page asks the server for the PRs' current heads (one GraphQL call, cached a minute) when it opens and each time the tab becomes visible. When a head moved, both tabs show a banner: which PRs have new commits, that posting is blocked, an effort picker, and "Rerun the guide". The meta chips also carry "<effort> guide · Rerun ↻" to rerun on unchanged heads.
 
