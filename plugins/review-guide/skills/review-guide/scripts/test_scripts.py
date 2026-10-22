@@ -67,20 +67,26 @@ def main(keep: str | None = None) -> None:
         assert changed_since(git, r["pr1"], r["pr2"], {"A.java", "B.java"}) == {"A.java": [3, 4], "B.java": [1]}
         assert last_seen(git, [1, 2], {1: None, 2: None}) == (None, None)
 
-        # A removal: the metric name is still read elsewhere, and `notifyLater` lost its only caller.
+        # A removal: a metric family nothing in the repo reads any more, a fixture key, and a two-hop chain
+        # (Api.onDuty forwards to Store.onDuty) whose only caller the stack removed.
         rm = root / "rm"
-        rm.mkdir()
+        (rm / "mappings").mkdir(parents=True)
         sh(rm, "git", "init", "-q", "-b", "main")
-        (rm / "Job.java").write_text('class Job {\n  void run() { notifyLater(); counter("odc.review.sms_sent"); }\n  void notifyLater() {}\n}\n')
-        (rm / "dash.yml").write_text("query: odc.review.sms_sent\n")
+        (rm / "Job.java").write_text('class Job {\n  void run() {\n    api.onDuty();\n    counter("odc.review.sms.sent");\n'
+                                     '    counter("odc.review.sms.failed");\n  }\n}\n')
+        (rm / "Api.java").write_text("class Api {\n  public List<String> onDuty() {\n    return store.onDuty();\n  }\n}\n")
+        (rm / "Store.java").write_text("interface Store {\n  List<String> onDuty();\n}\n")
+        (rm / "mappings" / "sms.json").write_text('{"external_id": "x", "status": "sent"}\n')
         sh(rm, "git", "add", ".")
         sh(rm, "git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base")
-        (rm / "Job.java").write_text("class Job {\n  void run() {}\n  void notifyLater() {}\n}\n")
+        (rm / "Job.java").write_text("class Job {\n  void run() {\n  }\n}\n")
+        (rm / "mappings" / "sms.json").write_text("{}\n")
         sh(rm, "git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "remove")
         rg = Git(str(rm), via_gh=False)
         left = "\n".join(leftovers(rg, "HEAD", parse_diff(rg("diff", "HEAD~1", "HEAD"))))
-        assert "odc.review.sms_sent (removed string in Job.java; 1 uses left)" in left and "dash.yml:1" in left, left
-        assert "notifyLater has no caller left" in left, left
+        assert "odc.review.sms.* (2 names)" in left and "no use left here" in left, left
+        assert "external_id" not in left, left
+        assert "onDuty has no caller left" in left and "Api.java:3" in left and "Store.java:2" in left, left
 
         w = root / "w"
         sid = "1-2"

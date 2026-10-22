@@ -258,7 +258,12 @@ COMMON_NAMES = frozenset({"main", "toString", "equals", "hashCode", "build", "cl
 BRIEF_BUDGET = 220_000
 MAX_SYMBOLS, MAX_REFS = 40, 6
 CALL = re.compile(r"\b([a-z]\w{3,})\s*\(")
-NAME_LITERAL = re.compile(r"[\"']([a-z][a-z0-9]*(?:[._-][a-z0-9]+){1,})[\"']")
+# A string that names something read outside the code: `odc.review.sms_sent`, `on_demand_care_chat_send_sms_pro`.
+# Dotted names need two dots; snake names need three parts. A JSON or YAML key (`"external_id":`) is not one.
+EXTERNAL_NAME = re.compile(r"[\"']((?:[a-z][a-z0-9_]*\.){2,}[a-z][a-z0-9_]*|[a-z][a-z0-9]*(?:_[a-z0-9]+){2,})[\"'](?!\s*:)")
+FIXTURE_PATH = re.compile(r"(^|/)(fixtures?|mocks?|wiremock|mappings|testdata|test-data|__snapshots__|load-?tests?)(/|$)|(^|/)backend-load-test/")
+DOC_PATH = re.compile(r"\.(md|mdx|rst|txt|adoc)$")
+MAX_LEFTOVERS = 12
 TICKET = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d+)\b")
 
 
@@ -309,42 +314,77 @@ def references(git: Git, tip: str, parsed: dict, stack_paths: set[str]) -> list[
 
 
 def leftovers(git: Git, tip: str, parsed: dict) -> list[str]:
-    """What the stack removed but the repo still touches: removed declarations and name-like strings (metric, config,
-    event or column names) still found at the tip, and functions whose last caller the stack removed."""
-    removed, called, added_text = {}, set(), []
+    """What the stack removed that something may still need, for the reviewers. Only removed lines of production code
+    and config count, never tests, fixtures or docs. Three kinds, most useful first:
+    - external names (metric, config key, event, feature switch), listed even with no use left in the repo, because
+      dashboards, monitors and other services read them from outside;
+    - removed declarations the repo still references;
+    - functions whose callers the stack removed, where only declarations and delegations remain."""
+    names, decls, called, added_text = {}, {}, set(), []
     for path, d in parsed.items():
+        prod = not (TEST_PATH.search(path) or FIXTURE_PATH.search(path) or OMIT_PATH.search(path) or DOC_PATH.search(path))
         for line in (line for hunk in d["hunks"] for line in hunk):
             if line["k"] == "+":
                 added_text.append(line["t"])
-            elif line["k"] == "-":
-                for rx in DECLARATIONS:
-                    for m in rx.finditer(line["t"]):
-                        removed.setdefault(m[1], ("declared", path))
-                for m in NAME_LITERAL.finditer(line["t"]):
-                    removed.setdefault(m[1], ("string", path))
+            elif line["k"] == "-" and prod:
                 if CODE_PATH.search(path):
+                    for rx in DECLARATIONS:
+                        for m in rx.finditer(line["t"]):
+                            decls.setdefault(m[1], path)
                     called.update(m[1] for m in CALL.finditer(line["t"]))
+                for m in EXTERNAL_NAME.finditer(line["t"]):
+                    names.setdefault(m[1], path)
     added = "\n".join(added_text)
-    names = [n for n in removed if n not in COMMON_NAMES and n not in added][:MAX_SYMBOLS]
-    callees = [n for n in called - set(removed) - COMMON_NAMES if not re.search(rf"\b{re.escape(n)}\s*\(", added)][:MAX_SYMBOLS]
+    names = {n: p for n, p in names.items() if n not in added}
+    decls = {n: p for n, p in decls.items() if n not in COMMON_NAMES and not re.search(rf"\b{re.escape(n)}\b", added)}
+    callees = [n for n in called - set(decls) - COMMON_NAMES if not re.search(rf"\b{re.escape(n)}\s*\(", added)]
 
-    def hits(name: str) -> list[str]:
-        out = (git("grep", "-n", "-w", "-I", "-F", "-e", name, tip, check=False) or "").splitlines()
-        return [h.split(":", 1)[1][:160] for h in out]
+    def hits(name: str) -> list[tuple[str, int, str]]:
+        out = []
+        for raw in (git("grep", "-n", "-w", "-I", "-F", "-e", name, tip, check=False) or "").splitlines():
+            parts = raw.split(":", 3)
+            if len(parts) == 4 and parts[2].isdigit():
+                out.append((parts[1], int(parts[2]), parts[3].strip()[:160]))
+        return out
 
     with concurrent.futures.ThreadPoolExecutor(8) as pool:
-        found = dict(zip(names, pool.map(hits, names)))
+        external = dict(zip(names, pool.map(hits, names)))
+        dangling = dict(zip(decls, pool.map(hits, decls)))
         orphans = dict(zip(callees, pool.map(hits, callees)))
+    rows = lambda found: [f"{p}:{n}: {t}" for p, n, t in found[:MAX_REFS]]  # noqa: E731
     out = []
-    for name, rows in found.items():
-        kind, path = removed[name]
-        if rows:
-            out += [f"### {name} (removed {kind} in {path}; {len(rows)} uses left)", *rows[:MAX_REFS], ""]
-    for name, rows in orphans.items():
-        # One hit is the declaration itself: the stack removed the last caller.
-        if len(rows) == 1:
-            out += [f"### {name} has no caller left", rows[0], ""]
+    # One entry per family of dotted names (`odc.review_duty.notifications.*`), whatever is left in the repo.
+    families: dict[str, list[str]] = defaultdict(list)
+    for name in names:
+        # The family drops the last segment, and a metric type suffix before it (`.count`, `.total`).
+        stem = re.sub(r"\.(count|total|sum|max|min|avg|rate|gauge|timer|seconds|ms)$", "", name)
+        families[stem.rsplit(".", 1)[0] + ".*" if stem.count(".") >= 2 else name].append(name)
+    for key, members in list(families.items())[:MAX_LEFTOVERS]:
+        left = [h for m in members for h in external[m]]
+        title = f"{key} ({len(members)} names)" if len(members) > 1 else members[0]
+        where = f"{len(left)} uses left here" if left else "no use left here"
+        out += [f"### {title}: removed from {names[members[0]]}; {where}. May be read outside this repository "
+                "(dashboards, monitors, other services).", *rows(left), ""]
+    for name, found in [(n, f) for n, f in dangling.items() if f][:MAX_LEFTOVERS]:
+        out += [f"### {name} (removed from {decls[name]}; {len(found)} uses left)", *rows(found), ""]
+    for name, found in orphans.items():
+        # The stack removed the calls; what is left only declares the method or forwards it to the next layer.
+        if found and not any(is_use(name, t) for _, _, t in found):
+            out += [f"### {name} has no caller left; still declared in:", *rows(found), ""]
     return out
+
+
+def is_use(name: str, text: str) -> bool:
+    """Whether a line really calls `name`: not its declaration, not an interface method, and not a one-line delegation
+    (`return x.name(`, `x::name`) that only forwards a call nobody makes any more."""
+    n = re.escape(name)
+    if any(m[1] == name for rx in DECLARATIONS for m in rx.finditer(text)):
+        return False
+    if re.search(rf"^\s*[\w<>,.?\[\] ]+\s+{n}\s*\([^)]*\)\s*;", text):  # an interface or abstract method
+        return False
+    if re.search(rf"return\s+[\w.]+\.{n}\s*\(|::{n}\b", text):
+        return False
+    return bool(re.search(rf"\b{n}\s*\(", text))
 
 
 def jira_issue(key: str) -> str | None:
