@@ -37,7 +37,7 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 SID = r"\d+(?:-\d+)*"
 # The only files a bundle may hold, relative to the round's work directory.
 ALLOWED = re.compile(rf"^(?:run\.json|{SID}/(?:guide|attribution)\.json|{SID}/target\.diff|{SID}/review-(?:{'|'.join(AXES)})\.json"
-                     rf"|{SID}/verify/[\w.-]+\.json|{SID}/tip/.+|\d+/hunks\.json)$")
+                     rf"|{SID}/verify/[\w.-]+\.json|{SID}/tip/.+|\d+/hunks\.json|threads/[\w-]+\.json)$")
 
 # (kind, rule, pattern): about fifteen, tuned for few false alarms. A reminder, not a guarantee.
 RULES = [
@@ -52,7 +52,7 @@ RULES = [
     ("secret", "credentials in a URL", re.compile(r"\b[a-z][a-z0-9+.-]*://[^\s:/@\"'<>]+:[^\s@/\"'<>${}]{3,}@[\w.-]+")),
     ("secret", "password in config", re.compile(r"(?i)\b(?:password|passwd|pwd)\b[\"']?\s*[:=]\s*[\"']?(?![\"'$<{(]|null\b|none\b|true\b|false\b|changeme|example|test|dummy|xxx)[^\s\"',;)]{6,}")),
     ("secret", "secret or key in config", re.compile(r"(?i)\b(?:secret|api[_-]?key|access[_-]?token|auth[_-]?token)[\"']?\s*[:=]\s*[\"'](?![$<{])[\w./+=-]{16,}[\"']")),
-    ("personal", "email address", re.compile(r"\b(?!git@)[\w.+-]+@(?!example\.|test\.|localhost|users\.noreply)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b")),
+    ("personal", "email address", re.compile(r"\b(?!git@)[\w.+-]+@(?!example\.|test\.|localhost|users\.noreply)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?!(?:ya?ml|json|xml|java|kts?|tsx?|jsx?|mjs|md|py|rb|go|rs|sql|properties|txt|html?|css|svg|toml|ini|sh|lock|class|jar)\b)[A-Za-z]{2,}\b")),
     ("personal", "French phone number", re.compile(r"(?<![\w.])(?:(?:\+|00)33[\s.-]?|0)[1-9](?:[\s.-]?\d{2}){4}(?![\w.])")),
     ("personal", "French social security number (NIR)", re.compile(r"(?<!\d)[12][\s.]?\d{2}[\s.]?(?:0[1-9]|1[0-2])[\s.]?(?:\d{2}|2[AB])[\s.]?\d{3}[\s.]?\d{3}(?:[\s.]?\d{2})?(?!\d)")),
 ]
@@ -149,7 +149,12 @@ def refuted_ids(rdir: pathlib.Path, sid: str) -> dict[str, set[str]]:
     return out
 
 
-def bundle_files(rdir: pathlib.Path, run: dict, hide_refuted: bool) -> dict[str, str]:
+def plain_thread(t: dict) -> dict:
+    """A question thread as shared: the conversation and what it proposed, without the sender's session."""
+    return {k: v for k, v in t.items() if k not in ("ctx", "live", "error")} | {"session_id": None, "status": "idle" if t.get("status") != "failed" else "failed"}
+
+
+def bundle_files(rdir: pathlib.Path, run: dict, hide_refuted: bool, threads: list[dict] = ()) -> dict[str, str]:
     """The round's source files a receiving server rebuilds from: no checkout path, no viewer, no logs, no brief."""
     run = json.loads(json.dumps(run))
     run["checkout"], run["viewer"] = None, "you"
@@ -160,6 +165,8 @@ def bundle_files(rdir: pathlib.Path, run: dict, hide_refuted: bool) -> dict[str,
     for st in run["stacks"]:
         st["since"] = None
     files = {"run.json": json.dumps(run)}
+    for t in threads:
+        files[f"threads/{t['id']}.json"] = json.dumps(t)
     for p in run["prs"]:
         if (rdir / str(p["n"]) / "hunks.json").is_file():
             files[f"{p['n']}/hunks.json"] = (rdir / str(p["n"]) / "hunks.json").read_text()
@@ -206,9 +213,10 @@ def seed_of(ui: dict, data: dict) -> dict:
     return {"cm": {k: v for k, v in cm.items() if k in keep}, "extra": extra}
 
 
-def export(rdir: pathlib.Path, ui: dict, opts: dict, n: int, rid: str) -> tuple[str, dict]:
+def export(rdir: pathlib.Path, ui: dict, opts: dict, n: int, rid: str, threads: list[dict] = ()) -> tuple[str, dict]:
     """The file for round `n` and its report: size, biggest files, check hits, what it holds. `opts`: `mine` (include the
-    sender's picked comments) and `refuted` (False hides refuted findings)."""
+    sender's picked comments), `refuted` (False hides refuted findings) and `threads` (include the questions and answers,
+    passed in `threads`)."""
     data, run = _json(rdir / "guide.json"), _json(rdir / "run.json")
     if not data or not run:
         raise ShareError("this round has no built guide to share")
@@ -218,7 +226,11 @@ def export(rdir: pathlib.Path, ui: dict, opts: dict, n: int, rid: str) -> tuple[
     if hide:
         for st in data["stacks"]:
             st["comments"] = [c for c in st["comments"] if c["status"] != "refuted"]
-    seed = seed_of(ui, data) if mine else {"cm": {}, "extra": {}}
+    picked = seed_of(ui, data)
+    seed = picked if mine else {"cm": {}, "extra": {}}
+    available = len(threads)
+    threads = [plain_thread(t) for t in threads] if opts.get("threads") else []
+    seed["threads"] = threads
     mode, prs = data.get("mode", "pr"), [p["n"] for st in data["stacks"] for p in st["prs"]]
     branch = (data.get("source") or {}).get("branch")
     name = f"review-{data['repo'].split('/')[1]}-{slug(branch if mode == 'self' and branch else '-'.join(map(str, prs)))}-round{n}.html"
@@ -226,9 +238,9 @@ def export(rdir: pathlib.Path, ui: dict, opts: dict, n: int, rid: str) -> tuple[
     meta = {"repo": data["repo"], "author": run["viewer"], "built": int((rdir / "guide.json").stat().st_mtime), "tip": tip, "mode": mode, "round": n,
             "review": rid, "branch": branch, "prs": prs, "name": name}
     key = hashlib.sha1(f"{data['repo']} {rid} {tip}".encode(), usedforsecurity=False).hexdigest()[:12]
-    boot = {"shared": {**meta, "key": key, "options": {"mine": mine, "refuted": not hide}}, "live": False, "base": "", "review": None, "round": n,
+    boot = {"shared": {**meta, "key": key, "options": {"mine": mine, "refuted": not hide, "threads": bool(threads)}}, "live": False, "base": "", "review": None, "round": n,
             "status": "open", "ui": {}, "rounds": []}
-    files = bundle_files(rdir, run, hide)
+    files = bundle_files(rdir, run, hide, threads)
     hits, more = scan(rdir, run)
     page = TEMPLATE.read_text()
     page = page.replace("/*DATA*/null", embed(data), 1).replace("'/*TOKEN*/'", "''", 1).replace("/*BOOT*/null", embed(boot), 1)
@@ -242,7 +254,7 @@ def export(rdir: pathlib.Path, ui: dict, opts: dict, n: int, rid: str) -> tuple[
     page = page.replace("<!--SHARED-->", f'<script type="application/json" id="rg-seed">{embed(seed)}</script>\n'
                                           f'<script type="application/octet-stream" id="rg-bundle">{pack(meta, files)}</script>\n', 1)
     tips = sorted(({"path": p.split("/tip/", 1)[1], "bytes": len(t.encode())} for p, t in files.items() if "/tip/" in p), key=lambda x: -x["bytes"])
-    report = {"name": name, "size": len(page.encode()), "hits": hits, "more_hits": more, "picked": len(seed["cm"]), "refuted": refuted,
+    report = {"name": name, "size": len(page.encode()), "hits": hits, "more_hits": more, "picked": len(picked["cm"]), "refuted": refuted, "threads": len(threads), "threads_available": available,
               "findings": sum(len(st["comments"]) for st in data["stacks"]), "files": sum(len(st["files"]) for st in data["stacks"]),
               "mode": mode, "repo": data["repo"], "biggest": tips[:5]}
     return page, report
@@ -260,6 +272,34 @@ def bundle_text(text: str) -> str:
     if "<" not in text[:200] and len(text) > 100:
         return text
     raise ShareError("this file holds no review-guide bundle; drop a shared guide (.html) or a feedback file (.json)")
+
+
+def drafts_of(html_text: str) -> dict:
+    """The comments a shared file carries (its `rg-seed`), as page state for the review created from it."""
+    m = re.search(r'<script type="application/json" id="rg-seed">(.*?)</script>', html_text, re.S)
+    try:
+        seed = json.loads(m.group(1)) if m else {}
+    except ValueError:
+        seed = {}
+    return {k: seed.get(k) for k in ("cm", "extra") if isinstance(seed.get(k), dict)}
+
+
+def clean_drafts(d) -> dict:
+    """Page state from a draft set a browser sent: only the parts that hold comments, in the shapes the page reads."""
+    if not isinstance(d, dict):
+        return {}
+    out = {}
+    if isinstance(d.get("cm"), dict):
+        out["cm"] = {k: {"on": bool(v.get("on")), "gone": bool(v.get("gone")), "sev": str(v.get("sev") or "comment"), "text": str(v.get("text") or "")}
+                     for k, v in d["cm"].items() if isinstance(k, str) and isinstance(v, dict)}
+    if isinstance(d.get("extra"), dict):
+        out["extra"] = {k: [c for c in v if isinstance(c, dict) and isinstance(c.get("id"), str)] for k, v in d["extra"].items() if isinstance(v, list)}
+    if isinstance(d.get("verdict"), dict):
+        out["verdict"] = {k: {x: y for x, y in v.items() if x in ("body", "event") and isinstance(y, str | type(None))} for k, v in d["verdict"].items() if isinstance(v, dict)}
+    for k in ("done", "viewed"):
+        if isinstance(d.get(k), dict):
+            out[k] = {x: True for x, y in d[k].items() if y is True}
+    return out
 
 
 def read_feedback(text: str) -> dict:
