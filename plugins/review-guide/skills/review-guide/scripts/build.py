@@ -292,47 +292,56 @@ def verify_results(sdir: pathlib.Path) -> dict[str, dict]:
 
 def stages(w: pathlib.Path) -> list[dict]:
     """Per stack, where each agent stands: from the files the agents write, and progress.json when the runner wrote it.
-    `secs` counts from the fetch to the file landing, or to now while running."""
+    A stage's `secs` is how long its agent ran (or has run so far); the stack's `secs` counts from the runner's start."""
     run = json.loads((w / "run.json").read_text())
     try:
-        agents = json.loads((w / "progress.json").read_text())["agents"]
-    except (OSError, ValueError, KeyError):
-        agents = {}
-    now, t0 = time.time(), run.get("fetched_at") or time.time()
+        progress = json.loads((w / "progress.json").read_text())
+    except (OSError, ValueError):
+        progress = {}
+    agents = progress.get("agents") or {}
+    now = time.time()
+    t0 = progress.get("started") or run.get("fetched_at") or now
     out = []
     for s in run["stacks"]:
         d, sid = w / s["id"], s["id"]
 
         def stage(key: str, label: str, path: pathlib.Path) -> dict:
             a = agents.get(f"{sid}/{key}") or {}
+            start = a.get("started") or t0
             if path.is_file():
-                state = "done"
+                res = {"key": key, "label": label, "state": "done", "secs": round((a.get("ended") or path.stat().st_mtime) - start)}
                 if key in AXES:
                     try:
-                        state = "skipped" if json.loads(path.read_text()).get("skipped") else "done"
+                        report = json.loads(path.read_text())
                     except ValueError:
-                        state = "running"
-                return {"key": key, "label": label, "state": state, "secs": round(path.stat().st_mtime - t0)}
+                        return {"key": key, "label": label, "state": "running", "secs": round(now - start)}
+                    if report.get("skipped"):
+                        res.update(state="skipped", note=report["skipped"])
+                    else:
+                        res["found"] = len(report.get("findings") or [])
+                return res
             state = a.get("state") or ("running" if not agents else "waiting")
-            return {"key": key, "label": label, "state": state, "secs": round(now - t0), "calls": a.get("calls", 0), "last": a.get("last", "")}
+            secs = round((a.get("ended") or now) - start) if state != "waiting" else None
+            return {"key": key, "label": label, "state": state, "secs": secs, "calls": a.get("calls", 0), "last": a.get("last", "")}
 
-        row = [{"key": "fetch", "label": "Fetched", "state": "done"}, stage("guide", "Guide", d / "guide.json"), *(stage(a, a.capitalize(), d / f"review-{a}.json") for a in AXES)]
+        row = [stage("guide", "Guide", d / "guide.json"), *(stage(a, a.capitalize(), d / f"review-{a}.json") for a in AXES)]
         total = None
-        if all(x["state"] in ("done", "skipped", "failed") for x in row[2:]):
-            total = sum(len(json.loads((d / f"review-{a}.json").read_text()).get("findings") or [])
-                        for a in AXES if (d / f"review-{a}.json").is_file())
+        if all(x["state"] in ("done", "skipped", "failed") for x in row[1:]):
+            total = sum(x.get("found", 0) for x in row[1:])
         checked = verify_results(d)
-        running = [a for k, a in agents.items() if k.startswith(f"{sid}/verify/") and a.get("state") == "running"]
+        verifiers = [a for k, a in agents.items() if k.startswith(f"{sid}/verify/")]
+        running = [a for a in verifiers if a.get("state") == "running"]
+        vstart = min((a["started"] for a in verifiers if a.get("started")), default=t0)
         if total is None:
             check = {"state": "waiting"}
         elif len(checked) >= total:
-            last = max((f.stat().st_mtime for f in (d / "verify").glob("*.json")), default=now)
-            check = {"state": "done", "secs": round(last - t0)}
+            last = max((f.stat().st_mtime for f in (d / "verify").glob("*.json")), default=vstart)
+            check = {"state": "done", "secs": round(last - vstart)}
         else:
             latest = max(running, key=lambda a: a.get("started", 0), default={})
-            check = {"state": "running", "secs": round(now - t0), "calls": sum(a.get("calls", 0) for a in running), "last": latest.get("last", "")}
+            check = {"state": "running", "secs": round(now - vstart), "calls": sum(a.get("calls", 0) for a in running), "last": latest.get("last", "")}
         row.append({"key": "check", "label": "Fact check", "checked": len(checked), "total": total, **check})
-        out.append({"id": sid, "stages": row})
+        out.append({"id": sid, "secs": round(now - t0), "stages": row})
     return out
 
 

@@ -167,7 +167,7 @@ def main(keep: str | None = None) -> None:
         (w / sid / "verify" / "correctness-d.json").write_text(json.dumps({"status": "duplicate", "note": "Same as correctness/x."}))
         check_stage = stages(w)[0]["stages"][-1]
         assert (check_stage["state"], check_stage["checked"], check_stage["total"], check_stage["last"]) == ("running", 2, 3, "reading A.java"), check_stage
-        assert [x["state"] for x in stages(w)[0]["stages"]] == ["done", "done", "done", "done", "skipped", "running"]
+        assert [x["state"] for x in stages(w)[0]["stages"]] == ["done", "done", "done", "skipped", "running"]
         (w / sid / "verify" / "correctness-f.json").write_text(json.dumps({"status": "unverified", "note": "Needs runtime."}))
         assert stages(w)[0]["stages"][-1]["state"] == "done"
         out = subprocess.run([sys.executable, str(HERE / "build.py"), str(w)], capture_output=True, text=True)

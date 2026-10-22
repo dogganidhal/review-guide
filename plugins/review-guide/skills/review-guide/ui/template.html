@@ -108,18 +108,28 @@ button { font: inherit; color: inherit; }
 .tfile.viewed .nm { color: var(--faint); text-decoration: line-through; }
 .tfile.dim { opacity: .4; }
 .newmark { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--hot-ink); background: var(--hot); border-radius: 4px; padding: 0 4px; font-family: 'Figtree', sans-serif; }
-.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin-bottom: 14px; }
-.strip:empty { display: none; }
-.strip .head { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 10px; font-size: .78rem; color: var(--muted); }
-.stage { border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: .8rem; background: var(--bg); min-width: 0; }
-.stage .sh { display: flex; align-items: center; gap: 6px; font-weight: 600; }
-.stage .sh .t { margin-left: auto; font-weight: 400; color: var(--faint); font-variant-numeric: tabular-nums; }
-.stage .act { color: var(--muted); font-size: .74rem; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
-.stage.done .ic { color: var(--ok); }
-.stage.failed .ic { color: var(--danger); }
-.stage.skipped .ic, .stage.waiting { color: var(--faint); }
-.stage.running { border-color: var(--accent); }
-.stage .spin { width: 11px; height: 11px; border-width: 2px; }
+.runpanel { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 8px; margin-bottom: 14px; font-size: .84rem; }
+.runpanel:empty { display: none; }
+.runpanel:not(:empty) ~ .pendingbox { display: none; }
+.runpanel .rh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.runpanel .rh b { font-weight: 600; }
+.runpanel .rh .t { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 400; }
+.runpanel .rh .lvl { color: var(--faint); font-size: .78rem; }
+.runpanel .bar { height: 3px; border-radius: 99px; background: var(--surface-2); margin: 8px 0 4px; overflow: hidden; }
+.runpanel .bar span { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+.runpanel .row { display: grid; grid-template-columns: 14px 6.5rem minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 0; }
+.runpanel .row .nm { font-weight: 600; }
+.runpanel .row .d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runpanel .row.running .d { font-family: var(--mono); font-size: .76rem; }
+.runpanel .row .t { color: var(--faint); font-variant-numeric: tabular-nums; font-size: .78rem; }
+.runpanel .row.waiting, .runpanel .row.waiting .d { color: var(--faint); }
+.runpanel .row.waiting .nm { font-weight: 400; }
+.runpanel .ic { text-align: center; }
+.runpanel .done .ic { color: var(--ok); }
+.runpanel .failed .ic, .runpanel .failed .d { color: var(--danger); }
+.runpanel .skipped .ic { color: var(--faint); }
+.runpanel .spin { width: 11px; height: 11px; }
+@media (max-width: 640px) { .runpanel .row { grid-template-columns: 14px minmax(0, 1fr) auto; } .runpanel .row .d { grid-column: 2 / -1; grid-row: 2; } }
 .usual { font-size: .78rem; color: var(--faint); }
 .rerunbox { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: .86rem; margin-bottom: 14px; }
 .rerunbox.stale { border-color: var(--warn); background: var(--warn-soft); }
@@ -872,7 +882,7 @@ function guideView(st) {
       ext(st.compare, 'Whole stack on GitHub ↗'),
       el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
     rerunBox(st),
-    el('div', { class: 'strip', 'aria-live': 'polite' }),
+    el('div', { class: 'runpanel', 'aria-live': 'polite' }),
     el('details', { class: 'prlist', open: state.open[listKey] ?? st.prs.length <= CHAIN_MAX, ontoggle: (e) => { state.open[listKey] = e.target.open; save(); } },
       el('summary', {}, st.prs.length > 1 ? `${st.prs.length} PRs in this stack · ` : 'Pull request · ', el('span', { class: 'ci ' + (failing.length ? 'bad' : pending ? 'wait' : 'ok') }, ci)),
       prRows(st)),
@@ -921,23 +931,46 @@ function fileView(st) {
 const EFFORTS = [['quick', 'Quick'], ['balanced', 'Balanced'], ['deep', 'Deep']];
 const EFFORT_HINT = { quick: 'blockers and should-fixes, the brief only', balanced: 'the usual depth', deep: 'reads callers, tests and config; uses Opus' };
 let stages = [], usual = {};
-const mins = (secs) => (secs < 60 ? `${Math.max(1, Math.round(secs))} s` : `${Math.floor(secs / 60)}m${String(Math.round(secs % 60)).padStart(2, '0')}s`);
+const mins = (secs) => { secs = Math.max(1, Math.round(secs)); return secs < 60 ? `${secs} s` : `${Math.floor(secs / 60)} min ${String(secs % 60).padStart(2, '0')} s`; };
 const usualText = (lvl) => (usual[lvl] ? `usually about ${Math.max(1, Math.round(usual[lvl] / 60))} min` : '');
 const working = (row) => row && row.stages.some((x) => x.state === 'running' || x.state === 'waiting');
+
+function stageText(x) {
+  if (x.key === 'check') {
+    if (x.state === 'waiting') return 'starts when the reviewers finish';
+    if (x.state === 'done') return x.total ? `${plural(x.total, 'finding', 'findings')} checked` : 'nothing to check';
+    return [`${x.checked} of ${x.total} checked`, x.last].filter(Boolean).join(' · ');
+  }
+  if (x.state === 'running') return [x.calls ? plural(x.calls, 'call', 'calls') : 'starting', x.last].filter(Boolean).join(' · ');
+  if (x.state === 'failed') return 'failed; see agents.log';
+  if (x.state === 'skipped') return x.note || 'skipped';
+  if (x.state === 'waiting') return 'waiting';
+  return x.key === 'guide' ? 'written' : x.found ? plural(x.found, 'finding', 'findings') : 'nothing found';
+}
 
 // Painted in place on every poll, so progress moves without reloading the page.
 function paintStrip() {
   const st = ST(), row = stages.find((r) => r.id === st.id);
-  for (const box of document.querySelectorAll('.strip')) {
-    if (!working(row)) { box.replaceChildren(); continue; }
-    const secs = Math.max(...row.stages.map((x) => x.secs || 0));
+  for (const box of document.querySelectorAll('.runpanel')) {
+    if (!working(row)) {
+      // A rerun is fetching before any agent starts: show its status line alone.
+      box.replaceChildren(...(rerun.running ? [el('div', { class: 'rh' }, el('span', {}, el('span', { class: 'spin', style: 'display:inline-block;vertical-align:-1px;margin-right:8px' }), `${rerun.status || 'Starting'}…`))] : []));
+      continue;
+    }
+    const by = (k) => row.stages.find((x) => x.key === k);
+    const finished = (x) => ['done', 'skipped', 'failed'].includes(x.state);
+    const check = by('check');
+    const parts = row.stages.filter((x) => x.key !== 'check');
+    const share = (parts.filter(finished).length + (finished(check) ? 1 : check.total ? check.checked / check.total : 0)) / row.stages.length;
+    const phase = !finished(by('guide')) ? 'Writing the guide and reviewing' : parts.some((x) => !finished(x)) ? 'Reviewing' : 'Checking the findings';
     const icon = (x) => x.state === 'running' ? el('span', { class: 'spin' }) : el('span', { class: 'ic' }, { done: '✓', failed: '✕', skipped: '–', waiting: '·' }[x.state]);
     box.replaceChildren(
-      el('div', { class: 'head' }, el('span', {}, `Working on this stack · ${mins(secs)}`), el('span', {}, [DATA.effort, usualText(DATA.effort)].filter(Boolean).join(' · '))),
-      ...row.stages.map((x) => el('div', { class: `stage ${x.state}` },
-        el('div', { class: 'sh' }, icon(x), x.label, el('span', { class: 't' },
-          x.key === 'check' && x.total != null ? `${x.checked} of ${x.total}` : x.state === 'done' || x.state === 'running' ? (x.secs != null && x.key !== 'fetch' ? mins(x.secs) : '') : x.state)),
-        x.state === 'running' && (x.last || x.calls) ? el('div', { class: 'act', title: x.last }, `${x.calls ? x.calls + ' calls · ' : ''}${x.last || ''}`) : null)));
+      el('div', { class: 'rh' }, el('b', {}, phase, el('span', { class: 't' }, ` · ${mins(row.secs)}`)),
+        el('span', { class: 'lvl' }, [DATA.effort, usualText(DATA.effort)].filter(Boolean).join(' · '))),
+      el('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(share * 100)) },
+        el('span', { style: `width:${Math.max(3, share * 100)}%` })),
+      ...row.stages.map((x) => el('div', { class: `row ${x.state}` }, icon(x), el('span', { class: 'nm' }, x.label),
+        el('span', { class: 'd', title: stageText(x) }, stageText(x)), el('span', { class: 't' }, x.secs != null ? mins(x.secs) : ''))));
   }
 }
 
@@ -960,7 +993,7 @@ async function startRerun() {
 function rerunBox(st) {
   const moved = stale(st);
   if (!moved.length && !rerun.running && !rerun.error && !rerunOpen) return null;
-  if (rerun.running) return el('div', { class: 'rerunbox' }, el('span', { class: 'spin' }), el('span', { class: 'msg' }, `Rerunning the guide (${effort}${usualText(effort) ? ', ' + usualText(effort) : ''}). ${rerun.status}…`));
+  if (rerun.running) return null;  // the run panel shows it
   const msg = moved.length ? `${moved.length === st.prs.length && moved.length > 1 ? 'Every PR' : moved.map((p) => '#' + p.n).join(', ')} ${moved.length === 1 ? 'has' : 'have'} new commits since this guide was built. Posting is blocked until it is rerun.`
     : 'Write the guide again, with the same PRs.';
   return el('div', { class: 'rerunbox' + (moved.length ? ' stale' : '') },
@@ -1042,7 +1075,7 @@ function sendView(st) {
   return [el('h1', {}, 'Your review'),
     el('p', { class: 'summary' }, [describe(ready) || 'Nothing to post yet', undecided ? ` · ${undecided} without a verdict` : '', done.length ? ` · ${done.length} posted` : ''].join('')),
     rerunBox(st),
-    el('div', { class: 'strip', 'aria-live': 'polite' }),
+    el('div', { class: 'runpanel', 'aria-live': 'polite' }),
     el('div', { class: 'bulk' },
       el('button', { class: 'btn', type: 'button', disabled: busy || !clean.length, title: 'Not yours, CI not failing, and nothing open: no blocker, should-fix or question',
         onclick: () => setAll(clean, (x) => { x.vs.event = 'APPROVE'; }) }, clean.length ? `Approve all clean (${clean.length})` : 'No clean PR left to approve'),
@@ -1132,8 +1165,10 @@ async function poll() {
     const j = await (await fetch('/api/state', { cache: 'no-store' })).json();
     posted = j.posted || {};
     stages = j.stages || []; usual = j.usual || {};
+    const was = rerun.running;
+    if (j.rerun) rerun = j.rerun;
     paintStrip();
-    if (j.rerun) { const was = rerun.running; rerun = j.rerun; if (was && !rerun.running) render(); }
+    if (was && !rerun.running) render();
     if (version !== null && j.version !== version) { save(); location.reload(); return; }
     if (version === null) render();
     version = j.version;
