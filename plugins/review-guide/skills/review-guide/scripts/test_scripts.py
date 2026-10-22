@@ -159,8 +159,17 @@ def main(keep: str | None = None) -> None:
 
         (w / sid / "review-standards.json").write_text(json.dumps({"skipped": None, "findings": []}))
         (w / sid / "review-spec.json").write_text(json.dumps({"skipped": "No ticket and an empty description.", "findings": []}))
-        (w / sid / "verify.json").write_text(json.dumps({"comments": {"correctness/x": {"status": "verified", "note": "No reader."},
-                                                                      "correctness/d": {"status": "duplicate", "note": "Same as correctness/x."}}}))
+        sys.path.insert(0, str(HERE))
+        from build import stages  # noqa: E402
+        (w / "progress.json").write_text(json.dumps({"agents": {f"{sid}/verify/correctness-f": {"state": "running", "calls": 3, "last": "reading A.java"}}}))
+        (w / sid / "verify").mkdir()
+        (w / sid / "verify" / "correctness-x.json").write_text(json.dumps({"status": "verified", "note": "No reader."}))
+        (w / sid / "verify" / "correctness-d.json").write_text(json.dumps({"status": "duplicate", "note": "Same as correctness/x."}))
+        check_stage = stages(w)[0]["stages"][-1]
+        assert (check_stage["state"], check_stage["checked"], check_stage["total"], check_stage["last"]) == ("running", 2, 3, "reading A.java"), check_stage
+        assert [x["state"] for x in stages(w)[0]["stages"]] == ["done", "done", "done", "done", "skipped", "running"]
+        (w / sid / "verify" / "correctness-f.json").write_text(json.dumps({"status": "unverified", "note": "Needs runtime."}))
+        assert stages(w)[0]["stages"][-1]["state"] == "done"
         out = subprocess.run([sys.executable, str(HERE / "build.py"), str(w)], capture_output=True, text=True)
         assert out.returncode == 0, out.stdout + out.stderr
         data = json.loads((w / "guide.json").read_text())

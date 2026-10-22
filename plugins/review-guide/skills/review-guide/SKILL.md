@@ -3,12 +3,12 @@ name: review-guide
 description: Builds a guided review page for one or more GitHub pull requests. Stacked PRs are reviewed as one change (their final state), with a guide shaped to the change (flows, before and after, tables, a reading order), a browsable file tree with syntax-highlighted diffs, and findings from three reviewers (correctness, standards, spec) that a fourth agent tried to disprove. Each comment is routed to the PR that wrote its line, and the reviewer posts from a local page through their own gh login.
 when_to_use: The user asks for help reviewing PRs, wants a review guide or walkthrough, shares PR links or a Slack thread asking for a review, or wants to post review comments on several PRs at once.
 argument-hint: [quick|balanced|deep] <PR URLs, owner/repo#N, or a Slack thread link>
-allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*), Read, Agent
+allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*), Read
 ---
 
 # Review guide
 
-The work happens in three scripts and two agents. You coordinate and relay; you do not write the guide yourself.
+The work happens in scripts and agents that `rerun.py` runs headless, the same way the page's Rerun button does. You start them and relay what they report; you do not write the guide yourself.
 
 ## 1. Collect the PRs
 
@@ -35,29 +35,17 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/build.py" <W> --partial
 python3 "${CLAUDE_SKILL_DIR}/scripts/serve.py" <W>    # in the background; open the URL it prints
 ```
 
-## 4. Write the guide and review, in parallel
+## 4. Run the agents
 
-For each stack, spawn four agents in a single message, for all stacks at once:
+Start the runner in the background on the work directory, with the effort and, when the user stated one, a focus sentence:
 
-- one `review-guide:guide-writer`;
-- three `review-guide:reviewer`, one per axis: `correctness`, `standards`, `spec`.
-
-Each prompt is:
-
-```
-Work directory: <W>
-Stack: <stack id>
-Effort: <effort>
-Axis: <axis>          (reviewers only)
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/rerun.py" <W> --no-fetch --effort <effort> [--focus "<focus>"]
 ```
 
-For `deep`, pass `model: "opus"` to each Agent call; `quick` and `balanced` keep the agents' own model. Add one sentence if the user stated a focus (for example "focus on the migration").
+Per stack it runs the guide writer and three reviewers (correctness, standards, spec) in parallel, then one verifier per finding, at most six at a time. `deep` runs them on Opus. The page shows a live strip of each stage, the tool calls of the agents still working, and "3 of 7 checked" for the fact check. Each finished part lands on the page on its own.
 
-The writer replies `<id> ok: …`, each reviewer `<id> <axis> ok: …`, or `failed: <reason>`. As each one finishes, rerun `build.py <W> --partial` so its part shows up. Rerun a failed agent once. If a reviewer fails twice, write `{"skipped": "This reviewer failed.", "findings": []}` to `<W>/<stack>/review-<axis>.json` so the page stops waiting, and report it.
-
-## 5. Verify the findings
-
-When the three reviewers of a stack are done, spawn a `review-guide:comment-verifier` for it with the same prompt, without `Axis`; do not wait for other stacks. When a verifier finishes, rerun `build.py <W> --partial`. When all are done, run `build.py <W>` once without `--partial` to confirm every stack is complete.
+The runner prints `status <text>` as stages start, `done <stack>: <summary>` per stack, and exits 0 when every guide is written. Relay the status lines only if the user asks; wait for the exit. On a non-zero exit, read `<W>/agents.log` (one line per agent with its reply, turns, duration, cost and denied calls) and report which agent failed.
 
 ## 6. Report
 
@@ -65,7 +53,7 @@ Tell the user, in a few lines:
 
 - the URL, and that nothing is posted until they pick verdicts and press "Post" in the "Your review" tab;
 - per stack: the one or two findings that matter most, and how many go to each PR;
-- findings the verifier refuted or could not verify, and any axis that was skipped;
+- findings the verifiers refuted or could not verify, and any axis that was skipped (the `done` lines give the counts);
 - that the server runs until they press Close on the page, or `pkill -f "review-guide.*serve.py"`.
 
 Never post a review yourself. The reviewer posts from the page.

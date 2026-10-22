@@ -93,17 +93,15 @@ Rules `build.py --check --only <axis>` enforces:
 
 The page suggests a verdict per PR from the findings the reviewer keeps: request changes with a blocker, comment with a should-fix or question, approve otherwise.
 
-## `W/<stack>/verify.json` (verifier)
+## `W/<stack>/verify/<axis>-<id>.json` (verifiers)
+
+One verifier per finding, in parallel. Each writes one file:
 
 ```json
-{
-  "comments": {
-    "correctness/truncated-log": { "status": "verified", "note": "79-83 skip the DEL after a connection failure.", "line": 81 },
-    "standards/log-name": { "status": "duplicate", "note": "Same point as correctness/truncated-log." }
-  }
-}
+{ "status": "verified", "note": "79-83 skip the DEL after a connection failure.", "line": 81 }
 ```
 
-- One entry per finding key, `<axis>/<id>`. `status` is `verified`, `unverified`, `refuted` or `duplicate`, and `note` is one line.
+- `status` is `verified`, `unverified`, `refuted` or `duplicate`, and `note` is one line.
 - `line` is optional. Set it only to move the finding to a better line the stack wrote.
-- A `duplicate` is hidden from the page.
+- `duplicate` means an earlier finding (by axis order correctness, standards, spec, then file order) makes the same point; the note names its key. The page hides duplicates. A finding is never a duplicate of a later one, so each point keeps one finding.
+- A finding without a file is shown as still being checked.

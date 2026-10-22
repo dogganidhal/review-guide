@@ -20,9 +20,10 @@ fetch.py ──▶ page opens (tree + diffs)
    ├─▶ reviewer: correctness ───┐    │    build.py --partial after each, page reloads)
    ├─▶ reviewer: standards ─────┤    │
    ├─▶ reviewer: spec ──────────┤    │
-   │                            └─▶ comment-verifier ──▶ build.py ──▶ page reloads with statuses
+   │                            └─▶ comment-verifier, one per finding (6 at a time) ──▶ build.py ──▶ page reloads
    │
-serve.py: local page, posts reviews through the user's gh login, and reruns the whole pipeline from the page (rerun.py)
+rerun.py runs every agent above headless (claude -p), for the skill and for the page's Rerun button alike
+serve.py: local page, live progress, posting through the user's gh login, reruns
 ```
 
 | Step | Kind | Output |
@@ -31,10 +32,10 @@ serve.py: local page, posts reviews through the user's gh login, and reruns the 
 | `guide-writer` | agent (sonnet, medium effort) | `<stack>/guide.json`: the explanation |
 | `reviewer` ×3 | agent (sonnet, high effort) | `<stack>/review-<axis>.json`: findings on one axis |
 | `build.py --check --only X` | script | validation errors each agent must fix in its own file |
-| `comment-verifier` | agent (sonnet, high effort) | `<stack>/verify.json`: a status per finding, duplicates marked |
+| `comment-verifier` ×findings | agent (sonnet, high effort) | `<stack>/verify/<axis>-<id>.json`: one finding's status, duplicates marked |
 | `build.py [--partial]` | script | `guide.json` (merged page data) and `index.html` |
 | `serve.py` | script | serves the page on `127.0.0.1`, posts reviews, and starts reruns |
-| `rerun.py` | script | the pipeline above without a Claude Code session: fetch, then both agents through `claude -p` |
+| `rerun.py` | script | runs the agents headless through `claude -p` (stream-json), writes `progress.json`, `agents.log` and timings; `--no-fetch` when the skill already fetched |
 
 ### Effort
 
@@ -52,7 +53,7 @@ Agents stop on coverage, not on a call count: a reviewer is done when its axis i
 
 The page asks `serve.py` for the PRs' current heads (one GraphQL call, cached a minute) when it opens and each time the tab becomes visible. When a head moved, both tabs show a banner: which PRs have new commits, that posting is blocked, an effort picker, and "Rerun the guide". The meta chips also carry "<effort> guide · Rerun ↻" to rerun on unchanged heads.
 
-`POST /api/rerun` (same token as posting, one rerun at a time) starts `rerun.py`. It fetches again, which lands in a new work directory when heads moved, and `serve.py` switches to that directory as soon as it holds a page. The open page reloads onto it and follows the agents as in a first run. Unchanged heads reuse the directory and replace its guides. The agents run with `--permission-mode dontAsk`, no user settings, hooks or MCP servers, writes limited to the work directory, and an allowlist of the read commands their prompts name (`git -C <checkout> show|grep|log`, `gh api -H`, `gh search code`, `build.py`); `gh api` with a method, fields or input is denied. Their output goes to `agents.log` in the work directory. A failed writer is retried once; a failed verifier leaves its comments marked as not checked.
+`POST /api/rerun` (same token as posting, one rerun at a time) starts `rerun.py`, the same runner the skill uses. It fetches again, which lands in a new work directory when heads moved, and `serve.py` switches to that directory as soon as it holds a page. The open page reloads onto it and follows the agents as in a first run. Unchanged heads reuse the directory and replace its guides. The agents run with `--permission-mode dontAsk`, no user settings, hooks or MCP servers, writes limited to the work directory, and an allowlist of the read commands their prompts name (`git -C <checkout> show|grep|log`, `gh api -H`, `gh search code`, `build.py`); `gh api` with a method, fields or input is denied. Their output goes to `agents.log` in the work directory. Each agent is retried once. A failed reviewer marks its axis skipped, and a failed verifier leaves its finding `unverified` with a note.
 
 The contract between the agents and the scripts is `plugins/review-guide/skills/review-guide/references/guide-schema.md`. Change the schema doc, `build.py` validation and the prompts together.
 
@@ -107,7 +108,8 @@ Explaining and finding are separate agents, and finding is split by axis, after 
 
 ### comment-verifier
 
-- Tries to disprove each finding: `verified` (it traced the mechanism, and every claim matches), `refuted` (the code, the spec or the description contradicts it; for standards, the rule does not say that), `unverified` (library internals, prod config, runtime). Marks findings that repeat another as `duplicate`; the page hides them.
+- One verifier per finding, in parallel, at most six at a time, so the fact check takes as long as the slowest single check and its progress is an honest count.
+- Tries to disprove its finding: `verified` (it traced the mechanism, and every claim matches), `refuted` (the code, the spec or the description contradicts it; for standards, the rule does not say that), `unverified` (library internals, prod config, runtime). Marks its finding `duplicate` only when an earlier finding (axis order correctness, standards, spec, then file order) makes the same point; the earlier one always stays, so parallel verifiers never drop both copies of a point. The page hides duplicates.
 - May move a finding to a better line the stack wrote.
 
 ## Validation (`build.py --check`)
@@ -139,7 +141,7 @@ Explaining and finding are separate agents, and finding is split by axis, after 
 - At most 3 findings per PR per axis.
 - `--only guide|<axis>` checks one agent's file, so agents running in parallel do not see each other's errors.
 
-`--partial` renders a stack without a guide as a file tree and diffs only, and an axis with no file yet as "reviewing". It renders findings as "being checked" until `verify.json` exists.
+`--partial` renders a stack without a guide as a file tree and diffs only, and an axis with no file yet as "reviewing". It renders a finding as "being checked" until its `verify/<axis>-<id>.json` exists.
 
 ## Page
 
@@ -178,7 +180,15 @@ Nothing is pre-added to the review. Severity prefixes ("Should fix: ", "Nit: ", 
 
 ### Live updates
 
-The page polls `/api/state` every 3 seconds while a stack is pending or a comment is being checked. When `index.html` changes on disk, it saves state and reloads. State lives in `localStorage` under `review-guide-v2-<run_id>`.
+The page polls `/api/state` every 3 seconds while a stack is pending, an agent is running, or a comment is being checked. When `index.html` changes on disk, it saves state and reloads.
+
+### Progress strip
+
+While agents work, both tabs show a strip under the meta chips: one tile per stage (Fetched, Guide, Correctness, Standards, Spec, Fact check) with its state (waiting, running, done, skipped, failed) and the time since the fetch. A running tile shows the agent's tool-call count and its latest action ("reading NotificationService.java", "git grep findProfessionalOnDuty"); the fact check shows "3 of 7". The strip is painted in place from each `/api/state` reply, so it never reloads the page, and it disappears when every stage is finished.
+
+- Stage states come from the files the agents write (`build.stages()`): a file means done, a reviewer file with `skipped` means skipped, and `progress.json` from the runner says which agents are running or failed and what each did last.
+- Live actions come from `claude -p --output-format stream-json --verbose`: the runner counts each `tool_use` block in the `assistant` events and rewrites `progress.json` atomically.
+- Timings: at the end of a run the runner appends its duration to `~/.cache/review-guide/timings.json` (last ten per effort level). `/api/state` returns the averages, shown as "usually about N min" in the strip and next to the effort picker. State lives in `localStorage` under `review-guide-v2-<run_id>`.
 
 ### Design
 

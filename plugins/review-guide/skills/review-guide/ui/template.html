@@ -108,6 +108,19 @@ button { font: inherit; color: inherit; }
 .tfile.viewed .nm { color: var(--faint); text-decoration: line-through; }
 .tfile.dim { opacity: .4; }
 .newmark { font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--hot-ink); background: var(--hot); border-radius: 4px; padding: 0 4px; font-family: 'Figtree', sans-serif; }
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin-bottom: 14px; }
+.strip:empty { display: none; }
+.strip .head { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 10px; font-size: .78rem; color: var(--muted); }
+.stage { border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font-size: .8rem; background: var(--bg); min-width: 0; }
+.stage .sh { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.stage .sh .t { margin-left: auto; font-weight: 400; color: var(--faint); font-variant-numeric: tabular-nums; }
+.stage .act { color: var(--muted); font-size: .74rem; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.stage.done .ic { color: var(--ok); }
+.stage.failed .ic { color: var(--danger); }
+.stage.skipped .ic, .stage.waiting { color: var(--faint); }
+.stage.running { border-color: var(--accent); }
+.stage .spin { width: 11px; height: 11px; border-width: 2px; }
+.usual { font-size: .78rem; color: var(--faint); }
 .rerunbox { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: .86rem; margin-bottom: 14px; }
 .rerunbox.stale { border-color: var(--warn); background: var(--warn-soft); }
 .rerunbox .msg { flex: 1 1 260px; }
@@ -859,6 +872,7 @@ function guideView(st) {
       ext(st.compare, 'Whole stack on GitHub ↗'),
       el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
     rerunBox(st),
+    el('div', { class: 'strip', 'aria-live': 'polite' }),
     el('details', { class: 'prlist', open: state.open[listKey] ?? st.prs.length <= CHAIN_MAX, ontoggle: (e) => { state.open[listKey] = e.target.open; save(); } },
       el('summary', {}, st.prs.length > 1 ? `${st.prs.length} PRs in this stack · ` : 'Pull request · ', el('span', { class: 'ci ' + (failing.length ? 'bad' : pending ? 'wait' : 'ok') }, ci)),
       prRows(st)),
@@ -905,7 +919,28 @@ function fileView(st) {
 }
 
 const EFFORTS = [['quick', 'Quick'], ['balanced', 'Balanced'], ['deep', 'Deep']];
-const EFFORT_HINT = { quick: 'blockers only, about 2 minutes', balanced: 'the usual guide, about 7 minutes', deep: 'reads callers and tests, slower' };
+const EFFORT_HINT = { quick: 'blockers and should-fixes, the brief only', balanced: 'the usual depth', deep: 'reads callers, tests and config; uses Opus' };
+let stages = [], usual = {};
+const mins = (secs) => (secs < 60 ? `${Math.max(1, Math.round(secs))} s` : `${Math.floor(secs / 60)}m${String(Math.round(secs % 60)).padStart(2, '0')}s`);
+const usualText = (lvl) => (usual[lvl] ? `usually about ${Math.max(1, Math.round(usual[lvl] / 60))} min` : '');
+const working = (row) => row && row.stages.some((x) => x.state === 'running' || x.state === 'waiting');
+
+// Painted in place on every poll, so progress moves without reloading the page.
+function paintStrip() {
+  const st = ST(), row = stages.find((r) => r.id === st.id);
+  for (const box of document.querySelectorAll('.strip')) {
+    if (!working(row)) { box.replaceChildren(); continue; }
+    const secs = Math.max(...row.stages.map((x) => x.secs || 0));
+    const icon = (x) => x.state === 'running' ? el('span', { class: 'spin' }) : el('span', { class: 'ic' }, { done: '✓', failed: '✕', skipped: '–', waiting: '·' }[x.state]);
+    box.replaceChildren(
+      el('div', { class: 'head' }, el('span', {}, `Working on this stack · ${mins(secs)}`), el('span', {}, [DATA.effort, usualText(DATA.effort)].filter(Boolean).join(' · '))),
+      ...row.stages.map((x) => el('div', { class: `stage ${x.state}` },
+        el('div', { class: 'sh' }, icon(x), x.label, el('span', { class: 't' },
+          x.key === 'check' && x.total != null ? `${x.checked} of ${x.total}` : x.state === 'done' || x.state === 'running' ? (x.secs != null && x.key !== 'fetch' ? mins(x.secs) : '') : x.state)),
+        x.state === 'running' && (x.last || x.calls) ? el('div', { class: 'act', title: x.last }, `${x.calls ? x.calls + ' calls · ' : ''}${x.last || ''}`) : null)));
+  }
+}
+
 let heads = {}, rerun = { running: false, status: '', error: '' }, rerunOpen = false, effort = DATA.effort || 'balanced';
 const stale = (st) => st.prs.filter((p) => heads[p.n] && heads[p.n] !== p.sha);
 
@@ -925,13 +960,14 @@ async function startRerun() {
 function rerunBox(st) {
   const moved = stale(st);
   if (!moved.length && !rerun.running && !rerun.error && !rerunOpen) return null;
-  if (rerun.running) return el('div', { class: 'rerunbox' }, el('span', { class: 'spin' }), el('span', { class: 'msg' }, `Rerunning the guide (${effort}). ${rerun.status}…`));
+  if (rerun.running) return el('div', { class: 'rerunbox' }, el('span', { class: 'spin' }), el('span', { class: 'msg' }, `Rerunning the guide (${effort}${usualText(effort) ? ', ' + usualText(effort) : ''}). ${rerun.status}…`));
   const msg = moved.length ? `${moved.length === st.prs.length && moved.length > 1 ? 'Every PR' : moved.map((p) => '#' + p.n).join(', ')} ${moved.length === 1 ? 'has' : 'have'} new commits since this guide was built. Posting is blocked until it is rerun.`
     : 'Write the guide again, with the same PRs.';
   return el('div', { class: 'rerunbox' + (moved.length ? ' stale' : '') },
     el('span', { class: 'msg' }, msg),
     el('span', { class: 'seg', role: 'group', 'aria-label': 'Effort' }, EFFORTS.map(([k, label]) =>
-      el('button', { type: 'button', class: 'COMMENT', 'aria-pressed': String(effort === k), title: EFFORT_HINT[k], onclick: () => { effort = k; render(); } }, label))),
+      el('button', { type: 'button', class: 'COMMENT', 'aria-pressed': String(effort === k), title: [EFFORT_HINT[k], usualText(k)].filter(Boolean).join('; '), onclick: () => { effort = k; render(); } }, label))),
+    usualText(effort) ? el('span', { class: 'usual' }, usualText(effort)) : null,
     el('button', { class: 'btn primary', type: 'button', onclick: startRerun }, 'Rerun the guide'),
     !moved.length ? el('button', { class: 'btn', type: 'button', onclick: () => { rerunOpen = false; rerun.error = ''; render(); } }, 'Cancel') : null,
     rerun.error ? el('span', { class: 'err' }, rerun.error) : null);
@@ -1006,6 +1042,7 @@ function sendView(st) {
   return [el('h1', {}, 'Your review'),
     el('p', { class: 'summary' }, [describe(ready) || 'Nothing to post yet', undecided ? ` · ${undecided} without a verdict` : '', done.length ? ` · ${done.length} posted` : ''].join('')),
     rerunBox(st),
+    el('div', { class: 'strip', 'aria-live': 'polite' }),
     el('div', { class: 'bulk' },
       el('button', { class: 'btn', type: 'button', disabled: busy || !clean.length, title: 'Not yours, CI not failing, and nothing open: no blocker, should-fix or question',
         onclick: () => setAll(clean, (x) => { x.vs.event = 'APPROVE'; }) }, clean.length ? `Approve all clean (${clean.length})` : 'No clean PR left to approve'),
@@ -1074,6 +1111,7 @@ function render() {
   renderTop(); renderSide();
   const view = state.view === 'send' ? sendView(st) : state.view === 'file' ? fileView(st) : guideView(st);
   document.getElementById('content').replaceChildren(...view.flat(Infinity).filter(Boolean));
+  paintStrip();
 }
 
 function toggleTheme() {
@@ -1093,12 +1131,14 @@ async function poll() {
   try {
     const j = await (await fetch('/api/state', { cache: 'no-store' })).json();
     posted = j.posted || {};
+    stages = j.stages || []; usual = j.usual || {};
+    paintStrip();
     if (j.rerun) { const was = rerun.running; rerun = j.rerun; if (was && !rerun.running) render(); }
     if (version !== null && j.version !== version) { save(); location.reload(); return; }
     if (version === null) render();
     version = j.version;
   } catch (e) {}
-  if (rerun.running || DATA.stacks.some((s) => s.pending || s.reviewing.length || s.comments.some((c) => c.status === 'checking'))) setTimeout(poll, 3000);
+  if (rerun.running || stages.some(working) || DATA.stacks.some((s) => s.pending || s.reviewing.length || s.comments.some((c) => c.status === 'checking'))) setTimeout(poll, 3000);
 }
 poll();
 checkHeads();

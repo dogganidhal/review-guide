@@ -17,6 +17,7 @@ import hashlib
 import json
 import pathlib
 import sys
+import time
 
 from fetch import parse_diff
 
@@ -278,11 +279,67 @@ def check_map(guide: dict, st: Stack, err) -> set[str]:
     return ids
 
 
+def verify_results(sdir: pathlib.Path) -> dict[str, dict]:
+    """The verifiers' files, one per finding: `verify/<axis>-<id>.json`. A file still being written counts as missing."""
+    out = {}
+    for f in (sdir / "verify").glob("*.json"):
+        try:
+            out[f.stem] = json.loads(f.read_text())
+        except ValueError:
+            pass
+    return out
+
+
+def stages(w: pathlib.Path) -> list[dict]:
+    """Per stack, where each agent stands: from the files the agents write, and progress.json when the runner wrote it.
+    `secs` counts from the fetch to the file landing, or to now while running."""
+    run = json.loads((w / "run.json").read_text())
+    try:
+        agents = json.loads((w / "progress.json").read_text())["agents"]
+    except (OSError, ValueError, KeyError):
+        agents = {}
+    now, t0 = time.time(), run.get("fetched_at") or time.time()
+    out = []
+    for s in run["stacks"]:
+        d, sid = w / s["id"], s["id"]
+
+        def stage(key: str, label: str, path: pathlib.Path) -> dict:
+            a = agents.get(f"{sid}/{key}") or {}
+            if path.is_file():
+                state = "done"
+                if key in AXES:
+                    try:
+                        state = "skipped" if json.loads(path.read_text()).get("skipped") else "done"
+                    except ValueError:
+                        state = "running"
+                return {"key": key, "label": label, "state": state, "secs": round(path.stat().st_mtime - t0)}
+            state = a.get("state") or ("running" if not agents else "waiting")
+            return {"key": key, "label": label, "state": state, "secs": round(now - t0), "calls": a.get("calls", 0), "last": a.get("last", "")}
+
+        row = [{"key": "fetch", "label": "Fetched", "state": "done"}, stage("guide", "Guide", d / "guide.json"), *(stage(a, a.capitalize(), d / f"review-{a}.json") for a in AXES)]
+        total = None
+        if all(x["state"] in ("done", "skipped", "failed") for x in row[2:]):
+            total = sum(len(json.loads((d / f"review-{a}.json").read_text()).get("findings") or [])
+                        for a in AXES if (d / f"review-{a}.json").is_file())
+        checked = verify_results(d)
+        running = [a for k, a in agents.items() if k.startswith(f"{sid}/verify/") and a.get("state") == "running"]
+        if total is None:
+            check = {"state": "waiting"}
+        elif len(checked) >= total:
+            last = max((f.stat().st_mtime for f in (d / "verify").glob("*.json")), default=now)
+            check = {"state": "done", "secs": round(last - t0)}
+        else:
+            latest = max(running, key=lambda a: a.get("started", 0), default={})
+            check = {"state": "running", "secs": round(now - t0), "calls": sum(a.get("calls", 0) for a in running), "last": latest.get("last", "")}
+        row.append({"key": "check", "label": "Fact check", "checked": len(checked), "total": total, **check})
+        out.append({"id": sid, "stages": row})
+    return out
+
+
 def collect_findings(st: Stack, reports: dict[str, dict]) -> tuple[list[dict], dict[str, str], list[str]]:
     """Every reviewer's findings with the verifier's status. Duplicates the verifier names are dropped."""
     warnings, skipped = [], {}
-    path = st.dir / "verify.json"
-    results = json.loads(path.read_text()).get("comments") or {} if path.is_file() else None
+    results = verify_results(st.dir)
     out = []
     for axis in AXES:
         report = reports.get(axis)
@@ -292,11 +349,11 @@ def collect_findings(st: Stack, reports: dict[str, dict]) -> tuple[list[dict], d
             skipped[axis] = report["skipped"]
         for c in report.get("findings") or []:
             c = {**c, "axis": axis, "key": f"{axis}/{c['id']}"}
-            if results is None:
+            r = results.get(f"{axis}-{c['id']}")
+            if r is None:
                 c["status"], c["note"] = "checking", "The verifier is still checking this comment."
                 out.append(c)
                 continue
-            r = results.get(c["key"]) or {}
             if r.get("status") == "duplicate":
                 continue
             c["status"] = r.get("status") if r.get("status") in STATUSES else "unverified"

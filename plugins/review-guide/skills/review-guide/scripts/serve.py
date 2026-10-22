@@ -21,6 +21,9 @@ import sys
 import threading
 import time
 
+from build import stages
+
+TIMINGS = pathlib.Path.home() / ".cache" / "review-guide" / "timings.json"
 TOKEN = secrets.token_urlsafe(24)
 
 
@@ -29,6 +32,14 @@ def gh(*args: str, stdin: str | None = None) -> str:
     if r.returncode:
         raise RuntimeError(r.stderr.strip() or r.stdout.strip())
     return r.stdout
+
+
+def usual() -> dict:
+    """Average run time per effort level, in seconds, from the runner's last ten runs of each."""
+    try:
+        return {k: round(sum(v) / len(v)) for k, v in json.loads(TIMINGS.read_text()).items() if v}
+    except (OSError, ValueError):
+        return {}
 
 
 def handler(workdir: pathlib.Path):
@@ -86,7 +97,12 @@ def handler(workdir: pathlib.Path):
                 page = (cur["w"] / "index.html").read_text().replace("/*TOKEN*/", TOKEN)
                 self.reply(200, page.encode(), "text/html; charset=utf-8")
             elif self.path == "/api/state":
-                self.reply(200, {"posted": posted(), "version": (cur["w"] / "index.html").stat().st_mtime_ns, "rerun": rerun})
+                try:
+                    progress = stages(cur["w"])
+                except (OSError, ValueError, KeyError):
+                    progress = []
+                self.reply(200, {"posted": posted(), "version": (cur["w"] / "index.html").stat().st_mtime_ns, "rerun": rerun,
+                                 "stages": progress, "usual": usual()})
             elif self.path == "/api/heads":
                 try:
                     self.reply(200, {"heads": heads()})
