@@ -110,5 +110,11 @@ M5 comes after M2 (diagram nodes and their popovers) and M1 (rail, breadcrumb), 
 
 ## State
 
-- Phase: plan, waiting for review.
+- Phase: step 1 (server, agent, stub, tests) done; steps 2 to 5 open.
 - Settled: the four decisions above, answered on 2026-10-22. Resume, partial streaming and tool restriction were checked against the Claude Code docs (headless, CLI reference, sessions, permissions).
+- Delivered in step 1: `scripts/ask.py` (threads, runner, concurrency cap, proposals, carry-over), the routes in `serve.py`, `agents/answerer.md`, `check_ask` in `test_scripts.py` (a stub `claude` replays a stream and logs its argv), and a "Questions" section in `docs/spec.md`. Checked live on the act-68 review: two questions and a follow-up on Sonnet and one on Opus, about 12 s each, all answers right.
+- Left:
+  - Page steps 2 to 4 (asking, threads, rail group, the three actions).
+  - `build.py` merging `<stack>/rejudged.json` (`{"<axis>-<id>": {status, note, thread}}`) and `<stack>/guide-fixes.json` (`[{ref: {kind, stack, index|id}, replacement, thread, at}]`) into the rendered page, after M2 lands. The server validates both when the thread proposes them; `build.py` should check a fix again, since a later round may change the guide.
+  - The page reads `lost_threads` from `ui.json` for "Questions from earlier rounds".
+- Changes from the plan: the text arrives in one burst after the last tool call rather than word by word (the live CLI sends `text_delta` events only once the final message starts), so the live line carries the progress and the answer appears at the end; a thread's `target` stores the resolved `label` (and the text, for a line) so the page can show a chip and carry-over can find the lines again; `stack` is part of a target when a review has several stacks.

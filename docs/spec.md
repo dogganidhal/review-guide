@@ -277,6 +277,23 @@ The design is hardcoded in `ui/template.html`, so every user gets the same look.
   - the PR has not been posted from this page already.
 - It posts `POST repos/<repo>/pulls/<n>/reviews` through `gh api` with `commit_id = review_sha`. Multi-line comments send `start_line` and `start_side`.
 
+### Questions (`ask.py`, routes in `serve.py`)
+
+A reviewer asks about one place on the page and the answer streams back into a thread. Nothing is posted to GitHub.
+
+- **Routes:** each write takes the token and the latest round only (an earlier round answers 409).
+  - `POST /api/r/<id>/<n>/ask` with `{thread?, target, question, deep?}` returns `202 {thread}` at once. `target` is `{kind: line|section|fact|step|node|finding|free, path?, start?, end?, ref?, stack?}`; `ref` is a section or fact index, a step, node (`a>b` for an arrow) or finding id. The server checks it against the round's `guide.json` and stores the label and text it resolved. A thread still answering returns 409; an unknown thread 404; a target not in the round 400.
+  - `GET /api/r/<id>/<n>/threads` lists threads (id, target, first question, status, created, updated), `GET .../threads/<thread>` returns one.
+  - `POST .../threads/<thread>/apply` accepts the proposed action.
+- **Thread file:** `rounds/<n>/threads/<thread>.json` holds `id`, `target`, `created`, `session_id`, `status` (`queued`, `running`, `idle`, `failed`), `live` (the latest tool action), `messages` (`role`, `text`, `at`, `deep`, `model`), `proposal` and `error`. The server rewrites it atomically every 150 ms while the stream arrives, so a poll shows the answer growing.
+- **Running:** at most 3 answers at a time per server, the rest queued in order; one turn per thread. The server runs `claude -p --agent review-guide:answerer` (the command is `$REVIEW_GUIDE_CLAUDE` when set) with `--include-partial-messages`, read-only tools and Bash limited to `git -C <checkout> show|grep|log`. The first turn stores `session_id`; later turns pass `--resume` and the plugin and directory flags again. "Dig deeper" (`deep`) runs Opus at high effort.
+- **Proposals:** the answerer may end with an `action` block. The server strips it from the text, checks it and stores it as `proposal`, or the reason as `proposal_error`.
+  - `comment`: on a line the stack wrote, routed like a finding.
+  - `rejudge`: only on a finding thread, for that finding, `verified` or `refuted` with a note.
+  - `guide_fix`: only on a section, fact or step thread, for that target, with the replacement checked against `build.py`'s limits and references.
+  - Applying a comment only marks it applied; the page adds it as a custom comment. A re-judge goes to `<stack>/rejudged.json` and a guide fix to `<stack>/guide-fixes.json`, for `build.py` to merge into the page.
+- **Carry-over:** a new round copies the threads. A line thread moves to the same text nearest its old place, a section or fact follows its title; a thread whose target is gone goes to `lost_threads` in the new round's `ui.json`. Session ids are kept.
+
 ## Data handling
 
 Data leaves the machine through `gh` (GitHub) and the model only. The skill asks the user to confirm before fetching when the repository could hold patient or personal data in fixtures. Doctolib policy forbids publishing a page built from such a repository to any public destination.
