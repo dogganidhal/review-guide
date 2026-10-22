@@ -156,6 +156,17 @@ h1 { font-size: 1.35rem; line-height: 1.2; margin: 0 0 6px; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; font-size: .78rem; }
 .meta span, .meta a { padding: 1px 9px; border-radius: 99px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
 .meta .bad { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin: 4px 0 10px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px 10px; background: var(--surface); min-width: 0; }
+.tile .k { font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; }
+.tile .v { display: flex; align-items: center; gap: 6px; font-size: 1.2rem; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tile .s { font-size: .8rem; color: var(--muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile.ok { background: var(--ok-soft); border-color: transparent; } .tile.ok .v { color: var(--ok); }
+.tile.bad { background: var(--danger-soft); border-color: transparent; } .tile.bad .v { color: var(--danger); }
+.tile.wait { background: var(--warn-soft); border-color: transparent; } .tile.wait .v { color: var(--warn); }
+.tile .add { color: var(--ok); } .tile .del { color: var(--danger); }
+.sizebar { display: flex; height: 5px; border-radius: 99px; overflow: hidden; margin-top: 7px; background: var(--surface-2); }
+.sizebar .a { background: var(--ok); } .sizebar .d { background: var(--danger); }
 .warnbox { border: 1px solid var(--warn-soft); background: var(--warn-soft); color: var(--text); border-radius: 10px; padding: 8px 12px; font-size: .85rem; margin-bottom: 14px; }
 .warnbox summary { cursor: pointer; font-weight: 600; color: var(--warn); }
 .warnbox p { margin: 6px 0 0; }
@@ -893,21 +904,67 @@ function stepCard(st, s, i) {
   return card;
 }
 
+const num = (n) => n.toLocaleString('en-US');
+const duration = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`);
+
+// How long a careful pass takes with the guide: files to read at reading pace, files to skim much faster, skipped files
+// not at all, plus a moment per finding. Deleted lines read faster than added ones.
+// ponytail: flat rates; tune them from real sessions if the estimate keeps missing.
+function estimate(st) {
+  let read = 0, skim = 0, nRead = 0, nSkim = 0;
+  for (const f of st.files) {
+    const lines = f.adds + Math.ceil(f.dels / 4);
+    if (f.role === 'skip') continue;
+    if (f.role === 'skim') { skim += lines; nSkim++; } else { read += lines; nRead++; }
+  }
+  const mins = read / 20 + skim / 100 + comments(st).filter((c) => c.axis).length * 1.5;
+  return { mins: Math.max(5, Math.round(mins / 5) * 5), nRead, nSkim, nSkip: st.files.length - nRead - nSkim };
+}
+
+// The first thing the reviewer sees: how long it takes, how big it is, whether CI is green, and what the reviewers found.
+function tiles(st) {
+  const adds = st.files.reduce((t, f) => t + f.adds, 0), dels = st.files.reduce((t, f) => t + f.dels, 0);
+  const est = estimate(st);
+  const failing = st.prs.filter((p) => p.checks.failed.length);
+  const pending = st.prs.reduce((t, p) => t + p.checks.pending, 0), passed = st.prs.reduce((t, p) => t + p.checks.passed, 0);
+  const failedNames = failing.flatMap((p) => p.checks.failed);
+  const ci = failing.length ? { cls: 'bad', v: `✕ ${plural(failedNames.length, 'check', 'checks')} failing`, s: (st.prs.length > 1 ? failing.map((p) => '#' + p.n).join(', ') + ': ' : '') + failedNames.join(', ') }
+    : pending ? { cls: 'wait', v: `◌ ${pending} pending`, s: `${passed} passed so far` }
+    : { cls: 'ok', v: '✓ Green', s: passed ? `all ${plural(passed, 'check', 'checks')} passed` : 'no checks reported' };
+  const live = comments(st).filter((c) => c.axis && c.status !== 'refuted' && !cmState(c).gone);
+  const sev = (k) => live.filter((c) => c.severity === k).length;
+  const busy = st.pending || st.reviewing.length || st.comments.some((c) => c.status === 'checking');
+  const checked = live.filter((c) => c.status === 'verified').length;
+  const found = sev('blocker') ? { cls: 'bad', v: plural(sev('blocker'), 'blocker', 'blockers') }
+    : sev('should') ? { cls: 'wait', v: plural(sev('should'), 'thing', 'things') + ' to fix' }
+    : { cls: busy ? '' : 'ok', v: busy ? 'Nothing blocking yet' : 'Nothing blocking' };
+  const rest = [sev('question') && plural(sev('question'), 'question', 'questions'), sev('nit') && plural(sev('nit'), 'nit', 'nits')].filter(Boolean).join(', ');
+  const tile = (cls, k, v, sub, extra) => el('div', { class: 'tile ' + cls, title: typeof sub === 'string' ? sub : null }, el('div', { class: 'k' }, k), el('div', { class: 'v' }, v), el('div', { class: 's' }, sub), extra);
+  return el('div', { class: 'tiles' },
+    tile('', 'Time to review', `about ${duration(est.mins)}`,
+      st.pending ? 'a first estimate; the guide sorts the files next' : `read ${est.nRead}, skim ${est.nSkim}${est.nSkip ? `, skip ${est.nSkip}` : ''} files`),
+    tile('', 'Size', [el('span', { class: 'add' }, `+${num(adds)}`), el('span', { class: 'del' }, `−${num(dels)}`)],
+      `${plural(st.files.length, 'file', 'files')}${st.prs.length > 1 ? ` in ${st.prs.length} PRs` : ''}`,
+      el('div', { class: 'sizebar', 'aria-hidden': 'true' }, el('span', { class: 'a', style: `width:${adds / Math.max(1, adds + dels) * 100}%` }), el('span', { class: 'd', style: `flex:1` }))),
+    tile(ci.cls, 'CI', ci.v, ci.s),
+    tile(found.cls, 'Reviewers found', [busy ? el('span', { class: 'spin' }) : null, found.v],
+      busy ? `${st.reviewing.length ? 'still reviewing' : 'checking the findings'}${rest ? ` · ${rest}` : ''}`
+        : live.length ? [rest || 'nothing else', ` · ${checked} of ${live.length} checked in the code`].join('') : 'no finding on any axis'));
+}
+
 function guideView(st) {
   const failing = st.prs.filter((p) => p.checks.failed.length);
   const pending = st.prs.reduce((t, p) => t + p.checks.pending, 0);
   const ci = failing.length ? (st.prs.length > 1 ? `CI failing on ${failing.length} of ${st.prs.length} PRs` : `CI failing: ${failing[0].checks.failed.length} checks`)
     : pending ? `CI: ${pending} pending` : 'CI green';
   const listKey = 'prs:' + st.id;
-  const adds = st.files.reduce((t, f) => t + f.adds, 0), dels = st.files.reduce((t, f) => t + f.dels, 0);
   const warnings = DATA.warnings.filter((w) => st.prs.some((p) => w.includes('#' + p.n)));
   return [
     el('h1', {}, st.prs.length > 1 ? `Stack of ${st.prs.length} PRs` : st.prs[0].title),
     el('p', { class: 'summary' }, st.summary),
+    tiles(st),
     el('div', { class: 'meta' },
-      el('span', {}, `${st.files.length} files · +${adds} −${dels}`),
-      el('span', { class: failing.length ? 'bad' : '' }, ci),
-      ext(st.compare, 'Whole stack on GitHub ↗'),
+      ext(st.compare, st.prs.length > 1 ? 'Whole stack on GitHub ↗' : 'On GitHub ↗'),
       !BOOT.live ? null : el('button', { type: 'button', title: 'Write the guide again', onclick: () => { rerunOpen = true; render(); } }, `${DATA.effort || 'balanced'} guide · Rerun ↻`)),
     rerunBox(st),
     el('div', { class: 'runpanel', 'aria-live': 'polite' }),

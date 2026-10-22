@@ -182,7 +182,12 @@ Single self-contained HTML file. Figtree from Google Fonts and highlight.js 11.9
 - **Scrolling:** no panel on the page shows a scrollbar; content still scrolls by wheel, trackpad and keyboard.
 - **Left sidebar:** file tree with collapsible folders, compressed single-child folders, a search box, read/skim/skip filter chips, a viewed count, a role marker per file, and a drafted-comment count. The PR dots sit pinned to the right edge, over a fade, so they stay visible while the tree scrolls sideways.
 - **Guide view:**
-  - title, summary, and meta chips (size, CI summary, link to the stack), a PR list with one row per PR (title, CI state, failing check names, GitHub link; collapsed above five PRs), plus warnings in a collapsible box;
+  - title, summary, then four tiles that tell the reviewer what they are signing up for:
+    - **Time to review:** an estimate from the writer's file roles: added lines in `read` files at 20 a minute, `skim` files at 100, `skip` files not at all, a quarter weight for deleted lines, and 1.5 minutes per finding, rounded to 5 minutes.
+    - **Size:** additions in green and deletions in red, with a bar.
+    - **CI:** green, amber when checks are pending, red with the failing check names.
+    - **Reviewers found:** blockers in red, should-fixes in amber, otherwise "Nothing blocking" in green, with the questions and nits and how many were checked in the code.
+  - then chips for the GitHub link and Rerun, a PR list with one row per PR (title, CI state, failing check names, GitHub link; collapsed above five PRs), plus warnings in a collapsible box;
   - "Know this first";
   - the writer's sections, in its order, each under its own title:
     - `flow`: a sequence diagram. Components are columns in call order with role above label. Arrows are numbered top to bottom, and blue arrows are what the stack added. Clicking a box opens its file;
