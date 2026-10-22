@@ -276,7 +276,7 @@ class Home:
                                                  for r in rev["rounds"] if (self.rdir(rid, r["n"]) / "ui.json").is_file()])
         prs = [{"n": p["n"], "title": p["title"], "author": p["author"], "label": p.get("label"), "posted": str(p["n"]) in posted} for p in run.get("prs", [])]
         self_ref = SELF_REF.match(rev["refs"][0])
-        return {"id": rid, "refs": rev["refs"], "mode": "self" if self_ref else "pr", "branch": self_ref and self_ref.group(2),
+        return {"id": rid, "refs": rev["refs"], "mode": "self" if self_ref else "pr", "branch": self_ref and self_ref.group(2).rpartition("..")[2],
                 "sent": (read(rdir / "feedback.json") or {}).get("sent_at"), "repo": run.get("repo") or rev["refs"][0].split("#")[0], "status": rev.get("status", "open"),
                 "created": rev.get("created"), "updated": touched, "rounds": len(rev["rounds"]), "live": live, "prs": prs, "findings": findings,
                 "newest": self.round_info(rid, newest) if newest else None}
