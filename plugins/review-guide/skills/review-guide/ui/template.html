@@ -724,7 +724,7 @@ const ST = () => DATA.stacks.find((s) => s.id === state.stack);
 const prIndex = (st, n) => st.prs.findIndex((p) => p.n === n);
 const prColor = (st, n) => PR_COLORS[prIndex(st, n) % PR_COLORS.length];
 const SELF = DATA.mode === 'self';
-// A PR's short name: `#3564`, or in a self-review the layer's branch (with its PR number when it has one).
+// A PR's short name: `#42`, or in a self-review the layer's branch (with its PR number when it has one).
 const prOf = (n) => DATA.stacks.flatMap((s) => s.prs).find((p) => p.n === n);
 const tag = (n) => (SELF ? prOf(n)?.label || `layer ${n}` : `#${n}`);
 // The title next to a tag, left out when the tag already says it (an uncommitted layer, or a branch named like its commit).

@@ -24,11 +24,11 @@ These are the decisions that a future change could undo by accident.
 - **Sequence diagrams first, layered map collapsed.** The layered graph read as a tangle, even to the author of the code. A per-flow sequence diagram with plain-words roles is easier to follow, and the full map stays available one click away.
 - **Suggestions are opt-in.** Pre-ticked checkboxes did not read as "suggested feedback". Suggestions now look like draft review comments from a separate author (✦). The reviewer adds each one explicitly, and adding it opens the editor.
 - **Hard text limits.** The first page carried too much prose. Limits enforced by `build.py` keep every field to a sentence or two.
-- **Taken from the hand-made "Journey of a turn" guide (ACT-57):** "know this first" facts and a test line per step. Left out: chapters, quizzes and stamps, which suit a teaching walkthrough but slow down a review.
+- **Taken from the hand-made "Journey of a turn" guide:** "know this first" facts and a test line per step. Left out: chapters, quizzes and stamps, which suit a teaching walkthrough but slow down a review.
 
 ## Measured
 
-Test stack: doctolib/on-demand-care-chat #3564 (ACT-69, Redis event log writer) and #3565 (ACT-70, reader), 31 files, +1,204 lines.
+Test stack: two stacked PRs in a Java and Spring service (a Redis event log writer and its reader), 31 files, +1,204 lines.
 
 | Run | Writer | Verifier | Total |
 | --- | --- | --- | --- |
@@ -50,9 +50,9 @@ Two runs of the writer on the same stack produced 7 and 8 comments, with about 3
 In priority order:
 
 1. Install the plugin locally (`claude plugin marketplace add ~/Sources/review-guide`, then `claude plugin install review-guide@review-guide`) and run the skill end to end on the test stack.
-2. Run it on the ACT-57 stack (6 PRs) and compare it with the hand-made guide. This shows whether large stacks need several writers, one per subsystem.
+2. Run it on the 6-PR stack behind the hand-made guide and compare it with the hand-made guide. This shows whether large stacks need several writers, one per subsystem.
 3. Speed: run writer and verifier in an overlapping way (verify each comment as it is drafted), and split structure (map, flows, roles; small and fast) from findings. Target: under 5 minutes in total.
 4. Add a light mode for small PRs: comments only, no map or flows.
 5. Measure recall on about 10 merged PRs that had human review comments, to check that `skim` and `skip` roles are safe.
 6. Release 0.1.0 to the team: `LICENSE` (internal), install and release steps in the README and the plugin runs on Python 3.9 are done. Remaining: install it from `dogganidhal/review-guide` (private) on a second machine, then move the repo to the doctolib org (needs a PR on github-workspaces).
-7. "Risks to review" cards with a status (accepted limit, decided, not discussed), taken from the ACT-57 guide.
+7. "Risks to review" cards with a status (accepted limit, decided, not discussed), taken from the hand-made guide.

@@ -27,25 +27,25 @@ The explanation. Findings live in the reviewers' files.
   "components": {
     "layers": [{ "id": "web", "label": "web-server" }, { "id": "redis", "label": "Redis" }],
     "nodes": [
-      { "id": "writer", "label": "RedisAgUiEventLog", "role": "the event log writer", "layer": "web", "state": "new", "path": "src/.../RedisAgUiEventLog.java", "at": "src/.../RedisAgUiEventLog.java:58" },
+      { "id": "writer", "label": "EventLogWriter", "role": "the event log writer", "layer": "web", "state": "new", "path": "src/.../EventLogWriter.java", "at": "src/.../EventLogWriter.java:58" },
       { "id": "stream", "label": "run stream", "layer": "redis", "state": "external", "path": null }
     ]
   },
   "sections": [
     { "type": "diagram", "kind": "sequence", "title": "Write a frame", "participants": ["writer", "stream"],
-      "messages": [{ "from": "writer", "to": "stream", "label": "XADD", "new": true, "at": "src/.../RedisAgUiEventLog.java:68" }] },
+      "messages": [{ "from": "writer", "to": "stream", "label": "XADD", "new": true, "at": "src/.../EventLogWriter.java:68" }] },
     { "type": "risks", "title": "Where it can go wrong", "items": [
-      { "title": "A failed write deletes the log", "text": "Readers see no log rather than one with a hole.", "status": "decided", "at": "src/.../RedisAgUiEventLog.java:89" }] },
+      { "title": "A failed write deletes the log", "text": "Readers see no log rather than one with a hole.", "status": "decided", "at": "src/.../EventLogWriter.java:89" }] },
     { "type": "before_after", "title": "Alerts after this PR", "rows": [{ "aspect": "Review created", "before": "SMS to the HCP on duty", "after": "Push only" }] },
-    { "type": "table", "title": "What each PR does", "columns": ["PR", "Change", "Safe alone"], "rows": [["#3564", "Writes frames", "yes"]] },
+    { "type": "table", "title": "What each PR does", "columns": ["PR", "Change", "Safe alone"], "rows": [["#1", "Writes frames", "yes"]] },
     { "type": "list", "title": "Rollout", "items": ["Merge after the monolith switch is off."] },
     { "type": "steps", "title": "Read in this order", "steps": [{
         "id": "append", "kind": "read", "title": "Append and failure handling",
         "why": "One sentence on what the reviewer should look for here.",
-        "nodes": ["writer"], "test": "RedisAgUiEventLogIT#append_expiresTheKey",
-        "anchor": { "path": "src/.../RedisAgUiEventLog.java", "start": 40, "end": 90 } }] }
+        "nodes": ["writer"], "test": "EventLogWriterIT#append_expiresTheKey",
+        "anchor": { "path": "src/.../EventLogWriter.java", "start": 40, "end": 90 } }] }
   ],
-  "files": { "src/.../RedisAgUiEventLog.java": { "role": "read", "why": "Appends frames and handles write failures." } }
+  "files": { "src/.../EventLogWriter.java": { "role": "read", "why": "Appends frames and handles write failures." } }
 }
 ```
 
@@ -128,11 +128,11 @@ One file per axis: `correctness`, `standards`, `spec`.
       "id": "truncated-log",
       "severity": "question",
       "title": "Truncated log stays readable after a connection failure",
-      "path": "src/.../RedisAgUiEventLog.java",
+      "path": "src/.../EventLogWriter.java",
       "line": 81,
       "start_line": null,
       "body": "The comment exactly as it is posted.",
-      "evidence": ["src/.../RedisAgUiEventLog.java:79-83"]
+      "evidence": ["src/.../EventLogWriter.java:79-83"]
     }
   ]
 }
@@ -141,7 +141,7 @@ One file per axis: `correctness`, `standards`, `spec`.
 Rules `build.py --check --only <axis>` enforces:
 
 - `severity` is `blocker`, `should`, `question` or `nit`. `title` up to 90 characters, `body` up to 700. `evidence` lists `path:line` references.
-- An inline finding's `line` (and `start_line` through `line`) must be lines the stack wrote, meaning they appear in `attribution.json`. A range must come from one PR. A finding that cannot sit on such a line uses `path: null` and names its PR with `"pr": 3564`. That should be rare: the page shows such findings in the review summary, with links to their `evidence`, and an inline comment on the change that caused the problem reads better.
+- An inline finding's `line` (and `start_line` through `line`) must be lines the stack wrote, meaning they appear in `attribution.json`. A range must come from one PR. A finding that cannot sit on such a line uses `path: null` and names its PR with `"pr": 42`. That should be rare: the page shows such findings in the review summary, with links to their `evidence`, and an inline comment on the change that caused the problem reads better.
 - At most 3 findings per PR per axis.
 - `skipped` is `null`, or one sentence on why the axis could not be reviewed (for example, no spec).
 

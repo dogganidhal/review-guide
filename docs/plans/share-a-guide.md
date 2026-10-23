@@ -106,7 +106,7 @@ The colleague can also review from it. How much works depends on what they have:
   - **With the network blocked:** there is no request except the loopback probe, and no page error. Diagrams render, a box opens its file and Back returns, a draft survives a reload, and "Download with my comments" produces a file that reopens with the draft.
   - **With a fixture server running:** the band offers the import, and the import ends on the new review.
 - **Live:**
-  - export the #3564→#3571 review and open it in Chrome and Safari from Downloads;
+  - export a real multi-PR review and open it in Chrome and Safari from Downloads;
   - draft two comments and copy the `gh` command for a PR in a scratch repository you own, then run it to see the review land;
   - import the file into a second server home.
 

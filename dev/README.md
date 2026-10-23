@@ -20,7 +20,7 @@ The same source code as the original runs. Each stack gets one guide-writer run 
 
 - Reads `~/.cache/review-guide` (`--source`) and never writes there.
 - Copies each review into `~/.cache/review-guide-replay` (`--home`). A review that is already copied is not copied again unless `--fresh`; a stack with a good result in `replay.json` is not run again, so an interrupted run resumes.
-- The older `doctolib-*` work directories in the source root become one-round reviews. Only the stacks of the plan are kept (#3564-3565, #3569, #3564-3565-3571 twice); other runs, runs without a guide and older runs of the same PRs are listed and skipped.
+- The older `doctolib-*` work directories in the source root become one-round reviews. Only the stacks of the plan are kept; other runs, runs without a guide and older runs of the same PRs are listed and skipped.
 - The new round is round N+1: a copy of the latest built round's work directory without each stack's `guide.json`. The guide writer runs on it, then `build.py --check` and `build.py`.
 - `--only TEXT` replays the reviews whose id contains TEXT. `--jobs N` is the number of writers at once across all reviews (3). `--dry-run` lists and writes nothing. `--fresh` starts over.
 - The old rounds are rebuilt in the copy with today's `build.py`, so both sides show today's page and only the guide differs. A run from before the reviewers existed gets "skipped" reviewer files so its page does not wait on them.

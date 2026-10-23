@@ -63,7 +63,7 @@ This can be shown on the guides that already exist.
 
 **Keeping your place**
 - Opening a file from a step, a finding or a diagram records where you came from.
-- The file view shows a breadcrumb: `Guide › Read in this order › 3. The resume cursor › FrameCursor.java`.
+- The file view shows a breadcrumb: `Guide › Read in this order › 3. The resume cursor › Cursor.java`.
 - "← Back" returns to that spot, at the same scroll position.
 - A file opened from a step gets "← 2. …" and "4. … →", to move along the reading order without going back to the guide.
 - A file opened from a finding gets the previous and next finding.
@@ -115,7 +115,7 @@ The old map read as a tangle for two reasons: it held every component at once, a
 
 **Risks section**
 - A `risks` section lists 1 to 6 cards. Each card has a title, one sentence, a `status` (`open`, `decided`, `accepted limit`) and an `at` reference.
-- This is item 7 of the "Next" list in `docs/status.md`, taken from the hand-made ACT-57 guide.
+- This is item 7 of the "Next" list in `docs/status.md`, taken from the hand-made guide.
 - The summary already names where the risk sits. This gives each risk a status the reviewer can see at a glance.
 
 **Contract changes, together**
@@ -166,10 +166,7 @@ The old map read as a tangle for two reasons: it held every component at once, a
   - runs only the new guide writer on it, then builds.
   - The reviews in `~/.cache/review-guide` are not touched.
 - **The saved stacks:**
-  - #3564-3565, #3569 and #3572 (two rounds) in on-demand-care-chat;
-  - #3564-3565-3571 (two runs) and the self-review stack;
-  - #3576-3577;
-  - ai-health-assistant #1257 and #1715.
+  - the 8 stacks saved from earlier runs, kept in the author's local cache (not in this repository).
   - The writers are run again only for these 8 stacks; the source code goes to the model as it did the first time.
 - **`dev/compare.html`:** served by the replay server, it shows round 1 (the old guide) and round 2 (the new one) side by side for each stack, with "old better", "new better" and "same" and a note. The answers go to `compare.json` in the scratch home.
 - **You** go through the 8 pairs. The prompt is tuned on the stacks where the new guide loses, and those are replayed again.

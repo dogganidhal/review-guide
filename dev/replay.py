@@ -32,7 +32,7 @@ from serve import review_id  # noqa: E402
 
 EFFORT = "balanced"
 # The stacks of the plan (docs/plans/better-guides.md, Milestone 4) among the older work directories. Other stacks there
-# (the 24-PR ai-health-assistant runs) are listed and skipped. Runs of these are deduplicated, newest first, except
+# (the 24-PR runs) are listed and skipped. Runs of these are deduplicated, newest first, except
 # KEEP_BOTH, whose two runs the plan keeps.
 PLAN_STACKS = {"3564-3565", "3569", "3564-3565-3571"}
 KEEP_BOTH = {"3564-3565-3571"}

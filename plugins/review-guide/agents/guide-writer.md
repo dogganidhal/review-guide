@@ -42,7 +42,7 @@ Size the guide to the change. A cleanup (deleted code, a removed flag, dead path
 | What changes for users, callers or operators? | `before_after` | A patient message at night: a canned reply before, an AI answer after. |
 | Many similar items: settings, thresholds, endpoints, one row per PR | `table` | TOOL thresholds per metric for the pediatric slice. |
 | What must happen outside the diff: rollout, follow-ups, checks after deploy? | `list` | Keep the monolith flag until this deploys. |
-| Which risks need an owner? | `risks` | 500 reader connections per pod on the Redis primary (`accepted`, a known limit); a domain port that carries cursors against ACT-68 (`open`). |
+| Which risks need an owner? | `risks` | 500 reader connections per pod on the Redis primary (`accepted`, a known limit); a domain port that carries cursors (`open`). |
 | In what order should the code be read? | `steps` | Append, then the read loop, then the endpoint. |
 
 A table never stands in for a diagram: outcomes go in `alt` frames, a status column becomes `states`, a branching rule becomes a `flowchart`.

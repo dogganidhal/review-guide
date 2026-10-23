@@ -37,7 +37,7 @@ if question.startswith("boom") and not (tmp / f"rg-stub-boom-{sid}").exists():
     (tmp / f"rg-stub-boom-{sid}").touch()
     print("claude: something broke", file=sys.stderr)
     sys.exit(1)
-for name, inp in (("Read", {"file_path": "/w/tip/FrameCursor.java"}), ("Grep", {"pattern": "compareEntryIds"})):
+for name, inp in (("Read", {"file_path": "/w/tip/Cursor.java"}), ("Grep", {"pattern": "compareIds"})):
     out({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": name, "input": inp}]}})
 out({"type": "stream_event", "event": {"type": "message_start"}})
 for word in reply.split(" "):

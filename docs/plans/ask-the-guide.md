@@ -25,10 +25,10 @@ Not in this change:
 - **Guide:** each section, key fact and step has an "Ask" affordance on hover, at its top right. In a diagram, clicking a node or arrow opens its popover, which has "Ask about this" next to "Open the code".
 - **Finding:** each suggested comment card gets "Ask" next to "Add to my review" and "Dismiss". Typical questions: "is this real?", "what would break?", "show me the caller".
 - **Anywhere:** `?` opens a free question box in the rail. It is attached to whatever is selected or on screen, and you can remove the attachment.
-- The box shows the attachment as a chip ("FrameCursor.java:21-30", "Step 3: The resume cursor", "Finding: pool full answers 503"). Suggested starters fit the target: "Why this way?", "What calls this?", "What breaks if…", "Is this tested?".
+- The box shows the attachment as a chip ("Cursor.java:21-30", "Step 3: The resume cursor", "Finding: pool full answers 503"). Suggested starters fit the target: "Why this way?", "What calls this?", "What breaks if…", "Is this tested?".
 
 **Answering**
-- The thread shows "Reading FrameCursor.java…", "git grep compareEntryIds…" while the agent works, the same live line as the progress panel. Then the answer streams in.
+- The thread shows "Reading Cursor.java…", "git grep compareIds…" while the agent works, the same live line as the progress panel. Then the answer streams in.
 - Answers are short: a direct answer first, then the evidence. Every `path:line` is a link that opens the file view at that line, with the breadcrumb back to the thread. Code it quotes is shown highlighted.
 - When the answer is a guess (library internals, production config), it says so in one line, the way the verifier marks "could not confirm".
 - Follow-ups continue the same thread, with the agent keeping the context.
@@ -90,7 +90,7 @@ Not in this change:
   - the parsed and validated actions (a bad re-judge or guide fix is refused);
   - carry-over of threads to a new round.
 - **Page check (`dev/check_page.mjs`):** ask from a line, a section and a finding against the stub; the thread renders, links open the file at the line, and Back returns to the thread.
-- **Live:** ten real questions on the #3564→#3571 stack, of each kind, with answer time and whether the answer was right.
+- **Live:** ten real questions on a real multi-PR stack, of each kind, with answer time and whether the answer was right.
 
 ## Risks
 
@@ -112,17 +112,17 @@ M5 comes after M2 (diagram nodes and their popovers) and M1 (rail, breadcrumb), 
 
 - Phase: steps 1 to 4 done (server, agent, stub, tests; then the page: asking, threads, rail group, the three actions); step 5 (the live trial on a real stack) open.
 - Settled: the four decisions above, answered on 2026-10-22. Resume, partial streaming and tool restriction were checked against the Claude Code docs (headless, CLI reference, sessions, permissions).
-- Delivered in step 1: `scripts/ask.py` (threads, runner, concurrency cap, proposals, carry-over), the routes in `serve.py`, `agents/answerer.md`, `check_ask` in `test_scripts.py` (a stub `claude` replays a stream and logs its argv), and a "Questions" section in `docs/spec.md`. Checked live on the act-68 review: two questions and a follow-up on Sonnet and one on Opus, about 12 s each, all answers right.
+- Delivered in step 1: `scripts/ask.py` (threads, runner, concurrency cap, proposals, carry-over), the routes in `serve.py`, `agents/answerer.md`, `check_ask` in `test_scripts.py` (a stub `claude` replays a stream and logs its argv), and a "Questions" section in `docs/spec.md`. Checked live on a real review: two questions and a follow-up on Sonnet and one on Opus, about 12 s each, all answers right.
 - Delivered in steps 2 to 4 (`ui/template.html`, `dev/stub_claude.py`, `dev/check_page.mjs --stub`, "Page" in `docs/spec.md`):
   - Ask on diff lines (pick a line or range, then Comment or Ask), on sections, key facts and steps (hover button), on diagram boxes and arrows (popover with Open the code and Ask about this), on findings, and `?` for a free question in the rail.
   - The thread component under its target, with the live tool line, text answers with `path:line` links through `openFile` (breadcrumb and Back return to the thread), Retry, follow-up, Dig deeper (earlier answer folded).
   - The three actions: comment (also as a fallback on any answer for a line or finding thread), re-judge, guide fix with before and after; "Ask the implementer" in a self-review.
   - The rail group "Questions (n)" and "Questions from earlier rounds" from `lost_threads`.
   - The two frame fixes: the stack popover keeps a PR tag on one line and cuts the title; an axis still being reviewed shows a spinner in the Outline.
-- Live pass on the act-68 copy (real `claude`, Sonnet): diff line 11 s, follow-up 19 s, Dig deeper on Opus 29 s, section 2 s (answered from the target text, no reads), diagram node 13 s, finding 11 s, a proposed comment on a line about 20 s. All answers cited real lines.
+- Live pass on a copy of a real review (real `claude`, Sonnet): diff line 11 s, follow-up 19 s, Dig deeper on Opus 29 s, section 2 s (answered from the target text, no reads), diagram node 13 s, finding 11 s, a proposed comment on a line about 20 s. All answers cited real lines.
 - Left:
   - `build.py` merging `<stack>/rejudged.json` (`{"<axis>-<id>": {status, note, thread}}`) and `<stack>/guide-fixes.json` (`[{ref: {kind, stack, index|id}, replacement, thread, at}]`) into the rendered page, after M2 lands. Until then the page applies applied threads itself on load (a re-judge sets the finding's status, a guide fix replaces the item and marks it); when `build.py` merges them, the page's own pass becomes a no-op, and it can be removed. `build.py` should check a fix again, since a later round may change the guide.
-  - The live trial of step 5 on the #3564 to #3571 stack, ten questions.
+  - The live trial of step 5 on a real multi-PR stack, ten questions.
 - Changes from the plan:
   - The text arrives in one burst after the last tool call rather than word by word (the live CLI sends `text_delta` events only once the final message starts), so the live line carries the progress and the answer appears at the end; a thread's `target` stores the resolved `label` (and the text, for a line) so the page can show a chip and carry-over can find the lines again; `stack` is part of a target when a review has several stacks.
   - A `node` target carries `section` (the diagram it was asked in). `ask.py` resolved `components.edges`, which the guide no longer has, so arrows and a flowchart's own boxes could not be asked about; it now reads the diagrams (`resolve_node`).

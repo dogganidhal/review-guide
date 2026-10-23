@@ -686,8 +686,8 @@ def main(keep: str | None = None) -> None:
         rm = root / "rm"
         (rm / "mappings").mkdir(parents=True)
         sh(rm, "git", "init", "-q", "-b", "main")
-        (rm / "Job.java").write_text('class Job {\n  void run() {\n    api.onDuty();\n    counter("odc.review.sms.sent");\n'
-                                     '    counter("odc.review.sms.failed");\n  }\n}\n')
+        (rm / "Job.java").write_text('class Job {\n  void run() {\n    api.onDuty();\n    counter("app.review.sms.sent");\n'
+                                     '    counter("app.review.sms.failed");\n  }\n}\n')
         (rm / "Api.java").write_text("class Api {\n  public List<String> onDuty() {\n    return store.onDuty();\n  }\n}\n")
         (rm / "Store.java").write_text("interface Store {\n  List<String> onDuty();\n}\n")
         (rm / "mappings" / "sms.json").write_text('{"external_id": "x", "status": "sent"}\n')
@@ -698,7 +698,7 @@ def main(keep: str | None = None) -> None:
         sh(rm, "git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "remove")
         rg = Git(str(rm), via_gh=False)
         left = "\n".join(leftovers(rg, "HEAD", parse_diff(rg("diff", "HEAD~1", "HEAD"))))
-        assert "odc.review.sms.* (2 names)" in left and "no use left here" in left, left
+        assert "app.review.sms.* (2 names)" in left and "no use left here" in left, left
         assert "external_id" not in left, left
         assert "onDuty has no caller left" in left and "Api.java:3" in left and "Store.java:2" in left, left
 

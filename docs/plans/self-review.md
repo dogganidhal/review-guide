@@ -26,7 +26,7 @@ Run from the repository the agent works in:
 - **Base:** the merge base of the top with the default branch (`origin/HEAD`, falling back to `main`, then `master`).
 - **Layers:** every local branch whose tip lies between the base and the top, ordered from the base up, with branches at the same commit listed once. A stack `feat-a` → `feat-b` → `feat-c` gives three layers, the way three stacked PRs do. A branch on its own is one layer.
 - **Uncommitted changes:** when the working tree has staged, unstaged or untracked changes, they become a top layer, "Uncommitted changes". The snapshot uses a temporary index and `git commit-tree`, so the real index, the working tree and the branches are never touched.
-- **PRs:** for a branch that has an open PR, the PR's title, description, linked issues and CI are used when its head equals the local tip. Otherwise the layer is described from its commit messages. Tickets in branch names (`ACT-69-...`) feed `spec.md` as they do today.
+- **PRs:** for a branch that has an open PR, the PR's title, description, linked issues and CI are used when its head equals the local tip. Otherwise the layer is described from its commit messages. Tickets in branch names (`PROJ-123-...`) feed `spec.md` as they do today.
 
 `/review-guide:self-review <PR links>` reviews those PRs as `/review-guide` does, but with local delivery.
 

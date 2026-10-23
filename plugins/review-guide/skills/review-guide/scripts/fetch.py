@@ -266,7 +266,7 @@ COMMON_NAMES = frozenset({"main", "toString", "equals", "hashCode", "build", "cl
 BRIEF_BUDGET = 220_000
 MAX_SYMBOLS, MAX_REFS = 40, 6
 CALL = re.compile(r"\b([a-z]\w{3,})\s*\(")
-# A string that names something read outside the code: `odc.review.sms_sent`, `on_demand_care_chat_send_sms_pro`.
+# A string that names something read outside the code: `app.review.sms_sent`, `my_app_send_sms_pro`.
 # Dotted names need two dots; snake names need three parts. A JSON or YAML key (`"external_id":`) is not one.
 EXTERNAL_NAME = re.compile(r"[\"']((?:[a-z][a-z0-9_]*\.){2,}[a-z][a-z0-9_]*|[a-z][a-z0-9]*(?:_[a-z0-9]+){2,})[\"'](?!\s*:)")
 FIXTURE_PATH = re.compile(r"(^|/)(fixtures?|mocks?|wiremock|mappings|testdata|test-data|__snapshots__|load-?tests?)(/|$)|(^|/)backend-load-test/")
@@ -361,7 +361,7 @@ def leftovers(git: Git, tip: str, parsed: dict) -> list[str]:
         orphans = dict(zip(callees, pool.map(hits, callees)))
     rows = lambda found: [f"{p}:{n}: {t}" for p, n, t in found[:MAX_REFS]]  # noqa: E731
     out = []
-    # One entry per family of dotted names (`odc.review_duty.notifications.*`), whatever is left in the repo.
+    # One entry per family of dotted names (`app.review_duty.notifications.*`), whatever is left in the repo.
     families: dict[str, list[str]] = defaultdict(list)
     for name in names:
         # The family drops the last segment, and a metric type suffix before it (`.count`, `.total`).
