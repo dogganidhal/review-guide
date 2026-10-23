@@ -1,9 +1,8 @@
 {
   "name": "review-guide",
-  "description": "Doctolib internal Claude Code plugins for code review.",
+  "description": "Claude Code plugins for code review.",
   "owner": {
-    "name": "Nidhal Dogga",
-    "email": "nidhal.dogga@doctolib.com"
+    "name": "Nidhal Dogga"
   },
   "plugins": [
     {
