@@ -9,6 +9,8 @@ repository for an imported round.
 Nothing here posts to GitHub. Only `resolve_checkout` talks to the network, through `gh` and `git`.
 """
 
+from __future__ import annotations
+
 import base64
 import gzip
 import hashlib

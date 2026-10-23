@@ -9,6 +9,8 @@ With --keep DIR, a server home holding the fixture as a review with two rounds i
 opened with `serve.py --home DIR` to work on the UI without running the agents.
 """
 
+from __future__ import annotations
+
 import contextlib
 import io
 import json

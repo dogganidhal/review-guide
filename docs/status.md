@@ -54,5 +54,5 @@ In priority order:
 3. Speed: run writer and verifier in an overlapping way (verify each comment as it is drafted), and split structure (map, flows, roles; small and fast) from findings. Target: under 5 minutes in total.
 4. Add a light mode for small PRs: comments only, no map or flows.
 5. Measure recall on about 10 merged PRs that had human review comments, to check that `skim` and `skip` roles are safe.
-6. Before sharing with the team: add a LICENSE, then choose a home. `doctolib/prompts` treats a new plugin as a significant change, which needs a discussion issue and 48 hours of feedback.
+6. Release 0.1.0 to the team: `LICENSE` (internal), install and release steps in the README and the plugin runs on Python 3.9 are done. Remaining: create the private `doctolib/review-guide` repo, push, tag `v0.1.0`, and install it from there on a second machine.
 7. "Risks to review" cards with a status (accepted limit, decided, not discussed), taken from the ACT-57 guide.

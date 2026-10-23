@@ -14,12 +14,31 @@ A stack is reviewed as its final state, so a file edited by three PRs appears on
 
 ## Install
 
+One-time setup, if `gh` is not already your git credential helper (the repository is private):
+
 ```bash
-claude plugin marketplace add <path or repository of this marketplace>
-claude plugin install review-guide@review-guide
+gh auth login
+gh auth setup-git
 ```
 
-It requires `gh` (logged in), `git` and `python3`. Run it from a clone of the reviewed repository so the agents can search code locally; otherwise the plugin keeps a lightweight clone in `~/.cache/review-guide/`.
+Then, in Claude Code:
+
+```
+/plugin marketplace add doctolib/review-guide
+/plugin install review-guide@review-guide
+```
+
+To get updates without doing anything, open `/plugin`, pick Marketplaces, review-guide, and enable auto-update. Updates apply after `/reload-plugins` or the next launch.
+
+It requires `gh` (logged in), `git` and Python 3.9 or later, with no packages to install. Run it from a clone of the reviewed repository so the agents can search code locally; otherwise the plugin keeps a lightweight clone in `~/.cache/review-guide/`.
+
+## Release
+
+Teammates only receive an update when `version` in `plugins/review-guide/.claude-plugin/plugin.json` changes. To release:
+
+1. Run the checks in `AGENTS.md`.
+2. Bump `version` (semver), commit, and merge to `main`.
+3. Tag it: `git tag v<version> && git push --tags`.
 
 ## Documentation
 

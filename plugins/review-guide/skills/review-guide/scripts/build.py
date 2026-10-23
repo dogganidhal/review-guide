@@ -12,6 +12,8 @@ Without --check, writes WORKDIR/index.html and WORKDIR/guide.json (the data serv
 Every comment is written against the stack's tip; this script routes it to the PR that wrote the line.
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json

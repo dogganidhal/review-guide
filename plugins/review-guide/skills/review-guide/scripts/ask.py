@@ -7,6 +7,8 @@ of the thread shows the answer growing. Nothing here calls GitHub or writes outs
 `REVIEW_GUIDE_CLAUDE` names the command to run instead of `claude` (the tests swap in a stub that replays a stream).
 """
 
+from __future__ import annotations
+
 import json
 import os
 import pathlib

@@ -17,6 +17,8 @@ Writes `progress.json` (its pid, the latest status, each agent's state, tool cal
 `~/.cache/review-guide/timings.json`.
 """
 
+from __future__ import annotations
+
 import argparse
 import concurrent.futures
 import json

@@ -23,6 +23,8 @@ head is compared with the SHA the guide was built on, and each inline comment li
 latest built round of a review takes writes; earlier rounds are read-only.
 """
 
+from __future__ import annotations
+
 import argparse
 import fcntl
 import hashlib

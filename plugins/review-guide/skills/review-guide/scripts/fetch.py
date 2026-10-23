@@ -29,6 +29,8 @@ With --prev (the previous round's work directory) and a head that moved since, `
 Prints the work directory on the last line.
 """
 
+from __future__ import annotations
+
 import argparse
 import base64
 import concurrent.futures
