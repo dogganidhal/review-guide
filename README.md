@@ -24,7 +24,7 @@ gh auth setup-git
 Then, in Claude Code:
 
 ```
-/plugin marketplace add doctolib/review-guide
+/plugin marketplace add dogganidhal/review-guide
 /plugin install review-guide@review-guide
 ```
 
