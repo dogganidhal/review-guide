@@ -18,11 +18,12 @@ serve.py open <refs> ──▶ the one server: finds or creates the review, adds
    │
 fetch.py ──▶ page opens (tree + diffs)
    │
-   ├─▶ guide-writer ─────────────────┐   (per stack, all four in parallel;
-   ├─▶ reviewer: correctness ───┐    │    build.py --partial after each, page reloads)
-   ├─▶ reviewer: standards ─────┤    │
-   ├─▶ reviewer: spec ──────────┤    │
-   │                            └─▶ comment-verifier, one per finding (6 at a time) ──▶ build.py ──▶ page reloads
+   ├─▶ guide-author (guide/NN-*.html, one section at a time) ─┐   (per stack; the page takes each part in place as it lands;
+   │      └─▶ figure-artist × 0..6, one per picture spec, as soon as it is written   │
+   ├─▶ director (plan.json) ─▶ reviewer × 1..8 ──┐    │    at most 8 agents at once across the round)
+   │                                             └─▶ comment-verifier, one per finding (6 at a time) ──▶ build.py ──▶ page reloads
+   │
+   quick: guide-writer (guide.json) and the three built-in reviewers (correctness, standards, spec), as before
    │
 rerun.py fetches, then runs every agent above headless (claude -p), for the skill and for the page's Rerun button alike
 serve.py: the inbox, every review's pages, saved page state, live progress, posting through the user's gh login, rounds
@@ -31,10 +32,12 @@ serve.py: the inbox, every review's pages, saved page state, live progress, post
 | Step | Kind | Output |
 | --- | --- | --- |
 | `fetch.py` | script | `run.json`, per stack `target.diff`, `tip/`, `attribution.json`, `brief.md`, `spec.md`, `repo-guidance/`; per PR `pr.diff`, `hunks.json`, `existing-comments.json` |
-| `guide-writer` | agent (opus, medium effort) | `<stack>/guide.json`: the explanation |
-| `reviewer` ×3 | agent (sonnet, high effort) | `<stack>/review-<axis>.json`: findings on one axis |
+| `guide-author` | agent (opus, high effort), `balanced` and `deep` | `<stack>/guide.html` and `files.json`: the explanation, written freely |
+| `guide-writer` | agent (sonnet, low effort), `quick` | `<stack>/guide.json`: the structured explanation |
+| `director` | agent (opus, high effort), `balanced` and `deep` | `<stack>/plan.json`: the reviewers this stack needs, each with a charge, paths, model and effort |
+| `reviewer` × 1..8 | agent (the plan's model and effort; sonnet high for the built-in three) | `<stack>/review-<reviewer>.json`: findings on one charge |
 | `build.py --check --only X` | script | validation errors each agent must fix in its own file |
-| `comment-verifier` ×findings | agent (sonnet, high effort) | `<stack>/verify/<axis>-<id>.json`: one finding's status, duplicates marked |
+| `comment-verifier` ×findings | agent (sonnet, high effort) | `<stack>/verify/<reviewer>-<id>.json`: one finding's status, duplicates marked |
 | `build.py [--partial]` | script | `guide.json` (merged page data) and `index.html` |
 | `serve.py` | script | the one server on `127.0.0.1`: inbox, review pages, page state, posting, rounds; `serve.py open` sends PRs to it |
 | `rerun.py` | script | one round: `fetch.py` into the round directory (with `--refs`), then the agents headless through `claude -p` (stream-json); writes `progress.json`, `agents.log` and timings |
@@ -45,11 +48,11 @@ One level for the whole run, chosen in the skill's arguments (`quick`, `balanced
 
 | Level | Writer | Reviewers | Verifier | Model |
 | --- | --- | --- | --- | --- |
-| `quick` | brief and spec only | brief and spec only; `blocker` and `should` | `unverified` rather than reading far | sonnet, low effort, for every agent |
-| `balanced` | brief, spec, and about 12 reads around the entry points and the code its diagrams cite | reads what each candidate finding needs, and the consumers of each risky change | reads the code behind each finding | agents' own: opus (medium) for the writer, sonnet (high) for the others |
-| `deep` | about 25 reads | also tests and config around each change; follows each changed contract to every reader | callers, config and tests for every finding | opus, high effort, for every agent |
+| `quick` | structured `guide.json` from the brief and spec only | the built-in three, brief and spec only; `blocker` and `should` | `unverified` rather than reading far | sonnet, low effort, for every agent |
+| `balanced` | the guide author reads what understanding needs, about 12 minutes | the director's picks, on the model and effort it gives each; read what each candidate finding needs | reads the code behind each finding | opus (high) for the author and the director, the plan's for reviewers, sonnet (high) for the verifier |
+| `deep` | the same, about 20 minutes | the director leans one step higher; reviewers also read tests and config and follow each changed contract | callers, config and tests for every finding | as `balanced`, the verifier on opus |
 
-`rerun.py` passes `--model` and `--effort` per level (`MODELS`); at `balanced` it passes neither, so each agent's frontmatter decides. Reviewers and the verifier stop on coverage, not on a call count: a reviewer is done when its axis is checked against every changed file that holds behavior, the verifier when every finding has a status it can defend. A 40-call cap stays as a guard. The writer's read budget is set in its prompt only; it runs alongside the reviewers, which take longer, so Opus adds no wait as long as it batches its reads. The output limits do not change with the level.
+`rerun.py` passes `--model` and `--effort` per level (`MODELS`), and for a planned reviewer the plan's own (`--model` wins over the agent's frontmatter, checked with `claude -p --agent … --model haiku`); at `balanced` it passes neither to the others, so each agent's frontmatter decides. The guide author and the director start together; the reviewers start when the director's plan passes `--check --only plan`, and a failed director falls back to the built-in three. Reviewers and the verifier stop on coverage, not on a call count: a reviewer is done when its axis is checked against every changed file that holds behavior, the verifier when every finding has a status it can defend. A 40-call cap stays as a guard. The writer's read budget is set in its prompt only; it runs alongside the reviewers, which take longer, so Opus adds no wait as long as it batches its reads. The output limits do not change with the level.
 
 ### Reviews, rounds and the inbox
 
@@ -144,28 +147,51 @@ The brief is capped at 220 KB. When over the cap, the largest test files' diffs 
 
 The prompts are self-contained. Agent-to-agent replies are one line. Text that a person reads follows plain-writing rules: no praise, no "Consider…", no headings or bold in comments, identifiers in backticks.
 
-Explaining and finding are separate agents, and finding is split by axis, after the `/code-review` skill of mattpocock-skills: one context that both explains and hunts does both worse, and one axis can hide another (code that follows every standard but builds the wrong thing).
+Explaining and finding are separate agents, and finding is split across reviewers, after the `/code-review` skill of mattpocock-skills: one context that both explains and hunts does both worse, and one axis can hide another (code that follows every standard but builds the wrong thing). Which reviewers a stack gets is the director's call, not a fixed list: a config bump gets one cheap reviewer, a concurrency change a reviewer on just that.
 
-### guide-writer
+### guide-author (`balanced`, `deep`)
 
-- Runs on Opus at `balanced` and `deep`, Sonnet at `quick`. Reads `brief.md` and `spec.md`, then the code its diagrams need: the entry points and each hop it draws (about 12 reads at `balanced`, 25 at `deep`, none at `quick`). Writes no findings.
+- Opus, high effort. Reads the brief, the spec and then the code itself, as much as understanding needs: callers, tests, configuration and the PR descriptions' reasons. No read budget; a time target (about 12 minutes at `balanced`, 20 at `deep`) and batched reads.
+- Chooses the guide's structure, length and pictures freely. The prompt asks for the why behind each design choice, one thing followed end to end with real values, the failure modes and who owns them, what is not in the change, and where to spend attention. Pictures are inline SVG, for mechanisms prose cannot carry.
+- Writes `guide.html`, a fragment of `<section>`s in the page's design language (Figtree from the page, the brand colors through the page's variables, a few layout classes), with `data-at` on every claim about code, `data-ref` on what can be asked about, and `data-step` sections for the reading order; and `files.json` with a role per changed file.
+- `guidehtml.py` sanitizes it: an allowlist of tags, attributes, classes and color variables, no links, images, scripts, handlers or external references. `--check` fails on anything it would drop; the page sanitizes again before inserting it (`ghParse`).
+- Measured on a 3-PR backend stack (69 files, +2,775): 11 minutes, $3.69, 19 sections, 113 code links, a timeline of how a request ends, and design reasons taken from the PR descriptions. The structured guide on the same stack transcribed one loop as a 12-node flowchart. The first author prompt overshot (2,554 words of prose for 1,047 changed production lines), which led to the prose budget.
+
+### figure-artist (`balanced`, `deep`)
+
+- Opus, medium effort, about 3 minutes per picture. The author writes a placeholder and a spec (`figures/<ref>.json`: kind, question, what to show, the code it comes from); the runner starts one artist per spec at once, up to six, while the author keeps writing.
+- Draws one SVG from a recipe per kind. A `map`: one column per place code runs or data lives, components in call order with a one-line job, stores with sample entries and lifetime, arrows only where data crosses. A `timeline`: an axis from the code's real constants, one lane per case, each ending with what the caller sees. Also `sequence`, `lifecycle`, `decision`, `data`, `before-after`.
+- `--check --only figure:<ref>` checks one picture: the sanitizer, code links, and labels that fit their box and the picture (estimated from their length). Once the guide is complete, `--check --only guide` requires a `map` for 200 or more changed production lines, and a `timeline` when `fetch.py` finds at least 3 added source lines that set a wait, timeout, expiry or retry.
+
+### director (`balanced`, `deep`)
+
+- Opus, high effort, two or three turns: the brief, the spec and the list of `repo-guidance/`. No code exploration; the reviewers read the code.
+- Writes `plan.json`: a `focus` (where the risk sits and why these reviewers) and 1 to 8 reviewers, each with an `id`, a `title` and `hint` for the page, a `charge` written as instructions (what to hunt, where, what to leave to the others), `paths`, `model` and `effort`.
+- A spec reviewer only when there is a real ticket, a standards reviewer only when the repository documents rules.
+- Measured on the same stack: 40 s, $0.46, four reviewers (two on opus for the riskiest areas, two on sonnet), no spec reviewer.
+
+### guide-writer (`quick`)
+
+- Runs on Sonnet at `quick`, and wrote every guide before the guide author. Reads `brief.md` and `spec.md`, then the code its diagrams need: the entry points and each hop it draws (about 12 reads at `balanced`, 25 at `deep`, none at `quick`). Writes no findings.
 - Starts from the reader: it lists the questions a reviewer new to the code will ask (what it does, how it runs, what can break, what they must decide), and each section answers one, named in its title.
 - Picks each section's shape from its question, with no default: outcomes of a request are a `sequence` with `alt` frames, a lifecycle is `states`, routing and pipelines are a `flowchart`, a removal or refactor is a `structure` with the removed parts plus `before_after`, a payload or migration is `data`; then `table`, `list`, `risks` and `steps` (a reading order with anchored excerpts). A table never stands in for a diagram. Most guides have one or two diagrams; none only for a mechanical change.
 - Grounds every arrow in the code: it reads the line that makes the hop and cites it as `at: "path:line"`, and leaves out a hop it cannot cite or keeps it uncited, drawn lighter. One question per diagram, at most 12 nodes.
 - Rereads the summary and key facts against its diagrams before writing, and fixes what they contradict.
 - Produces `summary`, 2 to 4 `key_facts`, a role for every changed file, and 1 to 8 sections of six types: `diagram` (with a `kind` of `sequence`, `flowchart`, `states`, `structure` or `data`), `risks` (1 to 6 cards with a status), `before_after`, `table`, `list` and `steps`. `components` feed `sequence` participants and `structure` nodes and are left out when neither is used.
 
-### reviewer (one per axis)
+### reviewer (one per charge)
+
+- With a plan, its charge, title and paths come in the prompt and replace the axes below; the axes still say how to look at each kind of problem. Without a plan, it is one of the built-in three:
 
 - **correctness:** error paths, boundaries, retries, concurrency, timeouts; everything that depends on what changed (the brief lists removed names still in use and functions left without a caller; a name another system may read becomes a question naming who); stored data and mixed-version deploys; security and personal data; stack shape; whether a test would catch a break.
 - **standards:** every documented rule in `repo-guidance/` and the convention docs they point to, each finding citing its rule; then a smell baseline (Fowler's code smells plus dead weight) as judgement calls that a repo rule overrides.
 - **spec:** against `spec.md` (Jira tickets the PRs name, when credentials are set, and the issues they close), or the PR descriptions when there is none: missing or partial requirements, scope creep, requirements done wrong, description claims the code does not back. Skips with a reason when the spec is too thin.
-- Each reads existing comments first and never repeats them, and in a new round reviews only what changed since. At most 3 findings per PR per axis; an empty list is a good result.
+- Each reads existing comments first and never repeats them, and in a new round reviews only what changed since. At most 3 findings per PR per reviewer; an empty list is a good result.
 
 ### comment-verifier
 
 - One verifier per finding, in parallel, at most six at a time, so the fact check takes as long as the slowest single check and its progress is an honest count.
-- Tries to disprove its finding: `verified` (it traced the mechanism, and every claim matches), `refuted` (the code, the spec or the description contradicts it; for standards, the rule does not say that), `unverified` (library internals, prod config, runtime). Marks its finding `duplicate` only when an earlier finding (axis order correctness, standards, spec, then file order) makes the same point; the earlier one always stays, so parallel verifiers never drop both copies of a point. The page hides duplicates.
+- Tries to disprove its finding: `verified` (it traced the mechanism, and every claim matches), `refuted` (the code, the spec or the description contradicts it; for standards, the rule does not say that), `unverified` (library internals, prod config, runtime). Marks its finding `duplicate` only when an earlier finding (reviewer order, that of `plan.json` or correctness, standards, spec, then file order) makes the same point; the earlier one always stays, so parallel verifiers never drop both copies of a point. The page hides duplicates.
 - May move a finding to a better line the stack wrote.
 
 ## Validation (`build.py --check`)
@@ -236,7 +262,8 @@ Single HTML file. The live page loads Figtree and JetBrains Mono from Google Fon
     - `before_after` and `table`: plain tables, backticked names as code;
     - `list`: a bullet list;
     - `steps`: collapsible steps showing title, one sentence, a decide badge, and a count of findings on the excerpt. Opening a step shows the highlighted excerpt with those findings under their lines, the test line ("none covers this" in red), a "Reviewed" checkbox, and a link to the whole file;
-  - "What the reviewers found": one collapsible block per axis (correctness, standards, spec), showing "reviewing" while its reviewer works, "skipped" with the reason, or the findings, most severe first, each tagged with its axis and verifier status. Each finding card outside the diff shows the few diff lines it sits on, with the file name opening the file view. A finding with no line shows "In" and links to the code it cites (the file view for files the stack changed, GitHub otherwise), plus the lines of the first cited file the stack changed. Deleted files show their old line numbers. Posted general comments carry the same links.
+  - An HTML guide (`balanced`, `deep`) renders as the author wrote it, in the page's fonts and colors: each `<section>` is a guide section in the outline, consecutive `data-step` sections are the reading order (steps with the author's text above the excerpt), anything with `data-at` opens the file view at that line and keeps the breadcrumb, and anything with `data-ref` gets an Ask button (a popover for parts of a picture) with its threads under it. A whole section can be asked about as before, and a guide fix replaces its HTML.
+  - "What the reviewers found": the director's "Why these reviewers" while there is a plan, then one collapsible block per reviewer (its title and hint), showing "reviewing" while its reviewer works, "skipped" with the reason, or the findings, most severe first, each tagged with its axis and verifier status. Each finding card outside the diff shows the few diff lines it sits on, with the file name opening the file view. A finding with no line shows "In" and links to the code it cites (the file view for files the stack changed, GitHub otherwise), plus the lines of the first cited file the stack changed. Deleted files show their old line numbers. Posted general comments carry the same links.
 - **File view:** the full stack diff with old and new line numbers, a color strip per line for the PR that wrote it, drafted comments under their lines, a "Viewed" checkbox, and walk buttons. Clicking a line number adds a comment there, routed to the owning PR.
   - **Keeping your place:** opening a file records where it came from (the guide and its scroll position, or Your review, and whether a step, a finding, a diagram or the tree). A breadcrumb shows the way, for example `Guide › Read in this order › 3. The resume cursor › Cursor.java`, each part a link, and "← Back" returns to the same scroll position.
   - **Walking:** a file opened from a step gets "← 2. …" and "4. … →" to move along the reading order (each opens at the step's first line) and a "Step reviewed" checkbox. A file opened from a finding gets the previous and next finding, with "3 of 7". A file opened from the tree gets Prev and Next file.

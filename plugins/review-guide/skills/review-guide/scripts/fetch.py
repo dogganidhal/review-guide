@@ -272,6 +272,10 @@ EXTERNAL_NAME = re.compile(r"[\"']((?:[a-z][a-z0-9_]*\.){2,}[a-z][a-z0-9_]*|[a-z
 FIXTURE_PATH = re.compile(r"(^|/)(fixtures?|mocks?|wiremock|mappings|testdata|test-data|__snapshots__|load-?tests?)(/|$)|(^|/)backend-load-test/")
 DOC_PATH = re.compile(r"\.(md|mdx|rst|txt|adoc)$")
 MAX_LEFTOVERS = 12
+# Added production lines that make behavior depend on time: the guide then needs a timeline picture.
+TIMING = re.compile(r"(?i)\b(?:time-?out|ttl|expir\w*|deadline|retr(?:y|ies)|back-?off|sleep|delay|interval|poll\w*|wait\w*|debounce|throttle|heartbeat|grace)\b"
+                    r"|Duration\.of\w+\(|\b\d+\s*(?:ms|s|sec|seconds|min|minutes)\b|\bsetTimeout\(|\btime\.sleep\(|\bThread\.sleep\(")
+MAX_TIMING, MIN_TIMING_CODE = 12, 3  # the timeline is required from 3 hits in code files; config hits are listed, not counted
 TICKET = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d+)\b")
 
 
@@ -438,6 +442,23 @@ def write_spec(sdir: pathlib.Path, chain: list[int], prs: dict[int, dict]) -> No
     (sdir / "spec.md").write_text("\n\n".join(body) + "\n")
 
 
+def timing_lines(parsed: dict, attribution: dict) -> list[str]:
+    """Up to MAX_TIMING added production lines that set a wait, timeout, expiry or retry, as `path:line: text`."""
+    out = []
+    for path, d in sorted(parsed.items()):
+        if TEST_PATH.search(path) or FIXTURE_PATH.search(path) or OMIT_PATH.search(path) or DOC_PATH.search(path):
+            continue
+        for hunk in d["hunks"]:
+            for row in hunk:
+                text = row["t"].strip()
+                if row["k"] == "+" and TIMING.search(text) and not text.startswith(("//", "#", "*", "/*", "import ")):
+                    # " code" marks a hit in a source file; the brief drops the marker
+                    out.append(f"- `{path}:{row['n']}`:{' code' if CODE_PATH.search(path) else ''} `{text[:140]}`")
+                    if len(out) >= MAX_TIMING:
+                        return out
+    return out
+
+
 def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: str, files: list[dict],
                 attribution: dict, prs: dict[int, dict], warnings: list[str], since: dict | None = None) -> int:
     """One file holding what the agents need, so they read once instead of exploring turn by turn."""
@@ -480,6 +501,14 @@ def write_brief(git: Git, sdir: pathlib.Path, chain: list[int], base: str, tip: 
             omitted.append(f"{f['path']} (+{f['adds']} -{f['dels']})")
         else:
             sections[f["path"]] = f"### {f['path']}\n\n```\n{numbered_diff(d, attribution.get(f['path'], {}))}\n```\n"
+    timing = timing_lines(parsed, attribution)
+    head += ["", "## Time-dependent behavior", "",
+             *(["Added production lines that set a wait, timeout, expiry or retry. When behavior depends on them, show how "
+                "they play out on a time axis (the guide's `timeline` picture)" + (
+                    "; `build.py --check` requires one for this stack." if sum(" code" in t for t in timing) >= MIN_TIMING_CODE else "."), "",
+                *[t.replace(" code", "", 1) for t in timing]] if timing else ["None found in the added production lines."]), ""]
+    (sdir / "timing.json").write_text(json.dumps({"lines": len(timing), "code": sum(" code" in t for t in timing),
+                                                  "required": sum(" code" in t for t in timing) >= MIN_TIMING_CODE}))
     refs = references(git, tip, parsed, {f["path"] for f in files})
     fixed = len("\n".join(head + refs))
     for path in sorted((p for p in sections if TEST_PATH.search(p)), key=lambda p: -len(sections[p])):

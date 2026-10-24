@@ -19,13 +19,14 @@ import tempfile
 import threading
 import time
 
+import guidehtml
 from build import LIMITS, MAX_ANCHOR_LINES, SEVERITIES, GuideCheck, Stack, check_section, check_text
 from rerun import DENY, PLUGIN, describe
 
 MAX_RUNNING = 3
 TURN_TIMEOUT = 900
 SAVE_EVERY = 0.15
-KINDS = ("line", "section", "fact", "step", "node", "finding", "item", "free")
+KINDS = ("line", "section", "fact", "step", "node", "finding", "item", "part", "free")
 BUSY = ("queued", "running")
 THREAD = re.compile(r"[\w-]{1,40}")
 ACTION = re.compile(r"```action[ \t]*\r?\n(.*?)\r?\n?```[ \t]*\Z", re.S)
@@ -67,8 +68,9 @@ def steps_of(st: dict) -> list[dict]:
 
 def source_step(s: dict, sid: str) -> dict:
     """A rendered step in the shape guide.json's author wrote it, which is also the shape a guide fix replaces it with."""
-    return {"id": s["id"].removeprefix(sid + "-"), "kind": s["kind"], "title": s["title"], "why": s["why"], "nodes": s["nodes"],
-            "test": s.get("test") or None, "anchor": {"path": s["path"], "start": s["start"], "end": s["end"]}}
+    out = {"id": s["id"].removeprefix(sid + "-"), "kind": s["kind"], "title": s["title"], "why": s["why"], "nodes": s["nodes"],
+           "test": s.get("test") or None, "anchor": {"path": s["path"], "start": s["start"], "end": s["end"]}}
+    return out | {"html": s["html"]} if "html" in s else out
 
 
 def source_section(sec: dict, sid: str) -> dict:
@@ -134,6 +136,16 @@ def resolve(data: dict, rdir: pathlib.Path, t) -> tuple[dict, dict | None, str]:
         row = sec[ROWS[sec["type"]]][j]
         body = {"section": sec["title"], "type": sec["type"], **({"columns": sec["columns"]} if sec["type"] == "table" else {}), "row": row}
         return out | {"ref": i, "item": j, "label": row_label(sec, row), "section_title": sec["title"]}, st, json.dumps(body, ensure_ascii=False)
+    if kind == "part":
+        i = index(ref, st["sections"], "section")
+        sec = st["sections"][i]
+        part = t.get("part")
+        node = guidehtml.find(guidehtml.parse(sec.get("html") or ""), part) if isinstance(part, str) else None
+        if node is None:
+            raise ValueError(f"no part {part!r} in section {sec['title']!r}")
+        label = (guidehtml.text(node) or part)[:80]
+        body = {"section": sec["title"], "part": guidehtml.render([node])}
+        return out | {"ref": i, "part": part, "label": label, "section_title": sec["title"]}, st, json.dumps(body, ensure_ascii=False)
     if kind == "fact":
         i = index(ref, st["key_facts"], "key fact")
         return out | {"ref": i, "label": st["key_facts"][i]["title"]}, st, json.dumps(st["key_facts"][i], ensure_ascii=False)
@@ -217,6 +229,12 @@ def move_target(t: dict, dst: pathlib.Path, new: dict) -> dict | None:
         st = next((s for s in new["stacks"] if s["id"] == t.get("stack")), None)
         items = st and (st["sections"] if t["kind"] == "section" else st["key_facts"])
         i = next((i for i, x in enumerate(items or []) if x["title"] == t["label"]), None)
+        if i is None:
+            return None
+        t["ref"] = i
+    elif t["kind"] == "part":
+        st = next((s for s in new["stacks"] if s["id"] == t.get("stack")), None)
+        i = next((i for i, x in enumerate(st["sections"] if st else []) if x["title"] == t.get("section_title") and x["type"] == "html"), None)
         if i is None:
             return None
         t["ref"] = i
@@ -342,6 +360,12 @@ def validate(rdir: pathlib.Path, run: dict, data: dict, target: dict, act) -> di
             canon = {"kind": kind, "stack": sid, "id": raw}
         if errs:
             raise ValueError("; ".join(errs[:3]))
+        # What the page will insert: the sanitizer's own output, never the agent's text as written.
+        if isinstance(rep.get("html"), str):
+            rep = {**rep, "html": guidehtml.clean(rep["html"])}
+        for x in rep.get("steps") or []:
+            if isinstance(x, dict) and isinstance(x.get("html"), str):
+                x["html"] = guidehtml.clean(x["html"])
         return {"type": "guide_fix", "ref": canon, "replacement": rep}
     raise ValueError("the action type is comment, rejudge or guide_fix")
 
@@ -358,7 +382,11 @@ def turn_prompt(rdir: pathlib.Path, run: dict, t: dict, text: str, question: str
     stacks = [s for s in run["stacks"] if s["id"] == tg["stack"]] or run["stacks"]
     where = [f"Target: {tg['kind']} {tg['label']}" + (f" ({tg['path']})" if tg["kind"] == "line" else "") if tg["kind"] != "free" else "Target: none, a general question"]
     return "\n".join([*head, *where, *([text] if text else []), f"Work directory: {rdir}",
-                      *[f"Stack {s['id']}: {rdir / s['id']} (brief.md there), tip {s['tip']}" for s in stacks], f"Checkout: {run.get('checkout')}"])
+                      *[f"Stack {s['id']}: {rdir / s['id']} (brief.md there{guide_note(rdir / s['id'])}), tip {s['tip']}" for s in stacks], f"Checkout: {run.get('checkout')}"])
+
+
+def guide_note(sdir: pathlib.Path) -> str:
+    return ", the guide as guide.html" if (sdir / "guide.html").is_file() else ", the guide as guide.json" if (sdir / "guide.json").is_file() else ""
 
 
 def claude_cmd(rdir: pathlib.Path, run: dict, prompt: str, deep: bool, session: str | None) -> list[str]:
@@ -389,6 +417,15 @@ class Asker:
         t = read(self.path(rdir, tid))
         if t and t["status"] in BUSY and self.path(rdir, tid) not in self.active:  # a server that died mid-answer
             t |= {"status": "failed", "error": "The answer was interrupted; ask again.", "live": ""}
+        p = t and t.get("proposal")
+        if p and p.get("type") == "guide_fix" and isinstance(p.get("replacement"), dict):
+            # The page inserts a fix's HTML as is; a thread imported from a shared file was never through validate().
+            rep = p["replacement"]
+            if isinstance(rep.get("html"), str):
+                rep["html"] = guidehtml.clean(rep["html"])
+            for x in rep.get("steps") or []:
+                if isinstance(x, dict) and isinstance(x.get("html"), str):
+                    x["html"] = guidehtml.clean(x["html"])
         return t
 
     def save(self, rdir: pathlib.Path, t: dict) -> None:

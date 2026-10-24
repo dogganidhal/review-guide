@@ -522,6 +522,12 @@ def handler(home: Home):
                 version = f"{live}:{(home.rdir(rid, live) / 'index.html').stat().st_mtime_ns}" if n == live else f"{n}"
                 return self.reply(200, {"posted": read(rdir / "posted.json") or {}, "version": version, "live": live, "rerun": rerun,
                                         "stages": progress, "usual": usual(home.path)})
+            if m := re.fullmatch(rf"/api/r/({ID})/(\d+)/data", path):
+                # The round's page data, so an open page takes a new build in place instead of reloading.
+                if not self.found(m.group(1)):
+                    return
+                data = read(home.rdir(m.group(1), int(m.group(2))) / "guide.json")
+                return self.reply(200 if data else 404, data or {"error": "this round has no page yet"})
             if m := re.fullmatch(rf"/api/r/({ID})/(\d+)/threads(?:/([\w-]+))?", path):
                 if not self.found(m.group(1)):
                     return

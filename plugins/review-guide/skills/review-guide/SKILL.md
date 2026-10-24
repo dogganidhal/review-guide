@@ -1,6 +1,6 @@
 ---
 name: review-guide
-description: Builds a guided review page for one or more GitHub pull requests. Stacked PRs are reviewed as one change (their final state), with a guide shaped to the change (sequence, flow, state, structure and data diagrams, before and after, tables, a reading order), a browsable file tree with syntax-highlighted diffs, and findings from three reviewers (correctness, standards, spec) that a fourth agent tried to disprove. Each comment is routed to the PR that wrote its line, and the reviewer posts from a local page through their own gh login.
+description: Builds a guided review page for one or more GitHub pull requests. Stacked PRs are reviewed as one change (their final state), with a guide an Opus agent writes for the change (its own structure, pictures and reading order, every claim linked to its code), a browsable file tree with syntax-highlighted diffs, and findings from reviewers a director agent picks for the stack, each checked by another agent that tried to disprove it. Each comment is routed to the PR that wrote its line, and the reviewer posts from a local page through their own gh login.
 when_to_use: The user asks for help reviewing PRs, wants a review guide or walkthrough, shares PR links or a Slack thread asking for a review, or wants to post review comments on several PRs at once.
 argument-hint: [quick|balanced|deep] <PR URLs, owner/repo#N, or a Slack thread link>
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*), Read
@@ -35,7 +35,7 @@ This reuses the one review-guide server, or starts it, and adds a round to the r
 
 Run it in the background and wait for it to exit; relay the status lines only if the user asks.
 
-The page opens on the file tree and diffs right after the fetch. Each finished part lands on it on its own: the guide, the three reviewers' findings (correctness, standards, spec), and one fact check per finding. `deep` runs the agents on Opus.
+The page opens on the file tree and diffs right after the fetch. Each finished part lands on it on its own: the guide, the reviewers' findings, and one fact check per finding. At `balanced` and `deep` a director agent first picks the stack's reviewers (1 to 8, each with its own charge and model), while the guide author writes the guide; `quick` keeps the structured guide and the three built-in reviewers (correctness, standards, spec).
 
 On a non-zero exit, the last line names `runner.log` and `agents.log` in the round directory. `agents.log` has one line per agent with its reply, turns, duration, cost and denied calls. Read them and report which step failed.
 

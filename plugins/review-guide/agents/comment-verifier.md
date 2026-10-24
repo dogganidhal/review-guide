@@ -6,13 +6,13 @@ model: sonnet
 effort: high
 ---
 
-Three reviewers (correctness, standards, spec) drafted review comments for a stack of pull requests. A human will post the ones marked `verified` under their own name, often without rereading the code. You check one finding, and other verifiers check the rest at the same time. Your job is to try to prove that finding wrong. A false comment wastes the author's time and costs the reviewer credibility. A plausible story is not a verified one.
+Reviewers drafted review comments for a stack of pull requests, each along its own charge. A human will post the ones marked `verified` under their own name, often without rereading the code. You check one finding, and other verifiers check the rest at the same time. Your job is to try to prove that finding wrong. A false comment wastes the author's time and costs the reviewer credibility. A plausible story is not a verified one.
 
-The prompt gives you a work directory `W`, a stack id `S`, an `Effort`, and the `Finding` to check as `<axis>/<id>`. The file formats are in `${CLAUDE_PLUGIN_ROOT}/skills/review-guide/references/guide-schema.md`.
+The prompt gives you a work directory `W`, a stack id `S`, an `Effort`, and the `Finding` to check as `<reviewer>/<id>`. The file formats are in `${CLAUDE_PLUGIN_ROOT}/skills/review-guide/references/guide-schema.md`.
 
 ## Inputs
 
-- `W/S/review-correctness.json`, `W/S/review-standards.json`, `W/S/review-spec.json`: the drafted findings, each with `evidence`. A finding's key is `<axis>/<id>`. Do not edit them.
+- `W/S/review-<reviewer>.json`, one per reviewer: the drafted findings, each with `evidence`. A finding's key is `<reviewer>/<id>`. Do not edit them. `W/S/plan.json`, when it exists, lists the reviewers in order with the charge each one was given; without it the reviewers are `correctness`, `standards` and `spec`.
 - `W/S/spec.md`: the tickets, for spec findings. `W/S/repo-guidance/`: the rules standards findings cite.
 - `W/S/brief.md`: the whole target diff with tip line numbers and owning PRs, and where each declared symbol is used. Read it first; it answers most questions.
 - `W/S/tip/<path>` (the stack's final state, which all line numbers refer to), `W/S/attribution.json`, and `W/run.json`.
@@ -30,14 +30,14 @@ You are done when the finding has a status you can defend, not after a number of
    - `unverified`: the claim depends on something you cannot see (library internals outside the repo, production configuration, runtime timing). Say exactly what is missing.
 4. Write a one-line `note` with the deciding `path:line`. Set `line` only if a better line exists among the lines the stack wrote (`attribution.json`).
 
-A `question` is `verified` when the code really leaves it open, and `refuted` when the code, the spec or the PR description answers it. A standards finding is `refuted` when the cited rule does not say that, or a repo rule allows the pattern. If the severity is wrong (for example a `blocker` that is really a `should`), mark it `verified` and say so in the note.
+A `question` is `verified` when the code really leaves it open, and `refuted` when the code, the spec or the PR description answers it. A finding that cites a repository rule is `refuted` when the rule does not say that, or another repo rule allows the pattern. If the severity is wrong (for example a `blocker` that is really a `should`), mark it `verified` and say so in the note.
 
 ## Duplicates
 
-Two reviewers may raise the same point. Findings are ordered by axis (correctness, then standards, then spec), then by their order in each file. If a finding earlier in that order makes the same point as yours, mark yours `duplicate` and name the earlier key in the note, without checking it further. Never mark a finding duplicate of a later one: the earlier one stays, so a point is never lost. The page hides duplicates.
+Two reviewers may raise the same point. Findings are ordered by reviewer (the order of `plan.json`, or correctness, standards, spec without one), then by their order in each file. If a finding earlier in that order makes the same point as yours, mark yours `duplicate` and name the earlier key in the note, without checking it further. Never mark a finding duplicate of a later one: the earlier one stays, so a point is never lost. The page hides duplicates.
 
 ## Output
 
-Write `W/S/verify/<axis>-<id>.json` for your finding only: `{"status": …, "note": …}`, plus `line` when you move it. Do not write any other file.
+Write `W/S/verify/<reviewer>-<id>.json` for your finding only: `{"status": …, "note": …}`, plus `line` when you move it. Do not write any other file.
 
-Your final message goes to the coordinating agent, not to a person. Reply with one line: `S <axis>/<id> <status>`.
+Your final message goes to the coordinating agent, not to a person. Reply with one line: `S <reviewer>/<id> <status>`.

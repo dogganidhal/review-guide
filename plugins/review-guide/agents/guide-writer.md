@@ -34,16 +34,16 @@ Size the guide to the change. A cleanup (deleted code, a removed flag, dead path
 
 | Question | Shape | Example from a real stack |
 | --- | --- | --- |
-| How does a request end, on each outcome? | `sequence` with `alt` frames | `GET /turns/{turn_id}`: frames for not the caller's turn (404 `NO_ACTIVE_RUN`), pool full (503) and frames until `RUN_FINISHED` (200). The frames replace a separate table of outcomes. |
-| What states does a thing go through? | `states` | A turn's Redis stream: running (expiry reset on each write), ended on the `end` entry (60 s more), expired. |
-| How is a job routed or decided: branches, retries, fan-out, a pipeline? | `flowchart` | The pediatric gate skips to `medical_guidelines_done` or runs the query agent, then `retrieve_docs`; blank model output becomes no queries. |
-| What was removed or moved, and what still depends on it? | `structure` with the removed parts and their callers only, plus `before_after` for behavior | `FindProfessionalOnDutyUseCase` gone from API, domain, store and repository; the one caller left is `UpdateDutyStatusUseCase`. |
-| What does a record, event or payload look like now? | `data` | A stream entry with `frame` and `end`; a task type dropped from `ScheduledTaskArgumentsEntity` while rows of it are still stored. |
-| What changes for users, callers or operators? | `before_after` | A patient message at night: a canned reply before, an AI answer after. |
-| Many similar items: settings, thresholds, endpoints, one row per PR | `table` | TOOL thresholds per metric for the pediatric slice. |
-| What must happen outside the diff: rollout, follow-ups, checks after deploy? | `list` | Keep the monolith flag until this deploys. |
-| Which risks need an owner? | `risks` | 500 reader connections per pod on the Redis primary (`accepted`, a known limit); a domain port that carries cursors (`open`). |
-| In what order should the code be read? | `steps` | Append, then the read loop, then the endpoint. |
+| How does a request end, on each outcome? | `sequence` with `alt` frames | `POST /orders`: frames for an unknown product (404), out of stock (409) and accepted (201). The frames replace a separate table of outcomes. |
+| What states does a thing go through? | `states` | A payment: pending, authorized, captured or refunded, with a timeout back to pending. |
+| How is a job routed or decided: branches, retries, fan-out, a pipeline? | `flowchart` | A webhook is verified, then routed by event type; unknown types are logged and acknowledged, failures retried three times. |
+| What was removed or moved, and what still depends on it? | `structure` with the removed parts and their callers only, plus `before_after` for behavior | `LegacyExportService` gone from API, service and repository; the one caller left is the nightly report job. |
+| What does a record, event or payload look like now? | `data` | An `order_created` event with a new `currency` field; a column dropped while old rows still hold it. |
+| What changes for users, callers or operators? | `before_after` | A failed login: a generic error before, a lockout after five attempts. |
+| Many similar items: settings, thresholds, endpoints, one row per PR | `table` | Cache lifetimes per endpoint. |
+| What must happen outside the diff: rollout, follow-ups, checks after deploy? | `list` | Keep the old flag until every client has updated. |
+| Which risks need an owner? | `risks` | One database connection held per open export (`accepted`, a known limit); a retry that can send an email twice (`open`). |
+| In what order should the code be read? | `steps` | The model, then the service, then the endpoint. |
 
 A table never stands in for a diagram: outcomes go in `alt` frames, a status column becomes `states`, a branching rule becomes a `flowchart`.
 
@@ -53,7 +53,7 @@ A table never stands in for a diagram: outcomes go in `alt` frames, a status col
 
 - One question per diagram, at most 12 nodes. Split rather than cram, and leave out components the question does not need.
 - Ground every arrow. Read the code that makes the hop and cite it as `at: "path:line"`: a tip line, or a line at the tip in the checkout for code outside the stack. A node that stands for code cites its declaration. Leave out a hop you cannot cite, or keep it without `at` when the reader needs it; the page draws it lighter, as a guess.
-- Labels name the operation in 2 to 5 words (`XADD + EXPIRE`, `answers 503`). A node's `role` says what it is in plain words ("the event log").
+- Labels name the operation in 2 to 5 words (`INSERT order`, `answers 409`). A node's `role` says what it is in plain words ("the order store").
 - `components` holds the code units that `sequence` participants and `structure` nodes refer to. `flowchart`, `states` and `data` declare their own nodes. Node ids are unique across the guide.
 - A `sequence` marks outcomes with `alt` frames (one branch per outcome), optional work with `opt` and repetition with `loop`, and replies with `return: true`. A `flowchart` uses `shape` for decisions, stores and ends; a `states` diagram has one `initial` node and `terminal` ones; a `data` node lists its `fields` with what changed.
 

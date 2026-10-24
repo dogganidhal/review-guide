@@ -45,6 +45,22 @@ Two runs of the writer on the same stack produced 7 and 8 comments, with about 3
 - The "whole stack on GitHub" link, which uses compare-view file anchors.
 - Repositories outside Java and Spring, stacks of more than 2 PRs, PRs under 150 lines, frontend and infra changes.
 
+## Model-driven guide (in progress, 2026-10-24)
+
+Plan in `docs/plans/model-driven-guide.md`. Built, not yet run end to end through the skill:
+
+- `guide-author` writes `guide.html` freely at `balanced` and `deep`; `guidehtml.py` sanitizes it on the server and `ghParse` again in the page. Steps, Ask on any `data-ref` part, `data-at` links into the diff, guide fixes and sharing all work with it.
+- `director` writes `plan.json` with 1 to 8 reviewers; the runner starts them with the plan's model and effort as soon as it passes `--check`. The page, the stages strip, sharing and the verifier work with any reviewer ids.
+- `quick` keeps the structured guide and the three built-in reviewers.
+- Measured by hand on a 3-PR backend stack: author 11 min and $3.69 (19 sections, 113 code links, about 2,500 words of prose); with the trimmed prompt 3 min and $1.54 (535 words, which undershot); director 40 s and $0.46 (four reviewers, no spec reviewer).
+
+- The guide is a walk (what it does, where it runs, the journey stage by stage, what can go wrong, what to decide), with each stage's code as "Read now" steps under it and the findings on those lines inside the steps. At most 3 tables.
+- Pictures are drawn by figure artists in parallel; a map and a timeline are required when they apply.
+- The page takes each new build in place, keeping the reader's position, and the progress panel shows the guide, the reviewers and the fact check as three columns.
+- Measured on the same stack, full round at `balanced` (2026-10-24): guide readable at about 4 min, pictures at about 10 min, round finished in 14 min 21 s, 1,490 words of prose, 1 table, 7 steps, 3 pictures.
+
+Not tested yet: a round through `/review-guide` as installed, the author on a stack the prompts have never seen (a small PR, a frontend stack), and the reviewers' recall against the built-in three. Reviewers are still the slowest part at `balanced`.
+
 ## Next
 
 In priority order:

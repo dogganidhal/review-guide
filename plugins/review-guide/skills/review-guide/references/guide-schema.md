@@ -16,36 +16,73 @@ The guide is written per **stack**: a chain of PRs where each one's base branch 
 | `W/<n>/pr.diff` | One PR's own diff. Read it only to judge whether that PR is safe to merge before the PRs above it. |
 | `W/<n>/existing-comments.json` | Review comments already on the PR. |
 
-## `W/<stack>/guide.json` (guide writer)
+## `W/<stack>/plan.json` (director)
 
-The explanation. Findings live in the reviewers' files.
+At `balanced` and `deep`, the director picks the stack's reviewers before they start. At `quick` there is no plan, and the reviewers are `correctness`, `standards` and `spec`.
+
+```json
+{
+  "focus": "Where the risk sits and why these reviewers. Up to 400 characters.",
+  "reviewers": [
+    { "id": "retries-and-limits", "title": "Retries and rate limits", "hint": "timeouts, double charges, API outages",
+      "charge": "What to hunt for, where, and what to leave to the others (40 to 1500 characters).",
+      "paths": ["src/billing/**"], "model": "opus", "effort": "high" }
+  ]
+}
+```
+
+Rules `build.py --check --only plan` enforces: 1 to 8 reviewers; `id` is 2 to 28 lowercase letters, digits and dashes, starts with a letter, is unique and is not `guide`, `plan`, `check` or `verify`; `title` up to 40 characters, `hint` up to 90; `model` is `opus`, `sonnet` or `haiku`; `effort` is `low`, `medium` or `high`; `paths` is up to 12 globs or `null`. The runner starts one reviewer per entry with that model and effort, and the page groups findings by reviewer, in this order.
+
+## `W/<stack>/guide/NN-<ref>.html` and `W/<stack>/files.json` (guide author)
+
+At `balanced` and `deep` the guide is HTML the author writes freely: its own structure and pictures, within a length budget. It writes one file per section, `guide/NN-<ref>.html` with exactly one top-level `<section>`, in reading order by name, and the page shows each as it lands. `files.json` comes last and marks the guide complete. (A single `guide.html` holding every section is read the same way.) The page inserts the HTML into its own document after a sanitizer keeps only what is listed here, so anything else fails `--check`.
+
+- **Length:** words of prose (outside tables, pictures, figure captions and code blocks) are capped at 1.5 per changed line of production code (tests, fixtures, docs and lockfiles do not count), at least 250 and at most 1,800. A table cell is at most 40 words. Both fail `--check`.
+- **While writing:** `--check --only guide` checks the sections written so far (allowlist, code links, budget). Once `files.json` exists it also requires the overview first and at least 3 code links.
+- **Top level:** only `<section>` elements. Each has a unique `data-ref` (lowercase letters, digits, `-` and `_`) and starts with an `<h2>`, which becomes its title in the outline. The first is `<section data-ref="overview">`.
+- **Steps (reading the code as you go):** `<section data-step data-ref="…" data-at="path:start-end">` elements, each starting with an `<h3>`, placed right after the section whose code they show. `data-at` names at most 60 lines of a changed file at the tip; the page shows them under the step's text. `data-decide` marks a step where the reviewer makes a call. The page shows the steps after a section as its "Read now" (numbered across the whole guide, tracked as reviewed), and a finding on a step's lines inside that step instead of in the findings list. Steps with no section before them form a "Read in this order" group, as older guides did.
+- **Tables:** at most 3 in the guide, `--check` counts them.
+- **Tags:** `h2 h3 h4 p ul ol li code pre em strong table thead tbody tr th td figure figcaption section details summary blockquote span div br`, and inline `svg` with `g path rect circle ellipse line polyline polygon text tspan title desc`. No links, images, scripts, styles, forms, iframes, `defs`, `marker`, `use` or `foreignObject`.
+- **Classes:** `callout` (a boxed point), `facts` (a grid of short facts, on a `ul`), `cols` (columns), `muted`, `tag-new`, `tag-changed`, `tag-removed`. No others.
+- **Colors:** only `var(--ink)`, `var(--muted)`, `var(--line)`, `var(--card)`, `var(--accent)`, `var(--accent-soft)`, `var(--warn)`, `var(--warn-soft)`, `var(--good)`, `var(--good-soft)`, in `style` or in SVG `fill` and `stroke`. They follow the page's light and dark themes. `style` takes `fill`, `stroke`, `stroke-width`, `stroke-dasharray`, `opacity`, `color`, `background`, `text-anchor`, `font-weight`, `font-style` and `font-size` with those colors or plain numbers.
+- **SVG:** a `viewBox`, no fixed width; the page sizes it to the column and scrolls it sideways on small screens. Geometry attributes take numbers, `transform` takes `translate`, `rotate`, `scale` and `matrix`. Arrowheads: `marker-end="url(#rg-arrow)"` (solid) or `url(#rg-arrow-dash)` (lighter); the page defines both. Put a `<title>` in a `<g>` to name it.
+- **`data-at="path:line"`** (or `path:start-end`) on any element that stands for code: a `code` span, a table row or cell, a list item, a `g` in a picture. The path is a file the stack changed, or any file of the repository at the tip. The page opens the code there on click. `--check` fails when a reference is outside its file, and when the guide cites fewer than 3 lines.
+- **`data-ref`** on any part a reviewer should be able to ask about on its own (a figure, a `g` in a picture, a table row, a list item). The page adds an Ask button, or for a picture part a popover, and keeps the threads next to it.
+- **Size:** up to 300,000 characters in all, 60,000 per section.
+- **Pictures** are drawn by figure artists, in parallel with the prose. The author writes a placeholder in a section, `<figure data-kind="<kind>" data-figure="<ref>"><figcaption>…</figcaption></figure>`, and a spec `W/<stack>/figures/<ref>.json`: `kind`, `question` (up to 200 characters), `show` (the artist's brief, up to 1,500), `caption` and `at` (the `path:line` references it is drawn from). `kind` is `map`, `timeline`, `sequence`, `lifecycle`, `decision`, `data` or `before-after`. The artist writes `figures/<ref>.svg`: one `<svg>` with a `viewBox`, under the same allowlist, at most 40,000 characters, labels that fit (`--check --only figure:<ref>`). The page shows the caption with a "being drawn" note until it lands. At most 6 pictures. Once the guide is complete, `--check` requires a `map` for a stack of 200 or more changed production lines, and a `timeline` when `timing.json` says so (`fetch.py` finds at least 3 added lines in source files that set a wait, timeout, expiry or retry; the brief lists them under "Time-dependent behavior").
+
+`files.json` maps every changed file to `{"role": "read" | "skim" | "skip", "why": "…"}`, as `files` does in `guide.json` below.
+
+## `W/<stack>/guide.json` (guide writer, `quick`)
+
+The structured guide the `quick` effort writes, and every round from before the HTML guide. Findings live in the reviewers' files.
 
 ```json
 {
   "summary": "What the stack does and where the risk sits. Two sentences at most.",
-  "key_facts": [{ "title": "Nothing changes for patients yet.", "text": "The stream is written but nothing reads it until the switch is on." }],
+  "key_facts": [{ "title": "Nothing changes for customers yet.", "text": "Orders are written to the new table but nothing reads it until the flag is on." }],
   "components": {
-    "layers": [{ "id": "web", "label": "web-server" }, { "id": "redis", "label": "Redis" }],
+    "layers": [{ "id": "api", "label": "api" }, { "id": "db", "label": "Database" }],
     "nodes": [
-      { "id": "writer", "label": "EventLogWriter", "role": "the event log writer", "layer": "web", "state": "new", "path": "src/.../EventLogWriter.java", "at": "src/.../EventLogWriter.java:58" },
-      { "id": "stream", "label": "run stream", "layer": "redis", "state": "external", "path": null }
+      { "id": "service", "label": "OrderService", "role": "places orders", "layer": "api", "state": "new", "path": "src/.../OrderService.java", "at": "src/.../OrderService.java:58" },
+      { "id": "orders", "label": "orders table", "layer": "db", "state": "external", "path": null }
     ]
   },
   "sections": [
-    { "type": "diagram", "kind": "sequence", "title": "Write a frame", "participants": ["writer", "stream"],
-      "messages": [{ "from": "writer", "to": "stream", "label": "XADD", "new": true, "at": "src/.../EventLogWriter.java:68" }] },
+    { "type": "diagram", "kind": "sequence", "title": "Place an order", "participants": ["service", "orders"],
+      "messages": [{ "from": "service", "to": "orders", "label": "INSERT order", "new": true, "at": "src/.../OrderService.java:68" }] },
     { "type": "risks", "title": "Where it can go wrong", "items": [
-      { "title": "A failed write deletes the log", "text": "Readers see no log rather than one with a hole.", "status": "decided", "at": "src/.../EventLogWriter.java:89" }] },
-    { "type": "before_after", "title": "Alerts after this PR", "rows": [{ "aspect": "Review created", "before": "SMS to the HCP on duty", "after": "Push only" }] },
-    { "type": "table", "title": "What each PR does", "columns": ["PR", "Change", "Safe alone"], "rows": [["#1", "Writes frames", "yes"]] },
-    { "type": "list", "title": "Rollout", "items": ["Merge after the monolith switch is off."] },
+      { "title": "A failed payment leaves no order", "text": "The insert is rolled back, so support sees no trace of the attempt.", "status": "decided", "at": "src/.../OrderService.java:89" }] },
+    { "type": "before_after", "title": "Notifications after this PR", "rows": [{ "aspect": "Order shipped", "before": "Email and SMS", "after": "Email only" }] },
+    { "type": "table", "title": "What each PR does", "columns": ["PR", "Change", "Safe alone"], "rows": [["#1", "Writes orders", "yes"]] },
+    { "type": "list", "title": "Rollout", "items": ["Merge after the old checkout flag is off."] },
     { "type": "steps", "title": "Read in this order", "steps": [{
-        "id": "append", "kind": "read", "title": "Append and failure handling",
+        "id": "place", "kind": "read", "title": "Placing an order and failure handling",
         "why": "One sentence on what the reviewer should look for here.",
-        "nodes": ["writer"], "test": "EventLogWriterIT#append_expiresTheKey",
-        "anchor": { "path": "src/.../EventLogWriter.java", "start": 40, "end": 90 } }] }
+        "nodes": ["service"], "test": "OrderServiceIT#place_rollsBackOnPaymentFailure",
+        "anchor": { "path": "src/.../OrderService.java", "start": 40, "end": 90 } }] }
   ],
-  "files": { "src/.../EventLogWriter.java": { "role": "read", "why": "Appends frames and handles write failures." } }
+  "files": { "src/.../OrderService.java": { "role": "read", "why": "Places orders and handles payment failures." } }
 }
 ```
 
@@ -57,37 +94,37 @@ A `diagram` section has a `kind`, picked by the question it answers. Each answer
 | --- | --- | --- |
 | `sequence` | who calls whom, in order, and what happens on each outcome | `participants`: component ids |
 | `flowchart` | how a request or job is decided and routed: branches, retries, pipelines | its own `nodes` |
-| `states` | the lifecycle of one thing: a turn, a task, a status column | its own `nodes` |
+| `states` | the lifecycle of one thing: an order, a task, a status column | its own `nodes` |
 | `structure` | what depends on what after the change, and what moved or was removed | `nodes`: component ids, grouped by their `layer` |
 | `data` | what a stored record, an event or a payload looks like, and what changed in it | its own `nodes`, each with `fields` |
 
 ```json
-{ "type": "diagram", "kind": "sequence", "title": "GET /turns/{id}", "participants": ["api", "service", "store"], "messages": [
-  { "from": "api", "to": "service", "label": "readTurn", "new": true, "at": "src/.../Api.java:392" },
+{ "type": "diagram", "kind": "sequence", "title": "GET /orders/{id}", "participants": ["api", "service", "store"], "messages": [
+  { "from": "api", "to": "service", "label": "findOrder", "new": true, "at": "src/.../Api.java:392" },
   { "frame": "alt", "branches": [
-    { "guard": "no such turn", "messages": [{ "from": "service", "to": "api", "label": "throws 404", "at": "src/.../Service.java:289" }] },
+    { "guard": "not the caller's", "messages": [{ "from": "service", "to": "api", "label": "throws 404", "at": "src/.../Service.java:289" }] },
     { "guard": "found", "messages": [
-      { "frame": "loop", "branches": [{ "guard": "until end", "messages": [{ "from": "service", "to": "store", "label": "XREAD", "at": "src/.../Loop.java:47" }] }] },
-      { "from": "store", "to": "service", "label": "entries", "return": true },
-      { "note": "no terminal frame after a cut", "on": "api" }] }] }] }
+      { "frame": "loop", "branches": [{ "guard": "each line item", "messages": [{ "from": "service", "to": "store", "label": "load price", "at": "src/.../Service.java:301" }] }] },
+      { "from": "store", "to": "service", "label": "prices", "return": true },
+      { "note": "prices are cached for 5 min", "on": "service" }] }] }] }
 
-{ "type": "diagram", "kind": "flowchart", "title": "The read loop", "nodes": [
-  { "id": "read", "label": "XREAD", "at": "src/.../Loop.java:47" }, { "id": "any", "label": "entries?", "shape": "decision" },
-  { "id": "save", "label": "the stream", "shape": "store" }, { "id": "done", "label": "ENDED", "shape": "end" }],
-  "edges": [{ "from": "read", "to": "any", "at": "src/.../Loop.java:46" }, { "from": "any", "to": "done", "label": "yes", "at": "src/.../Loop.java:63" },
-            { "from": "any", "to": "read", "label": "no, retry", "at": "src/.../Loop.java:69" }] }
+{ "type": "diagram", "kind": "flowchart", "title": "Handling a webhook", "nodes": [
+  { "id": "verify", "label": "verify signature", "at": "src/.../Webhook.java:47" }, { "id": "known", "label": "known event?", "shape": "decision" },
+  { "id": "inbox", "label": "event inbox", "shape": "store" }, { "id": "done", "label": "200", "shape": "end" }],
+  "edges": [{ "from": "verify", "to": "known", "at": "src/.../Webhook.java:52" }, { "from": "known", "to": "inbox", "label": "yes", "at": "src/.../Webhook.java:63" },
+            { "from": "known", "to": "done", "label": "no, log and ack", "at": "src/.../Webhook.java:69" }] }
 
-{ "type": "diagram", "kind": "states", "title": "How a read ends", "nodes": [
-  { "id": "wait", "label": "waiting", "initial": true }, { "id": "live", "label": "streaming", "state": "new" }, { "id": "ended", "label": "200, ended", "terminal": true }],
-  "edges": [{ "from": "wait", "to": "live", "label": "first entry", "at": "src/.../Loop.java:61" },
-            { "from": "live", "to": "ended", "label": "end entry", "guard": "end = 1", "at": "src/.../Loop.java:62" }] }
+{ "type": "diagram", "kind": "states", "title": "Life of a payment", "nodes": [
+  { "id": "pending", "label": "pending", "initial": true }, { "id": "authorized", "label": "authorized", "state": "new" }, { "id": "captured", "label": "captured", "terminal": true }],
+  "edges": [{ "from": "pending", "to": "authorized", "label": "bank approves", "at": "src/.../Payment.java:61" },
+            { "from": "authorized", "to": "captured", "label": "order ships", "guard": "within 7 days", "at": "src/.../Payment.java:82" }] }
 
-{ "type": "diagram", "kind": "structure", "title": "Who writes and who reads", "nodes": ["writer", "reader", "noop", "stream"],
-  "edges": [{ "from": "writer", "to": "stream", "label": "XADD", "new": true, "at": "src/.../Writer.java:68" }, { "from": "reader", "to": "stream", "label": "XREAD", "at": "src/.../Loop.java:47" }] }
+{ "type": "diagram", "kind": "structure", "title": "Who writes and who reads orders", "nodes": ["service", "report", "legacy", "orders"],
+  "edges": [{ "from": "service", "to": "orders", "label": "INSERT", "new": true, "at": "src/.../OrderService.java:68" }, { "from": "report", "to": "orders", "label": "SELECT", "at": "src/.../Report.java:47" }] }
 
-{ "type": "diagram", "kind": "data", "title": "A stream entry", "nodes": [
-  { "id": "entry", "label": "stream entry", "state": "new", "at": "src/.../Writer.java:35", "fields": [
-    { "name": "frame", "type": "JSON" }, { "name": "end", "type": "\"1\"", "change": "added" }] }], "edges": [] }
+{ "type": "diagram", "kind": "data", "title": "The order_created event", "nodes": [
+  { "id": "event", "label": "order_created", "state": "changed", "at": "src/.../OrderEvent.java:35", "fields": [
+    { "name": "order_id", "type": "UUID" }, { "name": "currency", "type": "ISO 4217", "change": "added" }] }], "edges": [] }
 ```
 
 - **Node ids** are unique across the whole guide (components and every diagram's own nodes), so a step's `nodes` can point at a node of any diagram.
@@ -104,7 +141,7 @@ Rules `build.py --check --only guide` enforces:
 
 - **Brevity:** `summary` up to 300 characters; section `title` 70; step `title` 70; step `why` 220; file `why` 90; table cells and before/after cells 160; list items 220; labels, guards, field names 40; field `type` 30; notes 90; node `role` 30; fact `title` 60 and `text` 200; risk `title` 70 and `text` 220; `test` 140.
 - **`key_facts`:** up to 4.
-- **`sections`:** 1 to 8, each with a `type` of `diagram`, `risks`, `before_after`, `table`, `list` or `steps`, and a `title`.
+- **`sections`:** 1 to 8, each with a `type` of `diagram`, `risks`, `before_after`, `table`, `list` or `steps`, and a `title`. (`html` sections are what `build.py` makes of `guide.html`; a guide fix on one keeps its `type` and replaces its `html`, under the rules above.)
   - `diagram`: see above.
   - `risks`: 1 to 6 `items` of `title`, `text` (one sentence), `status` (`open`, `decided` or `accepted`, an accepted limit) and optional `at`.
   - `before_after`: 1 to 30 `rows` of `aspect`, `before`, `after`.
@@ -116,9 +153,9 @@ Rules `build.py --check --only guide` enforces:
 
 Guides written before the diagram kinds used `flow` and `map` sections. `--check` rejects them; a plain build of an earlier round still renders a `flow` as a `sequence` and a `map` as a `structure` of every component.
 
-## `W/<stack>/review-<axis>.json` (reviewers)
+## `W/<stack>/review-<reviewer>.json` (reviewers)
 
-One file per axis: `correctness`, `standards`, `spec`.
+One file per reviewer of the stack: the ids in `plan.json`, or `correctness`, `standards` and `spec` without one.
 
 ```json
 {
@@ -138,16 +175,16 @@ One file per axis: `correctness`, `standards`, `spec`.
 }
 ```
 
-Rules `build.py --check --only <axis>` enforces:
+Rules `build.py --check --only <reviewer>` enforces:
 
 - `severity` is `blocker`, `should`, `question` or `nit`. `title` up to 90 characters, `body` up to 700. `evidence` lists `path:line` references.
 - An inline finding's `line` (and `start_line` through `line`) must be lines the stack wrote, meaning they appear in `attribution.json`. A range must come from one PR. A finding that cannot sit on such a line uses `path: null` and names its PR with `"pr": 42`. That should be rare: the page shows such findings in the review summary, with links to their `evidence`, and an inline comment on the change that caused the problem reads better.
-- At most 3 findings per PR per axis.
-- `skipped` is `null`, or one sentence on why the axis could not be reviewed (for example, no spec).
+- At most 3 findings per PR per reviewer.
+- `skipped` is `null`, or one sentence on why the charge could not be reviewed (for example, no spec).
 
 The page suggests a verdict per PR from the findings the reviewer keeps: request changes with a blocker, comment with a should-fix or question, approve otherwise.
 
-## `W/<stack>/verify/<axis>-<id>.json` (verifiers)
+## `W/<stack>/verify/<reviewer>-<id>.json` (verifiers)
 
 One verifier per finding, in parallel. Each writes one file:
 
@@ -157,5 +194,5 @@ One verifier per finding, in parallel. Each writes one file:
 
 - `status` is `verified`, `unverified`, `refuted` or `duplicate`, and `note` is one line.
 - `line` is optional. Set it only to move the finding to a better line the stack wrote.
-- `duplicate` means an earlier finding (by axis order correctness, standards, spec, then file order) makes the same point; the note names its key. The page hides duplicates. A finding is never a duplicate of a later one, so each point keeps one finding.
+- `duplicate` means an earlier finding (by reviewer order, that of `plan.json` or correctness, standards, spec, then file order) makes the same point; the note names its key. The page hides duplicates. A finding is never a duplicate of a later one, so each point keeps one finding.
 - A finding without a file is shown as still being checked.

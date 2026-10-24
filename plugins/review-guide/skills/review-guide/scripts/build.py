@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Check the agents' guide files against the fetched data, then render the review page.
 
-Usage: build.py WORKDIR [--check] [--stack ID] [--only guide|correctness|standards|spec] [--partial]
+Usage: build.py WORKDIR [--check] [--stack ID] [--only guide|plan|<reviewer>] [--partial]
 
   --check     validate the agents' files that exist, print every problem, exit 1 if any (each agent runs this)
   --stack ID  limit to one stack
-  --only F    with --check, validate one agent's file: guide.json or review-<axis>.json
+  --only F    with --check, validate one agent's file: the guide (guide.html and files.json, or guide.json), plan.json,
+              or review-<reviewer>.json for a reviewer of the stack's plan (correctness, standards and spec without one)
   --partial   render a stack with no guide yet as its file tree and diffs (the page opens before the agents finish)
 
 Without --check, writes WORKDIR/index.html and WORKDIR/guide.json (the data serve.py reads).
@@ -17,21 +18,34 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
 import time
 
-from fetch import parse_diff
+import figures
+import guidehtml
+from fetch import DOC_PATH, FIXTURE_PATH, OMIT_PATH, TEST_PATH, parse_diff
 
 SEVERITIES = ("blocker", "should", "question", "nit")
-AXES = ("correctness", "standards", "spec")
+# The reviewers of a stack come from its plan.json (the director's choice). Without one (quick, or a round from before
+# the director) these three run.
+DEFAULT_REVIEWERS = [
+    {"id": "correctness", "title": "Correctness", "hint": "bugs, risk, and what depends on the change"},
+    {"id": "standards", "title": "Standards", "hint": "the repo's documented rules and code smells"},
+    {"id": "spec", "title": "Spec", "hint": "the ticket and the PR description"},
+]
+AXES = tuple(r["id"] for r in DEFAULT_REVIEWERS)
+REVIEWER_ID = re.compile(r"^[a-z][a-z0-9-]{0,26}[a-z0-9]$")
+RESERVED_IDS = {"guide", "plan", "check", "verify"}
+PLAN_MODELS, PLAN_EFFORTS, MAX_REVIEWERS = ("opus", "sonnet", "haiku"), ("low", "medium", "high"), 8
 ROLES = ("read", "skim", "skip")
 KINDS = ("decide", "read")
 STATUSES = ("verified", "unverified", "refuted")
 NODE_STATES = ("new", "changed", "existing", "external", "removed")
-SECTION_TYPES = ("diagram", "risks", "before_after", "table", "list", "steps")
+SECTION_TYPES = ("diagram", "risks", "before_after", "table", "list", "steps", "html")
 DIAGRAM_KINDS = ("sequence", "flowchart", "states", "structure", "data")
 SHAPES = ("step", "decision", "store", "end")
 FRAMES = ("alt", "opt", "loop")
@@ -41,8 +55,14 @@ LIMITS = {
     "summary": 300, "step_title": 70, "step_why": 220, "file_why": 90, "comment_title": 90,
     "comment_body": 700, "label": 40, "fact_title": 60, "fact_text": 200, "test": 140,
     "section_title": 70, "cell": 160, "item": 220, "skipped": 200, "role": 30, "note": 90,
-    "field_type": 30, "risk_title": 70, "risk_text": 220,
+    "field_type": 30, "risk_title": 70, "risk_text": 220, "focus": 400, "reviewer_title": 40, "reviewer_hint": 90, "charge": 1500,
 }
+MAX_HTML, MAX_SECTION_HTML, MIN_DATA_AT = 300_000, 60_000, 3
+# Tables are for rows of like things; past three a guide reads as a spreadsheet (feedback on a real guide with ten).
+MAX_TABLES = 3
+# The guide is shorter than the change: words of prose per changed line of production code, with a floor for a small fix
+# and a ceiling for a large stack. Tables, pictures and code blocks do not count; a table cell stays a phrase.
+PROSE_PER_LINE, PROSE_FLOOR, PROSE_CEILING, MAX_CELL_WORDS = 1.5, 250, 1800, 40
 MAX_FACTS, MAX_SECTIONS, MAX_ROWS, MAX_COLUMNS, MAX_ITEMS = 4, 8, 30, 6, 8
 MAX_STEPS, MAX_ANCHOR_LINES, MAX_COMPONENTS, MAX_PER_PR_AXIS = 8, 60, 20, 3
 # One diagram answers one question: past 12 boxes it reads as a tangle, so the writer splits it.
@@ -64,7 +84,16 @@ class Stack:
         self.pr_info = {p["n"]: p for p in run["prs"] if p["n"] in self.prs}
         self.since = stack.get("since")
         self.checkout = run.get("checkout")
+        self.effort = run.get("effort") or "balanced"
         self._lines: dict[str, int | None] = {}
+        # A director step is expected once the runner has started one, so the reviewers are not guessed before it writes the plan.
+        try:
+            started = json.loads((workdir / "progress.json").read_text()).get("agents") or {}
+        except (OSError, ValueError):
+            started = {}
+        self.planned = (self.dir / "plan.json").is_file() or f"{self.id}/plan" in started
+        self.reviewers = reviewers_of(self.dir, self.planned)
+        self.axes = [r["id"] for r in self.reviewers]
 
     def line_counts(self, paths) -> dict[str, int | None]:
         """Lines in each file: a changed file at the tip, anything else from the checkout at the tip (a file the stack
@@ -121,6 +150,96 @@ class Stack:
         if not span or any(s is None or s[0] != own[0] for s in span) or [s[1] for s in span] != list(range(span[0][1], span[0][1] + len(span))):
             return f"start_line {start}..line {line} of {path} must be consecutive lines written by one PR"
         return own[0], own[1], span[0][1]
+
+
+def read_plan(sdir: pathlib.Path) -> dict | None:
+    try:
+        plan = json.loads((sdir / "plan.json").read_text())
+    except (OSError, ValueError):
+        return None
+    return plan if isinstance(plan, dict) and isinstance(plan.get("reviewers"), list) else None
+
+
+def reviewers_of(sdir: pathlib.Path, planned: bool = False) -> list[dict]:
+    """The stack's reviewers: its plan's, the three built-in ones when there is no plan, none while a plan is awaited."""
+    plan = read_plan(sdir)
+    if plan is None:
+        return [] if planned else DEFAULT_REVIEWERS
+    return [{"id": r["id"], "title": r.get("title") or r["id"], "hint": r.get("hint") or ""}
+            for r in plan["reviewers"] if isinstance(r, dict) and isinstance(r.get("id"), str)]
+
+
+def has_guide(st: Stack) -> bool:
+    return (st.dir / "guide.json").is_file() or (st.dir / "guide.html").is_file() and (st.dir / "files.json").is_file()
+
+
+def guide_parts(st: Stack) -> list[pathlib.Path]:
+    """The sections the author has written so far, `guide/NN-<ref>.html`, in name order."""
+    return sorted(p for p in (st.dir / "guide").glob("*.html") if p.is_file()) if (st.dir / "guide").is_dir() else []
+
+
+def html_source(st: Stack) -> str | None:
+    """The HTML guide as one fragment: guide.html, or the section files joined, while they are written and after."""
+    if (st.dir / "guide.html").is_file():
+        return (st.dir / "guide.html").read_text()
+    parts = guide_parts(st)
+    return "\n".join(p.read_text() for p in parts) if parts else None
+
+
+def writing(st: Stack) -> bool:
+    """Sections have landed but the author has not finished (files.json, its last file, is not there yet)."""
+    return bool(guide_parts(st)) and not (st.dir / "files.json").is_file() and not (st.dir / "guide.html").is_file()
+
+
+def split_key(stem: str, axes) -> tuple[str, str]:
+    """`<reviewer>-<finding id>` as a verifier's file stem: reviewer ids and finding ids both hold dashes, so match the known ids."""
+    for a in sorted(axes, key=len, reverse=True):
+        if stem.startswith(a + "-"):
+            return a, stem[len(a) + 1:]
+    axis, _, fid = stem.partition("-")
+    return axis, fid
+
+
+def check_plan(st: Stack) -> list[str]:
+    """plan.json, the director's file: what the stack's reviewers are asked to look for, and on which model."""
+    errors: list[str] = []
+    err = lambda m: errors.append(f"stack {st.id}: plan.json: {m}")  # noqa: E731
+    try:
+        plan = json.loads((st.dir / "plan.json").read_text())
+    except FileNotFoundError:
+        return [f"stack {st.id}: plan.json is missing"]
+    except json.JSONDecodeError as e:
+        return [f"stack {st.id}: plan.json is not valid JSON ({e})"]
+    if not isinstance(plan, dict):
+        return [f"stack {st.id}: plan.json must be an object"]
+    check_text(err, "focus", plan.get("focus"), LIMITS["focus"])
+    rs = plan.get("reviewers")
+    if not isinstance(rs, list) or not 1 <= len(rs) <= MAX_REVIEWERS:
+        return errors + [f"stack {st.id}: plan.json: reviewers: expected 1 to {MAX_REVIEWERS}"]
+    seen = set()
+    for i, r in enumerate(rs):
+        r = r if isinstance(r, dict) else {}
+        rid = r.get("id")
+        label = f"reviewers[{i}] ({rid})"
+        if not isinstance(rid, str) or not REVIEWER_ID.match(rid) or rid in RESERVED_IDS or rid in seen:
+            err(f"{label}: id must be 2 to 28 lowercase letters, digits and dashes, start with a letter, be unique, and not be one of {sorted(RESERVED_IDS)}")
+        seen.add(rid)
+        check_text(err, f"{label}.title", r.get("title"), LIMITS["reviewer_title"])
+        check_text(err, f"{label}.hint", r.get("hint"), LIMITS["reviewer_hint"])
+        check_text(err, f"{label}.charge", r.get("charge"), LIMITS["charge"])
+        if isinstance(r.get("charge"), str) and len(r["charge"]) < 40:
+            err(f"{label}.charge: say what to hunt for, where, and what to leave alone (at least 40 characters)")
+        if r.get("model") not in PLAN_MODELS:
+            err(f"{label}.model must be one of {PLAN_MODELS}")
+        if r.get("effort") not in PLAN_EFFORTS:
+            err(f"{label}.effort must be one of {PLAN_EFFORTS}")
+        elif st.effort != "deep" and r.get("model") == "opus" and r.get("effort") == "high":
+            # Measured: opus at high effort ran 15+ minutes per reviewer; the whole balanced round should take about that.
+            err(f"{label}: opus at high effort is for `deep` rounds only; at `{st.effort}` use opus at medium or sonnet at high")
+        paths = r.get("paths")
+        if paths is not None and (not isinstance(paths, list) or len(paths) > 12 or not all(isinstance(x, str) and 0 < len(x) <= 200 for x in paths)):
+            err(f"{label}.paths is a list of up to 12 path globs, or null")
+    return errors
 
 
 def skeleton(st: Stack) -> dict:
@@ -204,15 +323,7 @@ def check_stack(st: Stack, strict: bool = True) -> tuple[dict | None, list[str],
         check_text(err, f"key_facts[{i}].title", (f or {}).get("title"), LIMITS["fact_title"])
         check_text(err, f"key_facts[{i}].text", (f or {}).get("text"), LIMITS["fact_text"])
 
-    files = guide.get("files") or {}
-    if missing := sorted(set(st.files) - set(files)):
-        err(f"files: every changed file needs a role; missing {missing}")
-    if extra := sorted(set(files) - set(st.files)):
-        err(f"files: not changed in this stack: {extra}")
-    for path, f in files.items():
-        if (f or {}).get("role") not in ROLES:
-            err(f"files[{path}].role must be one of {ROLES}")
-        check_text(err, f"files[{path}].why", (f or {}).get("why"), LIMITS["file_why"])
+    check_files(err, guide.get("files") or {}, st)
 
     g = GuideCheck(st, err, strict)
     check_components(guide, g)
@@ -231,6 +342,174 @@ def check_stack(st: Stack, strict: bool = True) -> tuple[dict | None, list[str],
     if strict and g.uncited * 2 > g.arrows:
         err(f"{note}; give each arrow `at` with the line that makes the call, or drop the arrows you cannot place")
     return guide, errors, note
+
+
+def check_files(err, files: dict, st: Stack) -> None:
+    if missing := sorted(set(st.files) - set(files)):
+        err(f"files: every changed file needs a role; missing {missing}")
+    if extra := sorted(set(files) - set(st.files)):
+        err(f"files: not changed in this stack: {extra}")
+    for path, f in files.items():
+        if (f or {}).get("role") not in ROLES:
+            err(f"files[{path}].role must be one of {ROLES}")
+        check_text(err, f"files[{path}].why", (f or {}).get("why"), LIMITS["file_why"])
+
+
+def trim(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit - 1].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+
+def html_refs(nodes, g: "GuideCheck", label: str) -> None:
+    for x in guidehtml.walk(nodes):
+        if "data-at" in x.attrs:
+            g.at({"at": x.attrs["data-at"]}, label)
+
+
+def check_html_guide(st: Stack, strict: bool = True) -> tuple[dict | None, list[str], str]:
+    """guide.html and files.json, the guide writer's files, read into the shape the page renders: one `html` section per
+    top-level <section>, and the consecutive `data-step` sections as one `steps` section. `strict` is --check: anything the
+    sanitizer drops, a section without a heading, a step without lines to read and code references that do not resolve are
+    errors. A build without --check only drops what it cannot use."""
+    errors: list[str] = []
+    err = lambda m: errors.append(f"stack {st.id}: {m}")  # noqa: E731
+    raw = html_source(st)
+    if raw is None:
+        return None, [f"stack {st.id}: no guide sections yet (guide/NN-<ref>.html)"], ""
+    if writing(st):
+        files = {p: {"role": "pending", "why": ""} for p in st.files}  # the page shows what has landed; roles come with files.json
+    else:
+        try:
+            files = json.loads((st.dir / "files.json").read_text())
+        except FileNotFoundError:
+            return None, [f"stack {st.id}: files.json is missing; write it last, once every section passes"], ""
+        except json.JSONDecodeError as e:
+            return None, [f"stack {st.id}: files.json is not valid JSON ({e})"], ""
+        check_files(err, files if isinstance(files, dict) else {}, st)
+    if len(raw) > MAX_HTML:
+        err(f"guide.html is {len(raw)} characters; keep it under {MAX_HTML}")
+    notes: set[str] = set()
+    nodes = guidehtml.parse(raw, notes)
+    if strict and notes:
+        err("guide.html: " + "; ".join(sorted(notes)[:12]) + ". Use only the tags, attributes, classes and colors guide-schema.md lists")
+    if strict:
+        figures.check(nodes, st.dir, prod_lines(st), timing_required(st), not writing(st), err)
+        # The author's own inline pictures; each artist's SVG is checked by its own --only figure:<ref>
+        if over := guidehtml.overflowing_labels(nodes):
+            err(f"guide.html: {len(over)} picture labels do not fit; widen the box or the viewBox, or shorten the label: " + "; ".join(over[:4]))
+    figures.fill(nodes, st.dir)
+    g = GuideCheck(st, err, strict)
+    sections: list[dict] = []
+    steps: list[dict] = []
+    refs: set[str] = set()
+
+    def flush() -> None:
+        # Steps right after a narrative section are its "read now": the code that section just explained. A run of steps
+        # with no section before it (an older guide's reading order at the end) keeps the old title.
+        if steps:
+            after = sections[-1] if sections and sections[-1]["type"] == "html" else None
+            sections.append({"type": "steps", "title": f"Read now: {after['title']}" if after else "Read in this order",
+                             "inline": bool(after), "steps": list(steps)})
+            steps.clear()
+
+    for n in nodes:
+        if isinstance(n, str):
+            if strict and n.strip():
+                err(f"guide.html: text outside a <section>: {n.strip()[:60]!r}")
+            continue
+        if n.tag != "section":
+            if strict:
+                err(f"guide.html: a top-level <{n.tag}>; put every part of the guide inside a <section>")
+            continue
+        ref = n.attrs.get("data-ref") or f"part-{len(sections) + len(steps) + 1}"
+        if strict and not n.attrs.get("data-ref"):
+            err(f"guide.html: a <section> without data-ref (after {sorted(refs)[-1:] or 'the start'})")
+        for x in guidehtml.walk([n]):
+            r = x.attrs.get("data-ref")
+            if r and r in refs and strict:
+                err(f"guide.html: data-ref {r!r} is used twice; each is unique")
+            if r:
+                refs.add(r)
+        html_refs([n], g, f"guide.html section {ref!r}")
+        head = next((k for k in n.kids if isinstance(k, guidehtml.Node) and k.tag in ("h2", "h3")), None)
+        title = trim(guidehtml.text(head) if head else ref.replace("-", " "), 120)
+        body = guidehtml.render([k for k in n.kids if k is not head])
+        if "data-step" in n.attrs:
+            step = html_step(n, ref, title, body, st, err, strict)
+            if step:
+                steps.append(step)
+            continue
+        flush()
+        if strict and (head is None or head.tag != "h2"):
+            err(f"guide.html section {ref!r}: start it with an <h2> that names it")
+        if len(body) > MAX_SECTION_HTML:
+            err(f"guide.html section {ref!r} is {len(body)} characters; split it (limit {MAX_SECTION_HTML})")
+        sections.append({"type": "html", "title": title, "ref": ref, "html": body})
+    flush()
+    done = not writing(st)
+    if strict:
+        if done and not any(s["type"] == "html" for s in sections):
+            err("guide.html: no <section> with an <h2>")
+        if done and (not sections or sections[0].get("ref") != "overview"):
+            err("the guide starts with <section data-ref=\"overview\">")
+        g.check_refs()
+        if done and len(g.refs) < MIN_DATA_AT:
+            err(f"guide.html cites {len(g.refs)} lines of code; tie each claim about code to its line with data-at")
+    if strict:
+        words, budget = guidehtml.prose_words(nodes), prose_budget(st)
+        if words > budget:
+            err(f"guide.html has {words} words of prose; the budget for this stack is {budget} (tables, pictures and code blocks do not count). "
+                "Cut what retells code the reviewer reads next, what another section already says, and code outside the diff; "
+                "turn a list of hops into a table or a picture")
+        tables = sum(1 for x in guidehtml.walk(nodes) if x.tag == "table")
+        if tables > MAX_TABLES:
+            err(f"guide.html has {tables} tables; keep at most {MAX_TABLES}, for rows of like things (settings, outcomes, failures). "
+                "Say the rest in a sentence, or let a picture carry it")
+        long = [guidehtml.text(x)[:50] for x in guidehtml.walk(nodes) if x.tag in ("td", "th") and len(guidehtml.text(x).split()) > MAX_CELL_WORDS]
+        if long:
+            err(f"guide.html: {len(long)} table cells over {MAX_CELL_WORDS} words; a cell is a phrase or one sentence (first: {long[0]!r})")
+    guide = {"format": "html", "summary": "", "key_facts": [], "components": None, "sections": sections, "files": files, "writing": writing(st),
+             "drawing": figures.pending(nodes, st.dir)}
+    return guide, errors, ""
+
+
+def prod_lines(st: Stack) -> int:
+    return sum(f["adds"] + f["dels"] for p, f in st.files.items()
+               if not (TEST_PATH.search(p) or FIXTURE_PATH.search(p) or OMIT_PATH.search(p) or DOC_PATH.search(p)))
+
+
+def timing_required(st: Stack) -> bool:
+    try:
+        return bool(json.loads((st.dir / "timing.json").read_text()).get("required"))
+    except (OSError, ValueError):
+        return False  # a round fetched before the timing scan
+
+
+def prose_budget(st: Stack) -> int:
+    return int(min(PROSE_CEILING, max(PROSE_FLOOR, prod_lines(st) * PROSE_PER_LINE)))
+
+
+def html_step(n, ref: str, title: str, body: str, st: Stack, err, strict: bool) -> dict | None:
+    """A `<section data-step>`: what to read (its data-at, at most MAX_ANCHOR_LINES lines of a changed file) and why."""
+    m = AT.match(n.attrs.get("data-at") or "")
+    if not m:
+        if strict:
+            err(f"guide.html step {ref!r}: data-at=\"path:start-end\" names the lines it asks the reviewer to read")
+        return None
+    start = int(m[2])
+    end = int(m[3] or m[2])
+    if not strict:
+        end = min(end, start + MAX_ANCHOR_LINES - 1)
+    anchor = {"path": m[1], "start": start, "end": end}
+    bad: list[str] = []
+    check_anchor(anchor, f"guide.html step {ref!r}", st, bad.append)
+    if bad:
+        if strict:
+            for b in bad:
+                err(b)
+        return None
+    text = guidehtml.text(guidehtml.parse(body))
+    return {"id": ref, "kind": "decide" if "data-decide" in n.attrs else "read", "title": trim(title, 90),
+            "why": trim(text, LIMITS["step_why"]), "html": body, "nodes": [], "test": False, "anchor": anchor}
 
 
 def upgrade_legacy(guide: dict) -> dict:
@@ -299,8 +578,10 @@ def check_section(sec: dict, label: str, g: GuideCheck, step_ids: set[str], step
             return err(f"{label}.kind must be one of {DIAGRAM_KINDS}")
         kind = sec["kind"]
     label = f"{label} ({kind})"
-    check_text(err, f"{label}.title", sec.get("title"), LIMITS["section_title"])
-    if kind == "sequence":
+    check_text(err, f"{label}.title", sec.get("title"), 120 if kind == "html" else LIMITS["section_title"])
+    if kind == "html":
+        check_html_part(sec.get("html"), label, g, MAX_SECTION_HTML)
+    elif kind == "sequence":
         check_sequence(sec, label, g)
     elif kind in ("flowchart", "states", "structure", "data"):
         check_graph(sec, kind, label, g)
@@ -353,12 +634,28 @@ def check_section(sec: dict, label: str, g: GuideCheck, step_ids: set[str], step
             step_ids.add(sid)
             if s.get("kind") not in KINDS:
                 err(f"{slabel}: kind must be one of {KINDS}")
-            check_text(err, f"{slabel}.title", s.get("title"), LIMITS["step_title"])
-            check_text(err, f"{slabel}.why", s.get("why"), LIMITS["step_why"])
+            check_text(err, f"{slabel}.title", s.get("title"), 90 if "html" in s else LIMITS["step_title"])
+            if "html" in s:  # a step of an HTML guide: its text is HTML, and `why` is derived from it
+                check_html_part(s["html"], slabel, g, MAX_SECTION_HTML)
+            else:
+                check_text(err, f"{slabel}.why", s.get("why"), LIMITS["step_why"])
             if s.get("test") is not None:
                 check_text(err, f"{slabel}.test", s["test"], LIMITS["test"])
             step_nodes.append((slabel, s.get("nodes") or []))
             check_anchor(s.get("anchor") or {}, slabel, st, err)
+
+
+def check_html_part(h, label: str, g: GuideCheck, limit: int) -> None:
+    """A piece of a guide written as HTML (a section, a step, a guide fix): what the sanitizer would drop is an error."""
+    if not isinstance(h, str) or not h.strip():
+        return g.err(f"{label}.html is empty")
+    if len(h) > limit:
+        return g.err(f"{label}.html is {len(h)} characters; the limit is {limit}")
+    notes: set[str] = set()
+    nodes = guidehtml.parse(h, notes)
+    if notes:
+        g.err(f"{label}.html: " + "; ".join(sorted(notes)[:6]))
+    html_refs(nodes, g, label)
 
 
 def check_sequence(sec: dict, label: str, g: GuideCheck) -> None:
@@ -527,13 +824,17 @@ def stages(w: pathlib.Path) -> list[dict]:
     out = []
     for s in run["stacks"]:
         d, sid = w / s["id"], s["id"]
+        planned = (d / "plan.json").is_file() or f"{sid}/plan" in agents
+        axes = reviewers_of(d, planned)
 
         def stage(key: str, label: str, path: pathlib.Path) -> dict:
             a = agents.get(f"{sid}/{key}") or {}
             start = a.get("started") or t0
             if path.is_file():
                 res = {"key": key, "label": label, "state": "done", "secs": round((a.get("ended") or path.stat().st_mtime) - start)}
-                if key in AXES:
+                if key == "plan":
+                    res["picked"] = len(axes)
+                elif key != "guide" and not key.startswith("figure/"):
                     try:
                         report = json.loads(path.read_text())
                     except ValueError:
@@ -545,12 +846,20 @@ def stages(w: pathlib.Path) -> list[dict]:
                 return res
             state = a.get("state") or ("running" if not agents else "waiting")
             secs = round((a.get("ended") or now) - start) if state != "waiting" else None
-            return {"key": key, "label": label, "state": state, "secs": secs, "calls": a.get("calls", 0), "last": a.get("last", "")}
+            return {"key": key, "label": label, "state": state, "secs": secs, "calls": a.get("calls", 0), "last": a.get("last", ""), "doing": a.get("doing", "")}
 
-        row = [stage("guide", "Guide", d / "guide.json"), *(stage(a, a.capitalize(), d / f"review-{a}.json") for a in AXES)]
+        # The HTML guide is done when its author writes files.json, last; the structured one when guide.json lands.
+        guide_file = d / ("guide.json" if (d / "guide.json").is_file() or not planned else "files.json")
+        row = [stage("plan", "Choosing reviewers", d / "plan.json")] if planned else []
+        row += [stage("guide", "Guide", guide_file)]
+        # One row per picture the author asked for, drawn by its own artist.
+        row += [{**stage(f"figure/{ref}", spec.get("kind") or ref, d / "figures" / f"{ref}.svg"), "question": spec.get("question") or ""}
+                for ref, spec in figures.specs(d).items()]
+        row += [stage(r["id"], r["title"], d / f"review-{r['id']}.json") for r in axes]
+        reviews = [x for x in row if x["key"] not in ("guide", "plan") and not x["key"].startswith("figure/")]
         total = None
-        if all(x["state"] in ("done", "skipped", "failed") for x in row[1:]):
-            total = sum(x.get("found", 0) for x in row[1:])
+        if (not planned or (d / "plan.json").is_file()) and all(x["state"] in ("done", "skipped", "failed") for x in reviews):
+            total = sum(x.get("found", 0) for x in reviews)
         checked = verify_results(d)
         verifiers = [a for k, a in agents.items() if k.startswith(f"{sid}/verify/")]
         running = [a for a in verifiers if a.get("state") == "running"]
@@ -573,7 +882,7 @@ def collect_findings(st: Stack, reports: dict[str, dict]) -> tuple[list[dict], d
     warnings, skipped = [], {}
     results = verify_results(st.dir)
     out = []
-    for axis in AXES:
+    for axis in st.axes:
         report = reports.get(axis)
         if report is None:
             continue
@@ -642,8 +951,11 @@ def render_stack(st: Stack, repo: str, guide: dict, findings: list[dict], skippe
                     "test": s.get("test", False), "path": a["path"], "start": a["start"], "end": a["end"],
                     "lines": line_rows(a["path"], a["start"], a["end"]),
                     "link": compare and f"{compare}#{diff_anchor(a['path'])}R{a['start']}-R{a['end']}",
+                    **({"html": guidehtml.clean(s["html"])} if "html" in s else {}),
                 })
             sec["steps"] = steps
+        elif sec["type"] == "html":
+            sec["html"] = guidehtml.clean(sec["html"])  # again at render: a guide fix or an old round never reaches the page unsanitized
         sections.append(sec)
 
     files = []
@@ -656,10 +968,20 @@ def render_stack(st: Stack, repo: str, guide: dict, findings: list[dict], skippe
 
     prs = [{**{k: st.pr_info[n][k] for k in ("n", "url", "title", "author", "sha", "review_sha", "draft", "checks")},
             **{k: st.pr_info[n].get(k) for k in ("last_review", "label", "pr_number", "pushed", "head")}} for n in st.prs]
+    plan = read_plan(st.dir)
     return {"id": st.id, "pending": bool(guide.get("pending")), "reviewing": reviewing, "skipped": skipped,
+            "reviewers": st.reviewers, "planning": st.planned and plan is None, "focus": (plan or {}).get("focus"), "format": guide.get("format", "json"),
+            "writing": bool(guide.get("writing")), "drawing": guide.get("drawing") or [],
             "base": st.base, "tip": st.tip, "since": st.since, "compare": compare, "summary": guide["summary"],
             "key_facts": guide.get("key_facts") or [], "components": guide.get("components"), "sections": sections,
             "prs": prs, "files": files, "comments": comments}
+
+
+def atomic(path: pathlib.Path, text: str) -> None:
+    """The runner rebuilds from several threads while the server reads: never leave a half-written file."""
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
 
 
 def main() -> None:
@@ -667,7 +989,7 @@ def main() -> None:
     ap.add_argument("workdir", type=pathlib.Path)
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--stack")
-    ap.add_argument("--only", choices=("guide", *AXES))
+    ap.add_argument("--only", help="guide, plan, figure:<ref>, or a reviewer id of the stack")
     ap.add_argument("--partial", action="store_true", help="render stacks without a guide as file tree and diffs only")
     args = ap.parse_args()
     run = json.loads((args.workdir / "run.json").read_text())
@@ -678,15 +1000,36 @@ def main() -> None:
     errors, guides, reports, notes = [], {}, {}, []
     for st in stacks:
         reports[st.id] = {}
-        for axis in AXES:
+        if args.only == "plan":
+            errors += check_plan(st)
+            continue
+        if args.only and args.only.startswith("figure:"):
+            ref = args.only.split(":", 1)[1]
+            errs: list[str] = []
+            figures.check_one(st.dir, ref, lambda m: errs.append(f"stack {st.id}: {m}"))
+            # The picture's code links resolve like the guide's.
+            g = GuideCheck(st, errs.append, True)
+            if picture := figures.svg_of(st.dir, ref):
+                html_refs(picture, g, f"figures/{ref}.svg")
+                g.check_refs()
+            errors += errs
+            continue
+        if args.only not in (None, "guide") and args.only not in st.axes:
+            errors.append(f"stack {st.id}: no reviewer {args.only!r}; this stack's reviewers are {st.axes}")
+            continue
+        for axis in st.axes:
             if args.only in (None, axis) and (args.only == axis or (st.dir / f"review-{axis}.json").is_file()):
                 reports[st.id][axis], errs = check_findings(st, axis)
                 errors += errs
         # Reviewers check only their own file; a plain --check or --partial accepts a guide that is not written yet.
-        if args.only not in (None, "guide") or args.only is None and (args.partial or args.check) and not (st.dir / "guide.json").is_file():
+        if args.only not in (None, "guide") or args.only is None and (args.partial or args.check) and not has_guide(st) and not guide_parts(st):
             guides[st.id] = skeleton(st)
             continue
-        guide, errs, note = check_stack(st, strict=args.check)
+        html = (st.dir / "guide.html").is_file() or bool(guide_parts(st))
+        if args.only is None and (args.partial or args.check) and html and writing(st) and not args.partial:
+            guides[st.id] = skeleton(st)  # a plain --check while the author is still writing: its own --only guide checks it
+            continue
+        guide, errs, note = (check_html_guide if html else check_stack)(st, strict=args.check)
         errors += errs
         guides[st.id] = guide
         if note:
@@ -697,22 +1040,24 @@ def main() -> None:
     if args.check:
         print("\n".join(["ok", *notes]))
         return
+    if args.only:
+        sys.exit("--only goes with --check")
 
     warnings, rendered = [], []
     for st in stacks:
         findings, skipped, warns = collect_findings(st, reports[st.id])
         warnings += warns
-        reviewing = [a for a in AXES if a not in reports[st.id]]
+        reviewing = [a for a in st.axes if a not in reports[st.id]]
         rendered.append(render_stack(st, run["repo"], guides[st.id], findings, skipped, reviewing, run.get("mode") == "self"))
     data = {"repo": run["repo"], "viewer": run["viewer"], "mode": run.get("mode", "pr"), "source": run.get("source"), "effort": run.get("effort", "balanced"), "run_id": run["run_id"], "warnings": run.get("warnings") or [],
             "stacks": rendered}
-    (args.workdir / "guide.json").write_text(json.dumps(data, indent=1))
+    atomic(args.workdir / "guide.json", json.dumps(data, indent=1))
     embedded = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
-    (args.workdir / "index.html").write_text(TEMPLATE.read_text().replace("/*DATA*/null", embedded))
+    atomic(args.workdir / "index.html", TEMPLATE.read_text().replace("/*DATA*/null", embedded))
     for w in warnings:
         print("warning:", w)
     for s in data["stacks"]:
-        by_axis = {a: sum(c["axis"] == a for c in s["comments"]) for a in AXES}
+        by_axis = {r["id"]: sum(c["axis"] == r["id"] for c in s["comments"]) for r in s["reviewers"]}
         by_status = {k: sum(c["status"] == k for c in s["comments"]) for k in STATUSES}
         print(f"stack {s['id']}: {len(s['sections'])} sections, findings {by_axis}, {by_status}")
     for n in notes:

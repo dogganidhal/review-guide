@@ -266,6 +266,85 @@ out({{"type": "result", "subtype": "success", "is_error": False, "result": reply
 '''
 
 
+RUN_STUB = '''#!{python}
+# A fake `claude -p` for rerun.py: plays the agent named by --agent and writes what that agent would write.
+import json, os, pathlib, re, sys
+argv = sys.argv[1:]
+with open(os.environ["STUB_ARGV"], "a") as f:
+    f.write(json.dumps(argv) + "\\n")
+prompt, agent = argv[argv.index("-p") + 1], argv[argv.index("--agent") + 1].split(":")[1]
+field = lambda k: re.search(rf"^{{k}}: (.*)$", prompt, re.M).group(1)
+sd = pathlib.Path(field("Work directory")) / field("Stack")
+if agent == "director":
+    (sd / "plan.json").write_text(json.dumps({{"focus": "y widens.", "reviewers": [
+        {{"id": "widening", "title": "Widening y", "hint": "readers of y", "charge": "Find every reader of A.y and what a large value does to it.", "paths": None, "model": "opus", "effort": "medium"}},
+        {{"id": "new-class", "title": "Class B", "hint": "the empty class", "charge": "Check whether B is wired anywhere and whether it should land alone.", "paths": None, "model": "haiku", "effort": "low"}}]}}))
+elif agent == "guide-author":
+    # One file per section, as the author writes them, then files.json to say it is done.
+    (sd / "guide").mkdir(exist_ok=True)
+    parts = re.findall(r"<section.*?</section>", pathlib.Path(os.environ["STUB_GUIDE"]).read_text(), re.S)
+    (sd / "figures").mkdir(exist_ok=True)
+    (sd / "figures" / "where.json").write_text(json.dumps({{"kind": "map", "question": "Where A and B run", "show": "A writes, B reads.", "caption": "Where it runs.", "at": ["A.java:3"]}}))
+    parts.insert(1, '<section data-ref="where"><h2>Where it runs</h2><figure data-kind="map" data-figure="where"><figcaption>Where it runs.</figcaption></figure></section>')
+    for i, part in enumerate(parts):
+        ref = re.search(r'data-ref="([^"]+)"', part).group(1)
+        (sd / "guide" / f"{{i + 1:02d}}-{{ref}}.html").write_text(part)
+    (sd / "files.json").write_text(json.dumps({{"A.java": {{"role": "read", "why": "Fields."}}, "B.java": {{"role": "skim", "why": "Empty."}}}}))
+elif agent == "figure-artist":
+    ref = field("Figure")
+    (sd / "figures" / f"{{ref}}.svg").write_text('<svg viewBox="0 0 300 60"><g data-ref="box-a" data-at="A.java:3"><title>A</title><rect x="10" y="10" width="120" height="30" fill="var(--card)"/><text x="70" y="30" text-anchor="middle">A</text></g></svg>')
+elif agent == "guide-writer":
+    (sd / "guide.json").write_text(pathlib.Path(os.environ["STUB_GUIDE_JSON"]).read_text())
+elif agent == "reviewer":
+    rid = field("Reviewer")
+    assert ("Charge: " in prompt) == (rid in ("widening", "new-class")), prompt
+    found = [{{"id": "trunc", "severity": "should", "title": "Readers truncate y", "path": "A.java", "line": 3, "body": "`y` is long.", "evidence": ["A.java:3"]}}] if rid == "widening" else []
+    (sd / f"review-{{rid}}.json").write_text(json.dumps({{"skipped": None, "findings": found}}))
+elif agent == "comment-verifier":
+    axis, fid = field("Finding").split("/")
+    (sd / "verify" / f"{{axis}}-{{fid}}.json").write_text(json.dumps({{"status": "verified", "note": "A.java:3."}}))
+print(json.dumps({{"type": "result", "subtype": "success", "result": "ok", "num_turns": 1, "duration_ms": 1, "total_cost_usd": 0}}), flush=True)
+'''
+
+
+def check_runner(h: pathlib.Path, sid: str, root: pathlib.Path, guide: str) -> None:
+    """rerun.py with a fake claude: at balanced the director picks two reviewers and they run with its model and effort; at
+    quick the structured writer and the three built-in reviewers run, as before."""
+    import os
+    stub, argv_log, gpath = root / "run_stub", root / "run-argv.jsonl", root / "run-guide.html"
+    stub.write_text(RUN_STUB.format(python=sys.executable))
+    stub.chmod(0o755)
+    gpath.write_text(guide)
+    env = {**os.environ, "REVIEW_GUIDE_CLAUDE": str(stub), "STUB_ARGV": str(argv_log), "STUB_GUIDE": str(gpath)}
+    out = subprocess.run([sys.executable, str(HERE / "rerun.py"), str(h), "--effort", "balanced"], capture_output=True, text=True, env=env, timeout=120)
+    assert out.returncode == 0, out.stdout + out.stderr
+    calls = [json.loads(x) for x in argv_log.read_text().splitlines()]
+    agents = [(c[c.index("--agent") + 1].split(":")[1], c[c.index("-p") + 1].split("Reviewer: ")[-1].split("\n")[0] if "Reviewer: " in c[c.index("-p") + 1] else "") for c in calls]
+    assert agents[:2] == [("guide-author", ""), ("director", "")] or agents[:2] == [("director", ""), ("guide-author", "")], agents
+    names = [a[0] for a in agents]
+    assert names.count("figure-artist") == 1 and names.count("reviewer") == 2 and names.count("comment-verifier") == 1, agents
+    assert sorted(a for a in agents if a[0] == "reviewer") == [("reviewer", "new-class"), ("reviewer", "widening")], agents
+    assert names.index("figure-artist") > names.index("guide-author"), agents
+    art = next(c for a, c in zip(agents, calls) if a[0] == "figure-artist")
+    assert "Figure: where" in art[art.index("-p") + 1], art
+    model = {a[1]: c[c.index("--model") + 1] + "/" + c[c.index("--effort") + 1] for a, c in zip(agents, calls) if a[0] == "reviewer"}
+    assert model == {"widening": "opus/medium", "new-class": "haiku/low"}, model
+    st = json.loads((h / "guide.json").read_text())["stacks"][0]
+    assert st["format"] == "html" and [c["status"] for c in st["comments"]] == ["verified"] and [r["id"] for r in st["reviewers"]] == ["widening", "new-class"]
+    where = next(x for x in st["sections"] if x.get("ref") == "where")
+    assert '<svg viewBox="0 0 300 60">' in where["html"] and "being drawn" not in where["html"] and st["drawing"] == [], where
+    assert "done 1-2: 1 findings" in out.stdout, out.stdout
+
+    argv_log.unlink()
+    env["STUB_GUIDE_JSON"] = str(root / "w" / sid / "guide.json")
+    out = subprocess.run([sys.executable, str(HERE / "rerun.py"), str(h), "--effort", "quick"], capture_output=True, text=True, env=env, timeout=120)
+    assert out.returncode == 0, out.stdout + out.stderr
+    calls = [json.loads(x) for x in argv_log.read_text().splitlines()]
+    names = sorted(c[c.index("--agent") + 1].split(":")[1] + ":" + (c[c.index("-p") + 1].split("Reviewer: ")[-1].split("\n")[0] if "Reviewer: " in c[c.index("-p") + 1] else "") for c in calls)
+    assert names == ["guide-writer:", "reviewer:correctness", "reviewer:spec", "reviewer:standards"], names
+    assert not (h / sid / "plan.json").exists() and not (h / sid / "guide.html").exists() and not (h / sid / "guide").exists()
+
+
 def check_ask(w: pathlib.Path, root: pathlib.Path) -> None:
     """Questions: threads on disk, a stubbed agent whose stream is replayed, resume, the concurrency cap, proposals and their
     apply, the read-only and token guards, and carry-over of threads to a new round."""
@@ -652,6 +731,230 @@ def check_share(w: pathlib.Path, root: pathlib.Path) -> None:
     assert not got, got
 
 
+def check_sanitizer() -> None:
+    """guidehtml.py: model-written HTML the page inserts into its own document. Everything outside the allowlist goes,
+    and is named so --check can fail on it."""
+    sys.path.insert(0, str(HERE))
+    import guidehtml
+    notes: set[str] = set()
+    hostile = ('<section data-ref="a" onclick="x()" class="callout evil" id="t"><h2>Hi<script>alert(1)</script></h2>'
+               '<a href="javascript:alert(1)">link</a><img src=x onerror=alert(1)><iframe src="//x"></iframe>'
+               '<p style="color:var(--accent);background:url(//evil);position:fixed">p</p>'
+               '<svg viewBox="0 0 10 10" onload="x()"><use href="#a"/><foreignObject><div>z</div></foreignObject>'
+               '<text x="1" y="2" fill="#f00" style="font-family: inherit">t</text><line x1="0" x2="1" marker-end="url(#rg-arrow)" stroke="var(--ink)"/>'
+               '<path d="M0 0L1 1" transform="translate(2,3)"/><path d="url(x)"/></svg>'
+               '<code data-at="A.java:2-3">A</code><code data-at="A.java">B</code><span data-ref="Bad Ref">s</span>'
+               '<style>body{display:none}</style><template><p>t</p></template>&lt;script&gt;</section>')
+    out = guidehtml.render(guidehtml.parse(hostile, notes))
+    for gone in ("script>", "onclick", "onerror", "onload", "javascript", "<a", "<img", "iframe", "url(//", "position", "<use", "foreignObject",
+                 "#f00", 'id="t"', "evil", 'data-at="A.java"', "<style", "<template", "Bad Ref", ' d="url'):
+        assert gone not in out, (gone, out)
+    for kept in ('<section data-ref="a" class="callout">', "style=\"color:var(--accent)\"", 'marker-end="url(#rg-arrow)"', 'transform="translate(2,3)"',
+                 '<code data-at="A.java:2-3">A</code>', "&lt;script&gt;", "<h2>Hi</h2>"):
+        assert kept in out, (kept, out)
+    assert {"<script> removed", "attribute `onclick` on <section> removed", "<a> removed", "<img> removed"} <= notes, notes
+    assert guidehtml.clean(out) == out  # sanitizing what it produced changes nothing
+    # A bare SVG font-size means viewBox units; CSS would drop it, so it is written with px.
+    assert 'style="font-size:13px"' in guidehtml.clean('<svg viewBox="0 0 9 9"><text style="font-size: 13">x</text></svg>')
+    # Labels that run out of their box or off the picture are found from their length; one that fits is not.
+    over = guidehtml.overflowing_labels(guidehtml.parse(
+        '<svg viewBox="0 0 300 100"><g><rect x="60" y="10" width="80" height="30"/><text x="100" y="30" text-anchor="middle">a label far too long</text></g>'
+        '<g><rect x="100" y="10" width="190" height="30"/><text x="195" y="30" text-anchor="middle">fits fine</text></g>'
+        '<text x="280" y="80">off the edge</text></svg>'))
+    assert len(over) == 2 and any("'a label far too long' is about" in o and "box 80 wide" in o for o in over) and any("'off the edge' runs past" in o for o in over), over
+
+
+def check_html_guide(w: pathlib.Path, sid: str, root: pathlib.Path) -> None:
+    """The balanced and deep path, in a copy of the work directory: a director's plan with its own reviewers, and a guide
+    written as HTML, through --check, the page build and the stages strip."""
+    check_sanitizer()
+    h = root / "html-w"
+    shutil.copytree(w, h)
+    sd = h / sid
+    (h / "progress.json").unlink(missing_ok=True)
+    for f in ("guide.json", "review-correctness.json", "review-standards.json", "review-spec.json"):
+        (sd / f).unlink(missing_ok=True)
+    shutil.rmtree(sd / "verify", ignore_errors=True)
+    check = lambda *a: subprocess.run([sys.executable, str(HERE / "build.py"), str(h), "--check", "--stack", sid, *a], capture_output=True, text=True)  # noqa: E731
+
+    plan = {"focus": "A widens a field that readers may still read as int.", "reviewers": [
+        {"id": "widening", "title": "Widening y", "hint": "readers of y as int", "charge": "Find every reader of `A.y` and say what happens to a value above 2^31.",
+         "paths": ["A.java"], "model": "opus", "effort": "high"},
+        {"id": "new-class", "title": "Class B", "hint": "the empty class", "charge": "Check whether `B` is wired anywhere, and whether an empty class should land alone.",
+         "paths": None, "model": "sonnet", "effort": "low"}]}
+    bad = {"focus": "", "reviewers": [{**plan["reviewers"][0], "id": "Guide"}, {**plan["reviewers"][0], "model": "gpt", "charge": "short"},
+                                      {**plan["reviewers"][1], "id": "plan"}]}
+    (sd / "plan.json").write_text(json.dumps(bad))
+    out = check("--only", "plan")
+    for expected in ("focus is empty", "reviewers[0] (Guide): id must be", "model must be one of", "at least 40 characters", "reviewers[2] (plan): id must be"):
+        assert expected in out.stdout, (expected, out.stdout)
+    (sd / "plan.json").write_text(json.dumps({"focus": "x", "reviewers": [plan["reviewers"][0]] * 9}))
+    assert "expected 1 to 8" in check("--only", "plan").stdout
+    (sd / "plan.json").write_text(json.dumps(plan))
+    assert "opus at high effort is for `deep` rounds only" in check("--only", "plan").stdout
+    plan["reviewers"][0]["effort"] = "medium"
+    (sd / "plan.json").write_text(json.dumps(plan))
+    assert check("--only", "plan").stdout.strip() == "ok"
+    # The reviewers are the plan's now: a built-in axis is not one of them, and a reviewer's file checks like any other.
+    assert "no reviewer 'correctness'" in check("--only", "correctness").stdout
+    finding = {"id": "trunc", "severity": "should", "title": "Readers of y truncate it", "path": "A.java", "line": 3, "body": "`y` is long now.", "evidence": ["A.java:3"]}
+    (sd / "review-widening.json").write_text(json.dumps({"skipped": None, "findings": [finding]}))
+    assert check("--only", "widening").stdout.strip() == "ok"
+
+    guide = ('<section data-ref="overview"><h2>What this changes</h2><ul class="facts"><li data-ref="fact-y"><code data-at="A.java:3">y</code> is a long now.</li>'
+             '<li>B is empty.</li></ul></section>'
+             '<section data-ref="why"><h2>Why y widens</h2><p>Values above 2^31 <span data-at="A.java:3">overflowed</span>.</p>'
+             '<figure data-ref="fig"><svg viewBox="0 0 200 60" role="img"><g data-ref="box-a" data-at="A.java:1"><title>A</title><rect x="4" y="4" width="80" height="30" fill="var(--card)" stroke="var(--line)"/>'
+             '<text x="12" y="24">A</text></g><line x1="84" y1="19" x2="140" y2="19" stroke="var(--ink)" marker-end="url(#rg-arrow)"/></svg><figcaption>A holds y.</figcaption></figure>'
+             '<table><tr data-ref="row-y" data-at="A.java:3"><td>y</td><td>long</td></tr></table></section>'
+             '<section data-step data-ref="read-a" data-at="A.java:1-5"><h3>Read A</h3><p>Check the type of <code>y</code>.</p></section>'
+             '<section data-step data-decide data-ref="read-f" data-at="A.java:4"><h3>Is f needed?</h3><p>It is empty.</p></section>'
+             '<section data-ref="skim"><h2>What you can skim</h2><p>B.</p></section>')
+    files = {"A.java": {"role": "read", "why": "The widened field."}, "B.java": {"role": "skim", "why": "Empty class."}}
+    (sd / "files.json").write_text(json.dumps(files))
+    (sd / "guide.html").write_text(guide.replace('<p>B.</p>', '<p onclick="x()">B.</p><script>1</script>').replace('A.java:1-5', 'A.java:1-90')
+                                   .replace('<section data-ref="skim">', '<section>').replace('class="facts"', 'class="facts wow"'))
+    out = check("--only", "guide")
+    for expected in ("attribute `onclick` on <p> removed", "<script> removed", "class `facts wow`", "anchor 1..90 is outside A.java",
+                     "a <section> without data-ref"):
+        assert expected in out.stdout, (expected, out.stdout)
+    (sd / "guide.html").write_text(guide.replace("A.java:3", "A.java:30", 1))
+    assert "at 'A.java:30' is outside A.java (1..5)" in check("--only", "guide").stdout
+    (sd / "guide.html").write_text(guide)
+    assert check("--only", "guide").stdout.strip() == "ok", check("--only", "guide").stdout
+
+    # Written section by section: the page shows what has landed, the check covers it, and files.json completes it.
+    import re as _re
+    (sd / "guide.html").unlink()
+    (sd / "files.json").unlink()
+    (sd / "guide").mkdir()
+    parts = _re.findall(r"<section.*?</section>", guide, _re.S)
+    (sd / "guide" / "02-why.html").write_text(parts[1])
+    assert check("--only", "guide").stdout.strip() == "ok", check("--only", "guide").stdout  # no overview yet: fine while writing
+    out = subprocess.run([sys.executable, str(HERE / "build.py"), str(h), "--partial"], capture_output=True, text=True)
+    assert out.returncode == 0, out.stdout + out.stderr
+    st = json.loads((h / "guide.json").read_text())["stacks"][0]
+    assert st["writing"] and not st["pending"] and [x["title"] for x in st["sections"]] == ["Why y widens"], st["sections"]
+    assert {f["role"] for f in st["files"]} == {"pending"}
+    (sd / "files.json").write_text(json.dumps(files))
+    assert "starts with <section data-ref=\"overview\">" in check("--only", "guide").stdout
+    for i, part in enumerate(parts):
+        (sd / "guide" / f"{i + 1:02d}-{_re.search(r'data-ref=\"([^\"]+)\"', part).group(1)}.html").write_text(part)
+    assert sorted(x.name for x in (sd / "guide").iterdir()) == ["01-overview.html", "02-why.html", "03-read-a.html", "04-read-f.html", "05-skim.html"]
+    assert check("--only", "guide").stdout.strip() == "ok", check("--only", "guide").stdout
+    # Prose past the budget fails, tables do not count, and a long table cell fails on its own.
+    long = "<p>" + " word" * 300 + "</p>"
+    (sd / "guide" / "07-more.html").write_text(f'<section data-ref="more"><h2>More</h2>{long}<table><tr><td>{" w" * 500}</td></tr></table></section>')
+    out = check("--only", "guide").stdout
+    assert "words of prose; the budget for this stack is 250" in out and "table cells over 40 words" in out, out
+    (sd / "guide" / "07-more.html").write_text(f'<section data-ref="more"><h2>More</h2><table><tr><td>{" w" * 30}</td></tr>' + "<tr><td>x y z</td></tr>" * 80 + "</table></section>")
+    assert check("--only", "guide").stdout.strip() == "ok"
+    (sd / "guide" / "07-more.html").write_text('<section data-ref="more"><h2>More</h2>' + "<table><tr><td>x</td></tr></table>" * 3 + "</section>")
+    assert "has 4 tables; keep at most 3" in check("--only", "guide").stdout  # the fixture's own table plus three
+    (sd / "guide" / "07-more.html").unlink()
+
+    # Pictures: a placeholder needs a spec, a spec a placeholder; a drawn SVG is filled in and checked on its own.
+    fig = '<section data-ref="where"><h2>Where it runs</h2><figure data-kind="map" data-figure="where"><figcaption>A and B.</figcaption></figure></section>'
+    (sd / "guide" / "06-where.html").write_text(fig)
+    assert "write its spec, figures/where.json" in check("--only", "guide").stdout
+    (sd / "figures").mkdir()
+    spec = {"kind": "map", "question": "Where A and B run", "show": "A writes y, B reads it.", "caption": "A and B.", "at": ["A.java:3"]}
+    (sd / "figures" / "where.json").write_text(json.dumps({**spec, "kind": "timeline"}))
+    assert "differs from the placeholder's data-kind 'map'" in check("--only", "guide").stdout
+    (sd / "figures" / "where.json").write_text(json.dumps(spec))
+    (sd / "figures" / "orphan.json").write_text(json.dumps(spec))
+    assert "figures/orphan.json has no placeholder" in check("--only", "guide").stdout
+    (sd / "figures" / "orphan.json").unlink()
+    assert check("--only", "guide").stdout.strip() == "ok", check("--only", "guide").stdout  # not drawn yet: fine
+    out = subprocess.run([sys.executable, str(HERE / "build.py"), str(h), "--partial"], capture_output=True, text=True)
+    assert out.returncode == 0, out.stdout + out.stderr
+    st = json.loads((h / "guide.json").read_text())["stacks"][0]
+    assert st["drawing"] == ["where"] and "This picture is being drawn." in next(x for x in st["sections"] if x.get("ref") == "where")["html"]
+    assert "figures/where.svg is missing" in check("--only", "figure:where").stdout
+    (sd / "figures" / "where.svg").write_text('<svg viewBox="0 0 200 50"><script>x</script><g data-at="A.java:99"><rect x="0" y="0" width="40" height="30"/><text x="20" y="20" text-anchor="middle">far too long a label</text></g></svg>')
+    out = check("--only", "figure:where").stdout
+    assert "<script> removed" in out and "labels do not fit" in out and "outside A.java" in out, out
+    (sd / "figures" / "where.svg").write_text('<svg viewBox="0 0 200 50"><g data-ref="a" data-at="A.java:3"><rect x="10" y="10" width="120" height="30"/><text x="70" y="30" text-anchor="middle">A holds y</text></g></svg>')
+    assert check("--only", "figure:where").stdout.strip() == "ok", check("--only", "figure:where").stdout
+    out = subprocess.run([sys.executable, str(HERE / "build.py"), str(h), "--partial"], capture_output=True, text=True)
+    st = json.loads((h / "guide.json").read_text())["stacks"][0]
+    html = next(x for x in st["sections"] if x.get("ref") == "where")["html"]
+    assert st["drawing"] == [] and html.index("<svg") < html.index("<figcaption>"), html
+    # Required kinds: a large stack needs a map, flagged time-dependent behavior a timeline.
+    import figures as figmod
+    errs: list[str] = []
+    nodes = __import__("guidehtml").parse(fig)
+    figmod.check(nodes, sd, 500, True, True, errs.append)
+    assert any("needs a timeline" in e or "add a timeline" in e for e in errs) and not any("needs a map" in e for e in errs), errs
+    errs.clear()
+    figmod.check([], sd, 500, False, True, errs.append)
+    assert any("needs a map" in e for e in errs), errs
+    (sd / "guide" / "06-where.html").unlink()
+    shutil.rmtree(sd / "figures")
+
+    out = subprocess.run([sys.executable, str(HERE / "build.py"), str(h), "--partial"], capture_output=True, text=True)
+    assert out.returncode == 0, out.stdout + out.stderr
+    st = json.loads((h / "guide.json").read_text())["stacks"][0]
+    assert [r["id"] for r in st["reviewers"]] == ["widening", "new-class"] and st["reviewing"] == ["new-class"] and st["format"] == "html", st["reviewers"]
+    assert st["focus"] == plan["focus"] and not st["planning"]
+    assert [(x["type"], x["title"]) for x in st["sections"]] == [("html", "What this changes"), ("html", "Why y widens"), ("steps", "Read now: Why y widens"), ("html", "What you can skim")], [(x["type"], x["title"]) for x in st["sections"]]
+    assert st["sections"][2]["inline"] is True
+    steps = st["sections"][2]["steps"]
+    assert [(x["id"], x["kind"], x["start"], x["end"]) for x in steps] == [(f"{sid}-read-a", "read", 1, 5), (f"{sid}-read-f", "decide", 4, 4)], steps
+    assert steps[0]["why"] == "Check the type of y." and "<h3>" not in steps[0]["html"] and steps[0]["lines"][2]["pr"] == 2
+    assert st["comments"][0]["axis"] == "widening" and st["comments"][0]["status"] == "checking"
+    assert {f["path"]: f["role"] for f in st["files"]} == {"A.java": "read", "B.java": "skim"}
+
+    sys.path.insert(0, str(HERE))
+    from build import split_key, stages
+    (sd / "verify").mkdir()
+    (sd / "verify" / "widening-trunc.json").write_text(json.dumps({"status": "verified", "note": "A.java:3."}))
+    assert split_key("new-class-a-b", ["widening", "new-class"]) == ("new-class", "a-b")
+    row = stages(h)[0]["stages"]
+    assert [(x["key"], x["state"]) for x in row] == [("plan", "done"), ("guide", "done"), ("widening", "done"), ("new-class", "running"), ("check", "waiting")], row
+    assert row[0]["picked"] == 2 and row[2]["label"] == "Widening y"
+    (sd / "review-new-class.json").write_text(json.dumps({"skipped": None, "findings": []}))
+    assert stages(h)[0]["stages"][-1]["state"] == "done"
+    out = subprocess.run([sys.executable, str(HERE / "build.py"), str(h)], capture_output=True, text=True)
+    assert out.returncode == 0 and "findings {'widening': 1, 'new-class': 0}" in out.stdout, out.stdout + out.stderr
+
+    # A question about one named part of an HTML section reaches the agent as that part's HTML.
+    import ask as askmod
+    data = json.loads((h / "guide.json").read_text())
+    tg, _, text = askmod.resolve(data, h, {"kind": "part", "stack": sid, "ref": 1, "part": "row-y"})
+    assert tg["label"] == "y long" and tg["section_title"] == "Why y widens" and 'data-ref=\\"row-y\\"' in text, (tg, text)
+    for bad in ({"kind": "part", "stack": sid, "ref": 1, "part": "nope"}, {"kind": "part", "stack": sid, "ref": 9, "part": "row-y"}):
+        try:
+            askmod.resolve(data, h, bad)
+            raise AssertionError(bad)
+        except ValueError:
+            pass
+    # A guide fix on an HTML section is stored as the sanitizer's output, never as the agent wrote it.
+    fix = askmod.validate(h, json.loads((h / "run.json").read_text()), data, {"kind": "section", "stack": sid, "ref": 1, "label": "Why y widens"},
+                          {"type": "guide_fix", "ref": {"kind": "section"}, "replacement": {"type": "html", "title": "Why y widens", "html": "<p>Fixed <code data-at=\"A.java:3\">y</code>.</p>"}})
+    assert fix["replacement"]["html"] == '<p>Fixed <code data-at="A.java:3">y</code>.</p>', fix
+    try:
+        askmod.validate(h, json.loads((h / "run.json").read_text()), data, {"kind": "section", "stack": sid, "ref": 1, "label": "Why y widens"},
+                        {"type": "guide_fix", "ref": {"kind": "section"}, "replacement": {"type": "html", "title": "Why y widens", "html": "<p onclick=x()>no</p>"}})
+        raise AssertionError("an unsafe fix passed")
+    except ValueError as e:
+        assert "onclick" in str(e), e
+
+    check_runner(h, sid, root, guide)
+
+    # A round where the runner started the director and it has not written the plan yet: no reviewer is guessed.
+    (sd / "plan.json").unlink(missing_ok=True)
+    (sd / "guide.json").unlink(missing_ok=True)
+    (sd / "guide.html").write_text(guide)
+    (sd / "files.json").write_text(json.dumps(files))
+    (h / "progress.json").write_text(json.dumps({"agents": {f"{sid}/plan": {"state": "running", "calls": 1, "last": "reading brief.md"}}}))
+    out = subprocess.run([sys.executable, str(HERE / "build.py"), str(h), "--partial"], capture_output=True, text=True)
+    assert out.returncode == 0, out.stdout + out.stderr
+    st = json.loads((h / "guide.json").read_text())["stacks"][0]
+    assert st["planning"] and st["reviewers"] == [] and st["comments"] == []
+    assert [x["key"] for x in stages(h)[0]["stages"]] == ["plan", "guide", "check"]
+
+
 def main(keep: str | None = None) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
@@ -874,8 +1177,8 @@ def main(keep: str | None = None) -> None:
         page = (w / "index.html").read_text()
         assert "/*DATA*/" not in page and "/*TOKEN*/" in page
 
-        home = root / "home"
-        check_server(w, home)
+        check_html_guide(w, sid, root)
+        check_server(w, home := root / "home")
         check_self_server(w, root / "self-home")
         check_ask(w, root)
         check_share(w, root)

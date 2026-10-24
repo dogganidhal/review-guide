@@ -1,6 +1,6 @@
 ---
 name: self-review
-description: Opens a guided review page on the work in progress in this session, the local branch stack and its uncommitted changes, with a guide and findings from three reviewers (correctness, standards, spec) that a fourth agent tried to disprove. The user reviews it in the browser and presses "Send to the agent"; the feedback comes back to this session as file:line comments to act on. Nothing goes to GitHub.
+description: Opens a guided review page on the work in progress in this session, the local branch stack and its uncommitted changes, with a guide written for the change and findings from reviewers picked for it, each checked by another agent that tried to disprove it. The user reviews it in the browser and presses "Send to the agent"; the feedback comes back to this session as file:line comments to act on. Nothing goes to GitHub.
 when_to_use: The user, in the session implementing a change, wants to review that work before or alongside opening PRs, asks for a self-review or a review of "what you wrote", or wants to give the agent line-by-line feedback from the review page.
 argument-hint: [quick|balanced|deep] [--branch <top branch>] [--base <ref>] [focus]
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../review-guide/scripts/*), Read

@@ -27,19 +27,21 @@ UI = HERE.parent / "ui"
 VENDOR = UI / "vendor"
 TEMPLATE = UI / "template.html"
 BUILD = HERE / "build.py"
+sys.path.insert(0, str(HERE))
+from build import reviewers_of, split_key  # noqa: E402
 
 VERSION = 1
 BUNDLE_CAP = 25_000_000      # the base64 bundle a server accepts
 INFLATED_CAP = 120_000_000   # what it may expand to
 MAX_FILES = 5000
-AXES = ("correctness", "standards", "spec")
 
 REPO = re.compile(r"^[\w.-]+/[\w.-]+$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 SID = r"\d+(?:-\d+)*"
 # The only files a bundle may hold, relative to the round's work directory.
-ALLOWED = re.compile(rf"^(?:run\.json|{SID}/(?:guide|attribution)\.json|{SID}/target\.diff|{SID}/review-(?:{'|'.join(AXES)})\.json"
-                     rf"|{SID}/verify/[\w.-]+\.json|{SID}/tip/.+|\d+/hunks\.json|threads/[\w-]+\.json)$")
+ALLOWED = re.compile(rf"^(?:run\.json|{SID}/(?:guide|attribution|plan|files)\.json|{SID}/guide\.html|{SID}/target\.diff|{SID}/review-[a-z][a-z0-9-]{{0,26}}[a-z0-9]\.json"
+                     rf"|{SID}/verify/[\w.-]+\.json|{SID}/guide/\d\d-[a-z0-9_-]+\.html|{SID}/figures/[a-z0-9_-]+\.(?:json|svg)|{SID}/timing\.json"
+                     rf"|{SID}/tip/.+|\d+/hunks\.json|threads/[\w-]+\.json)$")
 
 # (kind, rule, pattern): about fifteen, tuned for few false alarms. A reminder, not a guarantee.
 RULES = [
@@ -143,9 +145,10 @@ def scrub(data: dict) -> dict:
 
 
 def refuted_ids(rdir: pathlib.Path, sid: str) -> dict[str, set[str]]:
-    out: dict[str, set[str]] = {a: set() for a in AXES}
+    axes = [r["id"] for r in reviewers_of(rdir / sid)]
+    out: dict[str, set[str]] = {a: set() for a in axes}
     for f in (rdir / sid / "verify").glob("*.json"):
-        axis, _, fid = f.stem.partition("-")
+        axis, fid = split_key(f.stem, axes)
         if axis in out and (_json(f, {}) or {}).get("status") == "refuted":
             out[axis].add(fid)
     return out
@@ -174,8 +177,9 @@ def bundle_files(rdir: pathlib.Path, run: dict, hide_refuted: bool, threads: lis
             files[f"{p['n']}/hunks.json"] = (rdir / str(p["n"]) / "hunks.json").read_text()
     for st in run["stacks"]:
         sdir, sid = rdir / st["id"], st["id"]
-        gone = refuted_ids(rdir, sid) if hide_refuted else {a: set() for a in AXES}
-        for name in ("guide.json", "attribution.json", "target.diff", *(f"review-{a}.json" for a in AXES)):
+        axes = [r["id"] for r in reviewers_of(sdir)]
+        gone = refuted_ids(rdir, sid) if hide_refuted else {a: set() for a in axes}
+        for name in ("guide.json", "guide.html", "files.json", "plan.json", "attribution.json", "target.diff", *(f"review-{a}.json" for a in axes)):
             if not (sdir / name).is_file():
                 continue
             text = (sdir / name).read_text()
@@ -184,8 +188,13 @@ def bundle_files(rdir: pathlib.Path, run: dict, hide_refuted: bool, threads: lis
                 rep["findings"] = [c for c in rep.get("findings") or [] if c.get("id") not in gone[name[7:-5]]]
                 text = json.dumps(rep)
             files[f"{sid}/{name}"] = text
+        for sub, pattern in (("guide", "*.html"), ("figures", "*.json"), ("figures", "*.svg")):
+            for f in sorted((sdir / sub).glob(pattern)) if (sdir / sub).is_dir() else []:
+                files[f"{sid}/{sub}/{f.name}"] = f.read_text()
+        if (sdir / "timing.json").is_file():
+            files[f"{sid}/timing.json"] = (sdir / "timing.json").read_text()
         for f in sorted((sdir / "verify").glob("*.json")):
-            axis, _, fid = f.stem.partition("-")
+            axis, fid = split_key(f.stem, axes)
             if fid not in gone.get(axis, ()):
                 files[f"{sid}/verify/{f.name}"] = f.read_text()
         for f in sorted((sdir / "tip").rglob("*")):

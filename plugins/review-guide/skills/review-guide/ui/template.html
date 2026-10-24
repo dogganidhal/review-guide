@@ -138,24 +138,44 @@ button { font: inherit; color: inherit; }
 .runpanel { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px 8px; margin-bottom: 14px; font-size: .84rem; }
 .runpanel:empty { display: none; }
 .runpanel:not(:empty) ~ .pendingbox { display: none; }
-.runpanel .rh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.runpanel .rh { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
 .runpanel .rh b { font-weight: 600; }
 .runpanel .rh .t { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 400; }
 .runpanel .rh .lvl { color: var(--faint); font-size: .78rem; }
-.runpanel .bar { height: 3px; border-radius: 99px; background: var(--surface-2); margin: 8px 0 4px; overflow: hidden; }
+.runpanel .rh .hint { color: var(--accent); font-size: .8rem; font-weight: 600; }
+.runpanel .bar { height: 3px; border-radius: 99px; background: var(--surface-2); margin: 8px 0 10px; overflow: hidden; }
 .runpanel .bar span { display: block; height: 100%; background: var(--accent); transition: width .4s; }
-.runpanel .row { display: grid; grid-template-columns: 14px 6.5rem minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 3px 0; }
-.runpanel .row .nm { font-weight: 600; }
-.runpanel .row .d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.runpanel .row.running .d { font-family: var(--mono); font-size: .76rem; }
-.runpanel .row .t { color: var(--faint); font-variant-numeric: tabular-nums; font-size: .78rem; }
-.runpanel .row.waiting, .runpanel .row.waiting .d { color: var(--faint); }
-.runpanel .row.waiting .nm { font-weight: 400; }
-.runpanel .ic { text-align: center; }
+/* Three columns, one per kind of work (the guide and its pictures, the reviewers, the fact check), with a rule between them.
+   Each agent is a row: what it is, then what it produced or, while it runs, what it is doing. */
+.runpanel .lanes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr); }
+.runpanel .col { min-width: 0; padding: 0 16px; }
+.runpanel .col:first-child { padding-left: 0; }
+.runpanel .col:last-child { padding-right: 0; }
+.runpanel .col + .col { border-left: 1px solid var(--line); }
+.runpanel .lane { display: flex; justify-content: space-between; align-items: baseline; font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.runpanel .lane .n { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); font-variant-numeric: tabular-nums; }
+.runpanel .item { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; align-items: baseline; padding: 4px 0; font-size: .84rem; }
+.runpanel .item + .item { border-top: 1px dashed var(--line); }
+.runpanel .item .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runpanel .item .d { color: var(--muted); white-space: nowrap; font-size: .8rem; }
+.runpanel .item .sub { grid-column: 2 / 4; color: var(--muted); font-size: .76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runpanel .item .t { color: var(--faint); font-variant-numeric: tabular-nums; font-size: .76rem; }
+.runpanel .item.done .nm { font-weight: 500; color: var(--muted); }
+.runpanel .item.waiting, .runpanel .item.waiting .nm { color: var(--faint); font-weight: 400; }
+.runpanel .item.failed .nm, .runpanel .item.failed .d { color: var(--danger); }
+.runpanel .item.skipped .nm { color: var(--faint); font-weight: 400; }
+.runpanel .item.found .d { color: var(--warn); font-weight: 600; }
+.runpanel .item .ic { align-self: center; }
+@media (max-width: 860px) {
+  .runpanel .lanes { grid-template-columns: minmax(0, 1fr); }
+  .runpanel .col { padding: 8px 0 0; }
+  .runpanel .col + .col { border-left: 0; border-top: 1px solid var(--line); margin-top: 8px; }
+}
+.runpanel .ic { width: 11px; text-align: center; font-size: .8rem; }
 .runpanel .done .ic { color: var(--ok); }
-.runpanel .failed .ic, .runpanel .failed .d { color: var(--danger); }
-.runpanel .skipped .ic { color: var(--faint); }
+.runpanel .failed .ic { color: var(--danger); }
 .runpanel .spin { width: 11px; height: 11px; }
+
 @media (max-width: 640px) { .runpanel .row { grid-template-columns: 14px minmax(0, 1fr) auto; } .runpanel .row .d { grid-column: 2 / -1; grid-row: 2; } }
 .usual { font-size: .78rem; color: var(--faint); }
 .rerunbox { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: .86rem; margin-bottom: 14px; }
@@ -488,6 +508,8 @@ select { font: inherit; font-size: .88rem; border: 1px solid var(--line); backgr
 .gsec.askable { position: relative; }
 .gsec.askable > .askbtn { position: absolute; top: 20px; right: 0; z-index: 3; }
 .gsec.askable > .sec { padding-right: 56px; }
+.gsec.h.askable > .askbtn { top: 34px; }
+.gsec.h > h2 { padding-right: 64px; }
 .risk.askable, .glist li.askable, .gtable tr.askable { position: relative; }
 .risk.askable > .askbtn { position: absolute; top: 8px; right: 8px; }
 .risk.askable > .rh { padding-right: 56px; }
@@ -643,6 +665,62 @@ svg.dg [role=button]:focus-visible { outline: 2px solid var(--accent); outline-o
 .dlg pre.cmd { margin: 6px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-family: var(--mono); font-size: 11.5px; line-height: 1.5; max-height: 46vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .dlg .cmdhd { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; font-size: .88rem; }
 @media (max-width: 860px) { .dlg { padding: 14px 14px 12px; } .dlg .hit { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+/* A guide the model wrote as HTML (guidehtml.py keeps only these tags, classes and colors). Prose stays at reading width;
+   figures and tables use the whole column. The guide's own color names map onto the page's tokens, so it follows the theme. */
+.gh { --ink: var(--text); --card: var(--surface); --good: var(--ok); --good-soft: var(--ok-soft); position: relative; }
+.gh > h2, .gsec.h > h2 { font-size: 1.32rem; font-weight: 700; line-height: 1.2; margin: 34px 0 10px; letter-spacing: -.005em; }
+.gh h3 { font-size: 1.05rem; font-weight: 700; margin: 22px 0 6px; }
+.gh h4 { font-size: .95rem; font-weight: 600; margin: 16px 0 4px; }
+.gh p, .gh li, .gh blockquote, .gh figcaption, .gh summary { max-width: 80ch; }
+.gh p { margin: 0 0 10px; line-height: 1.55; }
+.gh ul, .gh ol { margin: 0 0 12px; padding-left: 22px; line-height: 1.55; }
+.gh li { margin-bottom: 4px; }
+.gh code { font-family: var(--mono); font-size: .84em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; overflow-wrap: break-word; }
+.gh td code { overflow-wrap: normal; word-break: normal; }
+.gh pre { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; overflow-x: auto; margin: 0 0 12px; }
+.gh pre code { background: none; padding: 0; font-size: inherit; }
+.gh table { width: 100%; border-collapse: collapse; font-size: .88rem; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 4px 0 14px; display: block; overflow-x: auto; }
+.gh th { text-align: left; font-weight: 600; color: var(--muted); background: var(--surface); padding: 7px 10px; font-size: .8rem; }
+.gh td { padding: 7px 10px; border-top: 1px solid var(--line); vertical-align: top; line-height: 1.45; }
+.gh figure { margin: 8px 0 18px; border: 1px solid var(--line); border-radius: 12px; padding: 14px 14px 10px; background: var(--bg); overflow-x: auto; }
+/* Text in a picture is sized in viewBox units, so it scales with its boxes: 13 by default, or the author's font-size. */
+.gh figure svg { display: block; width: 100%; min-width: 560px; height: auto; font-family: inherit; }
+.gh svg text { font-size: 13px; }
+.gh svg text { fill: var(--text); }
+.gh figcaption { color: var(--muted); font-size: .86rem; margin-top: 8px; line-height: 1.45; }
+.gh figure > div.muted:first-child { display: flex; align-items: center; justify-content: center; min-height: 160px; border: 1px dashed var(--line); border-radius: 10px; font-size: .88rem; }
+.gh blockquote { margin: 0 0 12px; padding: 2px 0 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+.gh details { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 12px; }
+.gh summary { cursor: pointer; font-weight: 600; }
+.gh .callout { border: 1px solid var(--line); border-left: 3px solid var(--accent); background: var(--surface); border-radius: 10px; padding: 10px 14px; margin: 4px 0 14px; max-width: 86ch; }
+.gh .callout > :last-child { margin-bottom: 0; }
+/* `.gh .facts` is the author's grid of cards; the page's own `.facts` (the structured guide's key facts) must not reach into it. */
+.gh .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin: 6px 0 14px; padding: 0; list-style: none; border: 0; background: none; border-radius: 0; }
+.gh .facts > li { display: block; font-size: inherit; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--surface); margin: 0; max-width: none; line-height: 1.5; }
+.gh .facts > li code { display: inline; }
+.gh .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.gh .muted { color: var(--muted); }
+.gh .tag-new, .gh .tag-changed, .gh .tag-removed { font-size: .72rem; font-weight: 700; padding: 1px 7px; border-radius: 99px; vertical-align: 1px; }
+.gh .tag-new { background: var(--ok-soft); color: var(--ok); }
+.gh .tag-changed { background: var(--accent-soft); color: var(--text); }
+.gh .tag-removed { background: var(--danger-soft); color: var(--danger); text-decoration: line-through; }
+.gh [data-at] { cursor: pointer; }
+.gh code[data-at], .gh span[data-at], .gh td[data-at], .gh li[data-at] { text-decoration: underline dotted var(--accent); text-underline-offset: 3px; }
+.gh code[data-at]:hover, .gh span[data-at]:hover, .gh td[data-at]:hover, .gh li[data-at]:hover { background: var(--accent-soft); }
+.gh svg [data-at]:hover, .gh svg [data-ref]:hover { opacity: .78; }
+.gh tr[data-at]:hover td { background: var(--surface); }
+.gh .askable-part { position: relative; }
+.gh .askable-part > .askbtn { position: absolute; top: 0; right: 0; opacity: 0; }
+.gh .askable-part:hover > .askbtn, .gh .askable-part:focus-within > .askbtn { opacity: 1; }
+.gh .thr, .gh .askbox { max-width: 86ch; }
+.step .ttl .why.ghwhy { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.step .inner .gh { margin: 2px 0 10px; }
+.readnow { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 700; margin: 14px 0 6px; display: flex; gap: 10px; align-items: baseline; }
+.readnow .aside { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--faint); }
+.gsec.inline { margin-top: -6px; }
+.focusbox { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; background: var(--surface); font-size: .88rem; color: var(--muted); margin: 6px 0 8px; max-width: 86ch; }
+.focusbox b { color: var(--text); }
 </style>
 </head>
 <body>
@@ -778,7 +856,10 @@ function highlight(texts, path) {
 }
 
 const reviewTitle = (st) => (SELF ? `Self-review of ${DATA.source?.branch || 'local work'}${st.prs.length > 1 ? `, ${st.prs.length} layers` : ''}` : st.prs.length > 1 ? `Stack of ${st.prs.length} PRs` : st.prs[0].title);
-const allSteps = (st) => st.sections.flatMap((sec, si) => (sec.type === 'steps' ? sec.steps.map((s, i) => ({ s, n: i + 1, sec, si })) : []));
+const allSteps = (st) => { let n = 0; return st.sections.flatMap((sec, si) => (sec.type === 'steps' ? sec.steps.map((s) => ({ s, n: ++n, sec, si })) : [])); };
+const stepNo = (st, s) => allSteps(st).find((e) => e.s.id === s.id)?.n ?? 0;
+// A finding on lines a reading step covers: the step shows it, so the findings list does not repeat it.
+const inStep = (st, c) => c.path && allSteps(st).some(({ s }) => s.path === c.path && c.line >= s.start && c.line <= s.end);
 const axisFindings = (st) => comments(st).filter((c) => c.axis && c.status !== 'duplicate');
 let stackOpen = false;
 
@@ -965,10 +1046,11 @@ function outlineRail(st) {
   const t = (x) => el('span', { class: 't', title: x }, x);
   const found = axisFindings(st), left = found.filter((c) => !cmState(c).on && !cmState(c).gone).length;
   return [item('g-top', '', t('Overview')),
-    st.sections.map((sec, i) => [item(`sec-${i}`, sec.type === 'steps' ? 'grp' : '', t(sec.title), sec.type === 'steps' ? el('span', { class: 'cnt' }, `${sec.steps.filter((x) => state.done[x.id]).length}/${sec.steps.length}`) : null),
-      sec.type === 'steps' ? sec.steps.map((x, j) => item(x.id, 'stp' + (state.done[x.id] ? ' done' : ''), el('span', { class: 'ck' }, state.done[x.id] ? '✓' : j + 1), t(x.title))) : null]),
+    // Inline "read now" steps sit under the section they follow; only a standalone reading order gets its own group.
+    st.sections.map((sec, i) => [sec.inline ? null : item(`sec-${i}`, sec.type === 'steps' ? 'grp' : '', t(sec.title), sec.type === 'steps' ? el('span', { class: 'cnt' }, `${sec.steps.filter((x) => state.done[x.id]).length}/${sec.steps.length}`) : null),
+      sec.type === 'steps' ? sec.steps.map((x) => item(x.id, 'stp' + (state.done[x.id] ? ' done' : ''), el('span', { class: 'ck' }, state.done[x.id] ? '✓' : stepNo(st, x)), t(x.title))) : null]),
     item('g-findings', 'grp', t('Findings'), el('span', { class: 'cnt' + (found.length && !left ? ' ok' : '') }, found.length ? (left ? `${left} left` : '✓') : '')),
-    AXES.map(([a, label]) => {
+    axesOf(st).map(([a, label]) => {
       const mine = found.filter((c) => c.axis === a), n = mine.filter((c) => !cmState(c).on && !cmState(c).gone).length;
       return item('axis-' + a, 'ax', t(label), el('span', { class: 'cnt' + (mine.length && !n ? ' ok' : '') }, !mine.length ? (st.reviewing.includes(a) ? el('span', { class: 'spin', title: 'reviewing' }) : '0') : n ? n : '✓'));
     }),
@@ -980,7 +1062,7 @@ function outlineRail(st) {
 const $main = () => document.getElementById('main');
 let spy = { stage: null, item: null }, spyItem = null;
 const spyList = (st) => [{ id: 'g-top', stage: 'understand' }, ...st.sections.flatMap((sec, i) => [{ id: `sec-${i}`, stage: sec.type === 'steps' ? 'read' : 'understand' },
-  ...(sec.type === 'steps' ? sec.steps.map((x) => ({ id: x.id, stage: 'read' })) : [])]), { id: 'g-findings', stage: 'findings' }, ...AXES.map(([a]) => ({ id: 'axis-' + a, stage: 'findings' }))];
+  ...(sec.type === 'steps' ? sec.steps.map((x) => ({ id: x.id, stage: 'read' })) : [])]), { id: 'g-findings', stage: 'findings' }, ...axesOf(st).map(([a]) => ({ id: 'axis-' + a, stage: 'findings' }))];
 function markSpy() {
   if (state.view !== 'guide') spy = state.view === 'send' ? { stage: 'send', item: 'send' } : { stage: null, item: null };
   else {
@@ -1362,13 +1444,13 @@ function dgSvg(kind, title, box, kids) {
 
 // The popover of a box or an arrow: its code, or a question about it.
 let dgOff = null;
-function dgPop(x, y, ref, label, t, si) {
+function dgPop(x, y, ref, label, t, si, ask) {
   dgOff?.();
   const done = () => { document.querySelector('.dgfull')?.remove(); dgOff?.(); };
   const pop = el('div', { class: 'dgpop', role: 'menu', 'aria-label': label },
     el('div', { class: 'ph', title: label }, label),
     t ? el('button', { class: 'mitem', type: 'button', role: 'menuitem', onclick: () => { done(); t.open(); } }, 'Open the code', el('span', {}, '↗')) : null,
-    el('button', { class: 'mitem', type: 'button', role: 'menuitem', onclick: () => { done(); openAsk(TG.node(ST(), ref, Number.isNaN(si) ? undefined : si)); } }, '✦ Ask about this', el('span', {}, '?')));
+    el('button', { class: 'mitem', type: 'button', role: 'menuitem', onclick: () => { done(); ask ? ask() : openAsk(TG.node(ST(), ref, Number.isNaN(si) ? undefined : si)); } }, '✦ Ask about this', el('span', {}, '?')));
   document.body.append(pop);
   const r = pop.getBoundingClientRect();
   pop.style.left = `${Math.max(8, Math.min(x + 6, innerWidth - r.width - 8))}px`;
@@ -1620,8 +1702,71 @@ if (document.fonts && !document.fonts.check(DGF.node)) {
 }
 // ---- End of diagrams -----------------------------------------------------------------------------------------------
 
+// A guide part written as HTML. The server sanitized it (guidehtml.py); the page parses it inert with DOMParser, drops
+// anything that is not in the same allowlist as a second line of defense, then wires the page's own behavior onto it:
+// `data-at` opens the code, `data-ref` parts get an Ask button and their threads.
+const GH_TAGS = new Set('h2 h3 h4 p ul ol li code pre em strong table thead tbody tr th td figure figcaption section details summary blockquote span div br svg g path rect circle ellipse line polyline polygon text tspan title desc'.split(' '));
+const GH_ATTR = /^(class|style|role|data-(at|ref|step|decide|kind|figure)|viewbox|preserveaspectratio|x|y|x1|y1|x2|y2|cx|cy|r|rx|ry|width|height|d|points|transform|fill|stroke|stroke-width|stroke-dasharray|stroke-linecap|stroke-linejoin|opacity|marker-start|marker-end|text-anchor|dominant-baseline|font-weight|font-size|font-family|colspan|rowspan|open)$/i;
+function ghParse(html) {
+  const doc = new DOMParser().parseFromString(`<!doctype html><body>${html}`, 'text/html');
+  const walk = (n) => {
+    for (const c of [...n.children]) {
+      if (!GH_TAGS.has(c.localName)) { c.remove(); continue; }
+      for (const a of [...c.attributes]) if (!GH_ATTR.test(a.name) || /url\(|expression|javascript:/i.test(a.value) && !/^url\(#rg-arrow(-dash)?\)$/.test(a.value)) c.removeAttribute(a.name);
+      walk(c);
+    }
+  };
+  walk(doc.body);
+  return [...doc.body.childNodes].map((n) => document.importNode(n, true));
+}
+const GH_MARKERS = () => svg('defs', {},
+  ['rg-arrow', 'rg-arrow-dash'].map((id) => svg('marker', { id, viewBox: '0 0 10 10', refX: '9', refY: '5', markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse' },
+    svg('path', { d: 'M0 0L10 5L0 10z', fill: id === 'rg-arrow' ? 'var(--text)' : 'var(--muted)' }))));
+function ghBody(st, html, si) {
+  const box = el('div', { class: 'gh' }, ghParse(html || ''));
+  box.querySelectorAll('svg').forEach((v) => { if (v.querySelector('[marker-end], [marker-start]')) v.prepend(GH_MARKERS()); });
+  for (const n of box.querySelectorAll('[data-at]')) {
+    const t = dgTarget(st, n.getAttribute('data-at'));
+    if (!t) { n.removeAttribute('data-at'); continue; }
+    n.setAttribute('title', `Open ${t.where}`);
+    if (n.localName !== 'section') { n.setAttribute('tabindex', '0'); n.setAttribute('role', 'link'); }
+  }
+  const go = (ev) => {
+    const n = ev.target.closest('[data-at]');
+    if (!n || !box.contains(n) || n.localName === 'section' || ev.target.closest('.askbtn, .thr, .askbox, button, textarea')) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const t = dgTarget(st, n.getAttribute('data-at'));
+    if (t) { lastCtx = si != null ? { kind: 'part', si } : null; t.open(); }
+  };
+  box.addEventListener('click', go);
+  box.addEventListener('keydown', (ev) => { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('[data-at]')) go(ev); });
+  if (si == null) return box;
+  // Each named part (a figure, a table row, a list item, a box in a picture) can be asked about on its own.
+  for (const n of box.querySelectorAll('[data-ref]')) {
+    const part = n.getAttribute('data-ref'), inSvg = !!n.closest('svg');
+    const ask = () => openAsk(TG.part(st, si, part, ghLabel(n)));
+    if (inSvg) {
+      n.addEventListener('click', (ev) => { if (!CAN_ASK || ev.target.closest('[data-at]') !== n.closest('[data-at]') && ev.target.closest('[data-at]')) return; ev.stopPropagation(); const t = n.getAttribute('data-at') && dgTarget(st, n.getAttribute('data-at')); dgPop(ev.clientX, ev.clientY, null, ghLabel(n), t, si, ask); });
+      continue;
+    }
+    const host = n.localName === 'tr' ? n.lastElementChild : n;
+    if (!host) continue;
+    n.classList.add('askable-part');
+    if (CAN_ASK) host.append(askBtn(ghLabel(n), ask));
+    const threads = qs(st, (g) => g.kind === 'part' && g.ref === si && g.part === part);
+    if (threads.length) (n.localName === 'tr' ? n.after(el('tr', { class: 'qrow' }, el('td', { colspan: n.children.length }, threads))) : n.localName === 'li' || n.localName === 'figure' ? n.append(...threads) : n.after(...threads));
+  }
+  return box;
+}
+const ghLabel = (n) => {
+  const head = n.querySelector('title, h2, h3, figcaption');
+  const words = head ? head.textContent : n.localName === 'tr' ? [...n.children].map((c) => c.textContent).join(' · ') : n.textContent;
+  return (words || n.getAttribute('data-ref')).replace(/\s+/g, ' ').trim().slice(0, 80);
+};
+
 function sectionView(st, sec, si) {
   const head = (aside) => el('div', { class: 'sec' }, sec.title, aside ? el('span', { class: 'aside' }, aside) : null);
+  if (sec.type === 'html') return [el('h2', {}, sec.title), ghBody(st, sec.html, si)];
   if (sec.type === 'diagram') return [head(), diagramView(st, sec)];
   // Each risk, row and item can be asked about on its own: a button, and the threads about it right under it.
   const mine = (j) => qs(st, (g) => g.kind === 'item' && g.ref === si && g.item === j);
@@ -1641,17 +1786,26 @@ function sectionView(st, sec, si) {
   if (sec.type === 'list') return [head(), el('ul', { class: 'glist' }, sec.items.map((it, j) => el('li', { class: 'askable' }, rich(it), ask(j), mine(j))))];
   if (sec.type === 'steps') {
     const done = sec.steps.filter((s) => state.done[s.id]).length;
-    return [head(`${done}/${sec.steps.length} reviewed`), el('div', { class: 'steps' }, sec.steps.map((s, i) => stepCard(st, s, i)))];
+    if (sec.inline) return [el('div', { class: 'readnow' }, 'Read now', el('span', { class: 'aside' }, sec.steps.length > 1 ? `${done}/${sec.steps.length} reviewed` : '')),
+      el('div', { class: 'steps' }, sec.steps.map((s) => stepCard(st, s)))];
+    return [head(`${done}/${sec.steps.length} reviewed`), el('div', { class: 'steps' }, sec.steps.map((s) => stepCard(st, s)))];
   }
   return null;
 }
 
-const AXES = [['correctness', 'Correctness', 'bugs, risk, and what depends on the change'], ['standards', 'Standards', "the repo's documented rules and code smells"],
+// The stack's reviewers, as [id, title, hint]: the director's choice, or the three built-in ones on older rounds.
+const DEFAULT_AXES = [['correctness', 'Correctness', 'bugs, risk, and what depends on the change'], ['standards', 'Standards', "the repo's documented rules and code smells"],
   ['spec', 'Spec', 'the ticket and the PR description']];
+const axesOf = (st) => (st.reviewers ? st.reviewers.map((r) => [r.id, r.title, r.hint || '']) : DEFAULT_AXES);
+const axisTitle = (st, a) => axesOf(st).find((x) => x[0] === a)?.[1] || a;
 function findingsView(st) {
-  const all = comments(st).filter((c) => c.axis);
+  const all = comments(st).filter((c) => c.axis && !inStep(st, c));
+  const shown = comments(st).filter((c) => c.axis && inStep(st, c) && !cmState(c).gone).length;
   return [el('div', { class: 'sec' }, 'What the reviewers found', el('span', { class: 'aside' }, 'each finding was checked against the code by another agent')),
-    AXES.map(([a, label, hint]) => {
+    st.planning ? el('div', { class: 'focusbox' }, el('span', { class: 'spin', style: 'display:inline-block;vertical-align:-1px;margin-right:8px' }), 'Choosing the reviewers this stack needs…') : null,
+    st.focus ? el('div', { class: 'focusbox' }, el('b', {}, 'Why these reviewers. '), st.focus) : null,
+    shown ? el('p', { class: 'hint' }, `${plural(shown, 'finding is', 'findings are')} shown in the reading steps above, under the code ${shown === 1 ? 'it is' : 'they are'} about. The rest are here.`) : null,
+    axesOf(st).map(([a, label, hint]) => {
       const mine = all.filter((c) => c.axis === a && !cmState(c).gone).sort((x, y) => RANK[y.severity] - RANK[x.severity]);
       const busy = st.reviewing.includes(a), skip = st.skipped[a];
       const key = `axis:${st.id}:${a}`;
@@ -1748,7 +1902,7 @@ function commentCard(st, c, { inDiff, ask } = {}) {
     const open = !!state.cmOpen[c.id];
     return el('div', { class: 'cm sugg' + (c.status === 'refuted' ? ' refuted' : ''), 'data-cid': c.id },
       el('div', { class: 'hd' }, el('span', { class: 'who' }, el('span', { class: 'av' }, '✦'), 'Suggested comment'),
-        el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.axis ? el('span', { class: 'axtag' }, c.axis) : null, c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null, rj,
+        el('span', { class: 'pill ' + cs.sev }, SEV[cs.sev]), c.axis ? el('span', { class: 'axtag' }, axisTitle(ST(), c.axis)) : null, c.status ? el('span', { class: 'st ' + c.status, title: c.note || '' }, STATUS[c.status]) : null, rj,
         el('span', { class: 'grow' }), target),
       el('div', { class: 'ttl' }, c.title), cites, inDiff ? null : snippet(st, c),
       open ? el('div', { class: 'cmb' }, el('p', { class: 'preview' }, cs.text), proof) : null,
@@ -1780,20 +1934,23 @@ function addCustom(st, path, r, range) {
   requestAnimationFrame(() => document.querySelector('.cm textarea:placeholder-shown')?.focus());
 }
 
-function stepCard(st, s, i) {
-  const open = !!state.open[s.id], done = !!state.done[s.id];
+function stepCard(st, s) {
+  const i = stepNo(st, s) - 1;
   const mine = comments(st).filter((c) => c.path === s.path && c.line >= s.start && c.line <= s.end && !cmState(c).gone);
+  // A step with findings on its lines opens by default: that is where the reviewer decides on them.
+  const open = state.open[s.id] ?? mine.some((c) => c.axis), done = !!state.done[s.id];
   const card = el('section', { class: `step${open ? ' open' : ''}${done ? ' done' : ''}`, id: s.id,
     onmouseenter: () => setHot(s.nodes), onmouseleave: () => setHot([]) });
   card.append(el('div', { class: 'row', onclick: () => { state.open[s.id] = !open; save(); render(); } },
     el('span', { class: 'num' }, done ? '✓' : i + 1),
-    el('span', { class: 'ttl' }, el('b', {}, s.title), ' ', s.kind === 'decide' ? el('span', { class: 'kind' }, 'decide') : null, el('span', { class: 'why' }, s.why)),
-    mine.length ? el('span', { class: 'badge' }, mine.length) : null,
+    el('span', { class: 'ttl' }, el('b', {}, s.title), ' ', s.kind === 'decide' ? el('span', { class: 'kind' }, 'decide') : null, open && s.html ? null : el('span', { class: 'why' + (s.html ? ' ghwhy' : '') }, s.why)),
+    mine.length ? el('span', { class: 'badge', title: `${plural(mine.length, 'finding', 'findings')} on these lines` }, mine.length) : null,
     askBtn(`step ${i + 1}`, () => openAsk(TG.step(st, s))),
     el('span', { class: 'chev' }, '›')));
   if (open) {
     const f = fileOf(st, s.path);
     card.append(el('div', { class: 'inner' },
+      s.html ? ghBody(st, s.html, null) : null,
       codeBlock(st, s.lines, s.path, { excerpt: true, ask: true, link: s.link, title: `${s.path}:${s.start}-${s.end}` }),
       s.test === false ? null : el('p', { class: 'testline' }, 'Test: ', s.test ? el('code', {}, s.test) : el('span', { class: 'none' }, 'none covers this')),
       el('div', { class: 'bar' },
@@ -1863,7 +2020,7 @@ function guideView(st) {
   const warnings = DATA.warnings.filter((w) => st.prs.some((p) => w.includes('#' + p.n)));
   return [
     el('h1', { id: 'g-top' }, reviewTitle(st)),
-    el('p', { class: 'summary' }, st.summary),
+    st.summary ? el('p', { class: 'summary' }, st.summary) : null,
     tiles(st),
     el('div', { class: 'meta' },
       st.compare ? ext(st.compare, st.prs.length > 1 ? 'Whole stack on GitHub ↗' : 'On GitHub ↗') : null,
@@ -1877,7 +2034,8 @@ function guideView(st) {
     warnings.length ? el('details', { class: 'warnbox' }, el('summary', {}, warnings.length === 1 ? 'One thing about this stack' : `${warnings.length} things about this stack`),
       warnings.map((w) => el('p', {}, w))) : null,
     st.pending ? el('div', { class: 'pendingbox' }, el('span', { class: 'spin' }),
-      'The guide is being written, and three reviewers are reading the code. Each part appears here when it lands. The files and diffs are ready now.') : null,
+      st.planning ? 'The guide is being written, and an agent is choosing the reviewers this stack needs. Each part appears here when it lands. The files and diffs are ready now.'
+        : `The guide is being written, and ${st.reviewers ? plural(st.reviewers.length, 'reviewer is', 'reviewers are') : 'the reviewers are'} reading the code. Each part appears here when it lands. The files and diffs are ready now.`) : null,
     !st.key_facts.length ? null : el('section', { class: 'facts' }, el('h3', {}, 'Know this first'),
       el('ol', {}, st.key_facts.map((f, i) => el('li', {}, el('span', { class: 'n' }, i + 1),
         el('span', {}, el('b', {}, rich(f.title)), ' ', rich(f.text), f._fixed ? [' ', el('span', { class: 'fixed' }, 'corrected after a question')] : null),
@@ -1888,8 +2046,9 @@ function guideView(st) {
       if (!v) return null;
       if (sec._fixed) v[0].append(el('span', { class: 'fixed' }, 'corrected after a question'));
       const own = qs(st, (g) => g.kind === 'section' && g.ref === i), nodes = qs(st, (g) => g.kind === 'node' && g.section === i);
-      return el('div', { class: 'gsec' + (CAN_ASK ? ' askable' : ''), id: `sec-${i}` }, askBtn(`section ${sec.title}`, () => openAsk(TG.section(st, i))), v[0], own, v.slice(1), nodes);
+      return el('div', { class: 'gsec' + (CAN_ASK ? ' askable' : '') + (sec.type === 'html' ? ' h' : '') + (sec.inline ? ' inline' : ''), id: `sec-${i}` }, askBtn(`section ${sec.title}`, () => openAsk(TG.section(st, i))), v[0], own, v.slice(1), nodes);
     }),
+    st.writing ? el('div', { class: 'pendingbox' }, el('span', { class: 'spin' }), `${plural(st.sections.length, 'section', 'sections')} written so far. The next appears here when the author finishes it.`) : null,
     el('div', { id: 'g-findings' }, findingsView(st))];
 }
 
@@ -1912,7 +2071,7 @@ function findingTarget(st, c) {
   const r = evRefs(st, c).find((x) => x.inStack);
   return r && { path: r.path, line: r.line };
 }
-const orderedFindings = (st) => AXES.flatMap(([a]) => axisFindings(st).filter((c) => c.axis === a && !cmState(c).gone).sort((x, y) => RANK[y.severity] - RANK[x.severity])).filter((c) => findingTarget(st, c));
+const orderedFindings = (st) => axesOf(st).flatMap(([a]) => axisFindings(st).filter((c) => c.axis === a && !cmState(c).gone).sort((x, y) => RANK[y.severity] - RANK[x.severity])).filter((c) => findingTarget(st, c));
 
 function backToOrigin() {
   const o = state.origin || { view: 'guide', top: 0 };
@@ -1948,10 +2107,12 @@ function fileView(st) {
   let walkers = null, reviewed = null;
   const step = nv.kind === 'step' && allSteps(st).find((e) => e.s.id === nv.id);
   const finding = nv.kind === 'finding' && comments(st).find((c) => c.id === nv.id);
-  const sec = nv.kind === 'diagram' && st.sections[nv.si];
+  const sec = (nv.kind === 'diagram' || nv.kind === 'part') && st.sections[nv.si];
   if (o.view === 'guide') {
-    if (step) parts.push(crumb(step.sec.title, () => goOutline(`sec-${step.si}`)), crumb(`${step.n}. ${step.s.title}`, () => goOutline(step.s.id)));
-    if (finding?.axis) parts.push(crumb('Findings', () => goOutline('g-findings')), crumb(AXES.find((x) => x[0] === finding.axis)[1], () => goOutline('axis-' + finding.axis)));
+    // An inline step belongs to the section just before it; a standalone reading order is its own crumb.
+    const home = step && (step.sec.inline ? step.si - 1 : step.si);
+    if (step) parts.push(crumb(st.sections[home].title, () => goOutline(`sec-${home}`)), crumb(`${step.n}. ${step.s.title}`, () => goOutline(step.s.id)));
+    if (finding?.axis) parts.push(crumb('Findings', () => goOutline('g-findings')), crumb(axisTitle(st, finding.axis), () => goOutline('axis-' + finding.axis)));
     if (sec) parts.push(crumb(sec.title, () => goOutline(`sec-${nv.si}`)));
   }
   if (finding) parts.push(crumb(finding.title, null));
@@ -1991,20 +2152,25 @@ const mins = (secs) => { secs = Math.max(1, Math.round(secs)); return secs < 60 
 const usualText = (lvl) => (usual[lvl] ? `usually about ${Math.max(1, Math.round(usual[lvl] / 60))} min` : '');
 const working = (row) => row && row.stages.some((x) => x.state === 'running' || x.state === 'waiting');
 
-function stageText(x) {
+// A chip's short result: what a finished agent produced, or what a running one is doing, in a reviewer's words.
+function stageChip(x) {
   if (x.key === 'check') {
     if (x.state === 'waiting') return 'starts when the reviewers finish';
     if (x.state === 'done') return x.total ? `${plural(x.total, 'finding', 'findings')} checked` : 'nothing to check';
-    return [`${x.checked} of ${x.total} checked`, x.last].filter(Boolean).join(' · ');
+    return `${x.checked} of ${x.total} checked`;
   }
-  if (x.state === 'running') return [x.calls ? plural(x.calls, 'call', 'calls') : 'starting', x.last].filter(Boolean).join(' · ');
-  if (x.state === 'failed') return 'failed; see agents.log';
-  if (x.state === 'skipped') return x.note || 'skipped';
+  if (x.state === 'running') return x.doing || (x.calls ? 'reading the code' : 'starting');
+  if (x.state === 'failed') return 'failed';
+  if (x.state === 'skipped') return 'skipped';
   if (x.state === 'waiting') return 'waiting';
-  return x.key === 'guide' || x.found == null ? 'written' : x.found ? plural(x.found, 'finding', 'findings') : 'nothing found';
+  if (x.key === 'plan') return x.picked ? plural(x.picked, 'reviewer', 'reviewers') : 'done';
+  if (x.key.startsWith('figure/')) return 'drawn';
+  if (x.key === 'guide') return 'written';
+  return x.found == null ? 'done' : x.found ? plural(x.found, 'finding', 'findings') : 'nothing found';
 }
+// Kept for callers outside the strip.
+const stageText = (x) => (x.state === 'skipped' && x.note) || stageChip(x);
 
-// Painted in place on every poll, so progress moves without reloading the page.
 function paintStrip() {
   const st = ST(), found = stages.find((r) => r.id === st.id);
   // A server started before this page's version still sends a Fetched row and no stack time.
@@ -2017,18 +2183,43 @@ function paintStrip() {
     }
     const by = (k) => row.stages.find((x) => x.key === k);
     const finished = (x) => ['done', 'skipped', 'failed'].includes(x.state);
-    const check = by('check');
-    const parts = row.stages.filter((x) => x.key !== 'check');
-    const share = (parts.filter(finished).length + (finished(check) ? 1 : check.total ? check.checked / check.total : 0)) / row.stages.length;
-    const phase = !finished(by('guide')) ? 'Writing the guide and reviewing' : parts.some((x) => !finished(x)) ? 'Reviewing' : 'Checking the findings';
+    const guide = by('guide'), plan = by('plan'), check = by('check');
+    const pics = row.stages.filter((x) => x.key.startsWith('figure/'));
+    const revs = row.stages.filter((x) => !['guide', 'plan', 'check'].includes(x.key) && !x.key.startsWith('figure/'));
+    const share = (row.stages.filter((x) => x.key !== 'check' && finished(x)).length + (finished(check) ? 1 : check.total ? check.checked / check.total : 0)) / row.stages.length;
+    const busy = (xs) => xs.filter((x) => !finished(x)).length;
+    // The headline says what the reader can do now, not only what the agents do.
+    const now = !finished(guide) ? (busy(pics) ? 'Writing the guide and drawing its pictures' : 'Writing the guide')
+      : busy(pics) ? `Drawing ${plural(busy(pics), 'picture', 'pictures')}`
+      : plan && !finished(plan) ? 'Choosing the reviewers'
+      : busy(revs) ? `${busy(revs)} of ${plural(revs.length, 'reviewer', 'reviewers')} still reading`
+      : 'Checking the findings against the code';
+    const hint = finished(guide) && !st.writing ? 'The guide is ready to read' : st.sections.length ? 'Read the sections already written' : '';
     const icon = (x) => x.state === 'running' ? el('span', { class: 'spin' }) : el('span', { class: 'ic' }, { done: '✓', failed: '✕', skipped: '–', waiting: '·' }[x.state]);
+    // A row: icon, name, and either the result (done) or the time running, with what it is doing on a second line.
+    const item = (x, name) => el('div', { class: `item ${x.state}${x.found ? ' found' : ''}`, title: [x.question || x.label, x.state === 'running' && x.last, x.state === 'skipped' && x.note].filter(Boolean).join(' · ') },
+      icon(x), el('span', { class: 'nm' }, name || x.label),
+      // Running and waiting rows put their status on a second line; finished rows keep the result on the right.
+      x.state === 'running' ? el('span', { class: 't' }, x.secs != null ? mins(x.secs) : '') : x.state === 'waiting' ? el('span') : el('span', { class: 'd' }, stageChip(x)),
+      x.state === 'running' || x.state === 'waiting' ? el('span', { class: 'sub' }, stageChip(x)) : null);
+    const count = (xs) => (xs.length ? el('span', { class: 'n' }, `${xs.filter(finished).length} of ${xs.length}`) : null);
+    const col = (title, n, rows) => el('div', { class: 'col' }, el('div', { class: 'lane' }, title, n), rows);
+    const sections = guide && guide.state === 'running' && st.sections.length ? { ...guide, doing: `${plural(st.sections.length, 'section', 'sections')} so far` } : guide;
+    const cols = [
+      col('Guide', count([guide, ...pics].filter(Boolean)), [guide ? item(sections, 'Sections') : null, pics.map((x) => item(x, `Picture: ${x.label}`))]),
+      col('Reviewers', count(revs), [plan && !finished(plan) ? item(plan, 'Choosing reviewers') : null, revs.map((x) => item(x)),
+        !revs.length && plan && finished(plan) ? el('div', { class: 'item waiting' }, el('span', { class: 'ic' }, '·'), el('span', { class: 'nm' }, 'starting')) : null]),
+      col('Fact check', null, [check ? item(check, 'Findings') : null]),
+    ];
+    // The strip sits above the guide: when it changes height while the reader is below it, move the scroll by the same amount.
+    const m = $main(), h0 = box.offsetHeight, above = box.getBoundingClientRect().bottom < m.getBoundingClientRect().top;
     box.replaceChildren(
-      el('div', { class: 'rh' }, el('b', {}, phase, el('span', { class: 't' }, ` · ${mins(row.secs)}`)),
-        el('span', { class: 'lvl' }, [DATA.effort, usualText(DATA.effort)].filter(Boolean).join(' · '))),
+      el('div', { class: 'rh' }, el('b', {}, now, el('span', { class: 't' }, ` · ${mins(row.secs)}`)),
+        hint ? el('span', { class: 'hint' }, hint) : el('span', { class: 'lvl' }, [DATA.effort, usualText(DATA.effort)].filter(Boolean).join(' · '))),
       el('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(share * 100)) },
         el('span', { style: `width:${Math.max(3, share * 100)}%` })),
-      ...row.stages.map((x) => el('div', { class: `row ${x.state}` }, icon(x), el('span', { class: 'nm' }, x.label),
-        el('span', { class: 'd', title: stageText(x) }, stageText(x)), el('span', { class: 't' }, x.secs != null ? mins(x.secs) : ''))));
+      el('div', { class: 'lanes' }, cols));
+    if (above && box.offsetHeight !== h0) m.scrollTop += box.offsetHeight - h0;
   }
 }
 
@@ -2305,6 +2496,7 @@ const TG = {
   fact: (st, i) => ({ kind: 'fact', stack: st.id, ref: i, label: st.key_facts[i].title }),
   step: (st, s) => ({ kind: 'step', stack: st.id, ref: s.id, label: s.title }),
   finding: (st, c) => ({ kind: 'finding', stack: st.id, ref: c.id, label: c.title }),
+  part: (st, i, part, label) => ({ kind: 'part', stack: st.id, ref: i, part, section_title: st.sections[i].title, label }),
   free: () => ({ kind: 'free', stack: ST().id, label: 'Free question' }),
   node(st, ref, si) {
     const comps = dgComps(st), sec = st.sections[si];
@@ -2317,12 +2509,12 @@ const TG = {
 function chipText(g) {
   const st = DATA.stacks.find((s) => s.id === g.stack) || ST(), l = plain(g.label || '');
   if (g.kind === 'step') { const e = allSteps(st).find((x) => x.s.id === g.ref); return e ? `Step ${e.n}: ${l}` : l; }
-  const pre = { finding: 'Finding: ', fact: 'Fact: ', section: 'Section: ', item: `${plain(g.section_title || 'Row')}: `, node: String(g.ref).includes('>') ? 'Arrow: ' : 'Box: ' }[g.kind] || '';
+  const pre = { finding: 'Finding: ', fact: 'Fact: ', section: 'Section: ', item: `${plain(g.section_title || 'Row')}: `, part: `${plain(g.section_title || 'Guide')}: `, node: String(g.ref).includes('>') ? 'Arrow: ' : 'Box: ' }[g.kind] || '';
   return pre + l;
 }
 const STARTERS = {
   line: ['Why this way?', 'What calls this?', 'What breaks if…', 'Is this tested?'], step: ['Why this way?', 'What calls this?', 'What breaks if…', 'Is this tested?'],
-  section: ['Why this way?', 'What breaks if…', 'Is this tested?'], item: ['Why is this true?', 'What breaks if…', 'Is this tested?'], fact: ['Why is this true?', 'What breaks if…', 'Is this tested?'],
+  section: ['Why this way?', 'What breaks if…', 'Is this tested?'], part: ['Why is this true?', 'Show me the code', 'What breaks if…'], item: ['Why is this true?', 'What breaks if…', 'Is this tested?'], fact: ['Why is this true?', 'What breaks if…', 'Is this tested?'],
   node: ['What calls this?', 'Why this way?', 'What breaks if…'], finding: ['Is this real?', 'Show me the caller', 'What breaks if…', 'Is this tested?'],
   free: ['Why this way?', 'What calls this?'],
 };
@@ -2458,7 +2650,7 @@ async function loadThreads() {
 }
 
 // Accepted answers show on the page before the next build merges them: a re-judged finding, a corrected guide item.
-const srcStep = (s, sid) => ({ id: s.id.replace(sid + '-', ''), kind: s.kind, title: s.title, why: s.why, nodes: s.nodes, test: s.test || null, anchor: { path: s.path, start: s.start, end: s.end } });
+const srcStep = (s, sid) => ({ id: s.id.replace(sid + '-', ''), kind: s.kind, title: s.title, why: s.why, nodes: s.nodes, test: s.test || null, anchor: { path: s.path, start: s.start, end: s.end }, ...(s.html != null ? { html: s.html } : {}) });
 const srcSec = (sec, sid) => (sec.type === 'steps' ? { ...sec, steps: sec.steps.map((s) => srcStep(s, sid)) } : sec);
 function applyOver() {
   for (const t of [...TH.values()].filter((x) => x.proposal?.applied).sort(byCreated)) {
@@ -2475,7 +2667,7 @@ function applyOver() {
         const same = old && old.path === s.anchor.path && old.start === s.anchor.start && old.end === s.anchor.end;
         const rows = fileOf(st, s.anchor.path)?.hunks.flat().filter((r) => r.k !== '-' && r.n >= s.anchor.start && r.n <= s.anchor.end) || [];
         return { id: `${st.id}-${s.id}`, kind: s.kind, title: s.title, why: s.why, nodes: s.nodes || [], test: 'test' in s ? s.test : false, path: s.anchor.path, start: s.anchor.start, end: s.anchor.end,
-          lines: same ? old.lines : rows, link: same ? old.link : null, _fixed: t.id };
+          lines: same ? old.lines : rows, link: same ? old.link : null, ...(s.html != null ? { html: s.html } : {}), _fixed: t.id };
       };
       if (p.ref.kind === 'section') {
         const old = st.sections[p.ref.index];
@@ -3039,6 +3231,32 @@ if (SHARED) {
 // ---- End of shared file --------------------------------------------------------------------------------------------
 render();
 let version = null;
+// The element at the top of the reading area, and how far it sits from the top: render() rebuilds everything, and content
+// that grew above the reader would otherwise push them down.
+function keepPlace(fn) {
+  const m = $main(), top = m.getBoundingClientRect().top;
+  const mark = [...document.querySelectorAll('#content [id], #content [data-ref], #content .ln[data-n]')]
+    .find((e) => e.getBoundingClientRect().bottom > top + 1);
+  const key = mark && (mark.id ? `#${CSS.escape(mark.id)}` : mark.dataset.ref ? `[data-ref="${CSS.escape(mark.dataset.ref)}"]` : null);
+  const off = mark ? mark.getBoundingClientRect().top - top : 0;
+  fn();
+  const again = key && document.querySelector(`#content ${key}`);
+  if (again) m.scrollTop += again.getBoundingClientRect().top - top - off;
+}
+async function swapData() {
+  try {
+    const r = await fetch(`${API}/data`, { cache: 'no-store' });
+    if (!r.ok) return false;
+    const fresh = await r.json();
+    for (const k of Object.keys(DATA)) delete DATA[k];
+    Object.assign(DATA, fresh);
+    appliedFx.clear();  // the fresh data carries no accepted guide fixes yet; apply them again
+    applyOver();
+    keepPlace(render);
+    return true;
+  } catch (e) { return false; }
+}
+
 async function poll() {
   try {
     const j = await (await fetch(`${API}/state`, { cache: 'no-store' })).json();
@@ -3048,11 +3266,16 @@ async function poll() {
     if (j.rerun) rerun = j.rerun;
     paintStrip();
     if (was && !rerun.running) render();
-    if (version !== null && j.version !== version) { flush(); location.href = `/r/${BOOT.review}`; return; }
+    if (version !== null && j.version !== version) {
+      // Same round, new build (a section, a picture or findings landed): take the new data in place and keep the reader's
+      // spot. Only a new round navigates.
+      const sameRound = String(j.version).split(':')[0] === String(version).split(':')[0] && j.live === BOOT.round;
+      if (!sameRound || !(await swapData())) { flush(); location.href = `/r/${BOOT.review}`; return; }
+    }
     if (version === null) render();
     version = j.version;
   } catch (e) {}
-  const busy = rerun.running || stages.some(working) || DATA.stacks.some((s) => s.pending || s.reviewing.length || s.comments.some((c) => c.status === 'checking'));
+  const busy = rerun.running || stages.some(working) || DATA.stacks.some((s) => s.pending || s.writing || (s.drawing || []).length || s.reviewing.length || s.comments.some((c) => c.status === 'checking'));
   // Slow polling otherwise, so a round started from Claude Code moves this page onto it too.
   if (BOOT.live) setTimeout(poll, busy ? 3000 : 15000);
 }
