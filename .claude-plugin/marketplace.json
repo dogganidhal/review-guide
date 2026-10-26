@@ -1,8 +1,9 @@
 {
   "name": "review-guide",
-  "description": "Claude Code plugins for code review.",
+  "description": "The review-guide plugin on its own, for installs that bypass the doctolib marketplace.",
   "owner": {
-    "name": "Nidhal Dogga"
+    "name": "Doctolib, team CHEAT",
+    "url": "https://github.com/doctolib/review-guide"
   },
   "plugins": [
     {

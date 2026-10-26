@@ -4,6 +4,10 @@ description: Builds a guided review page for one or more GitHub pull requests. S
 when_to_use: The user asks for help reviewing PRs, wants a review guide or walkthrough, shares PR links or a Slack thread asking for a review, or wants to post review comments on several PRs at once.
 argument-hint: [quick|balanced|deep] <PR URLs, owner/repo#N, or a Slack thread link>
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/scripts/*), Read
+model: sonnet # reads Slack threads for PR links and turns the runner's status and finding lines into a report for the reviewer
+effort: medium
+metadata:
+  category: engineering
 ---
 
 # Review guide

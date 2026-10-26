@@ -14,31 +14,20 @@ A stack is reviewed as its final state, so a file edited by three PRs appears on
 
 ## Install
 
-One-time setup, if `gh` is not already your git credential helper (the repository is private):
-
-```bash
-gh auth login
-gh auth setup-git
-```
-
-Then, in Claude Code:
+In Claude Code, from the Doctolib marketplace:
 
 ```
-/plugin marketplace add dogganidhal/review-guide
-/plugin install review-guide@review-guide
+/plugin marketplace add doctolib/prompts
+/plugin install review-guide@doctolib
 ```
 
-To get updates without doing anything, open `/plugin`, pick Marketplaces, review-guide, and enable auto-update. Updates apply after `/reload-plugins` or the next launch.
+The marketplace entry points at this repository, so an update lands on the next `/reload-plugins` or launch once auto-update is on for the marketplace (`/plugin`, Marketplaces, doctolib). Without the marketplace, `/plugin marketplace add doctolib/review-guide` then `/plugin install review-guide@review-guide` installs it from here. Both need `gh` as the git credential helper for private repositories (`gh auth login`, then `gh auth setup-git`).
 
 It requires `gh` (logged in), `git` and Python 3.9 or later, with no packages to install. Run it from a clone of the reviewed repository so the agents can search code locally; otherwise the plugin keeps a lightweight clone in `~/.cache/review-guide/`.
 
 ## Release
 
-Teammates only receive an update when `version` in `plugins/review-guide/.claude-plugin/plugin.json` changes. To release:
-
-1. Run the checks in `AGENTS.md`.
-2. Bump `version` (semver), commit, and merge to `main`.
-3. Tag it: `git tag v<version> && git push --tags`.
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `feat(cheat-123): …`, `fix: …`, `docs: …`. On each merge to `main`, release-please opens or updates a release PR that bumps `version` in `plugins/review-guide/.claude-plugin/plugin.json`, writes `plugins/review-guide/CHANGELOG.md` and, once merged, tags the release. Teammates receive the update when the version changes. Run the checks in `AGENTS.md` before merging.
 
 ## Documentation
 

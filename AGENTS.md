@@ -32,6 +32,7 @@ plugins/review-guide/
     ui/vendor/                             Figtree, JetBrains Mono, highlight.js 11.9.0 and their licenses, inlined into shared files
   skills/self-review/SKILL.md              self-review of local work; feedback goes back to the session
 docs/spec.md, docs/status.md
+CODEOWNERS, release-please-config.json, .release-please-manifest.json, .github/   the prompts marketplace scaffolding: ownership, releases from conventional commits, CI
 ```
 
 ## Rules
@@ -44,6 +45,8 @@ docs/spec.md, docs/status.md
 - **Posting:** the agents never post. Posting happens only from the page, through `serve.py` and its guards.
 
 ## Checks
+
+Commit messages follow Conventional Commits (`feat(cheat-123): …`, `fix: …`, `docs: …`); release-please writes the changelog and bumps the version from them, so a commit that changes behavior is a `feat` or a `fix`.
 
 ```bash
 python3 -I plugins/review-guide/skills/review-guide/scripts/test_scripts.py

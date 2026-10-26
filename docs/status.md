@@ -70,5 +70,5 @@ In priority order:
 3. Speed: run writer and verifier in an overlapping way (verify each comment as it is drafted), and split structure (map, flows, roles; small and fast) from findings. Target: under 5 minutes in total.
 4. Add a light mode for small PRs: comments only, no map or flows.
 5. Measure recall on about 10 merged PRs that had human review comments, to check that `skim` and `skip` roles are safe.
-6. Release 0.1.0 to the team: `LICENSE` (internal), install and release steps in the README and the plugin runs on Python 3.9 are done. Remaining: install it from `dogganidhal/review-guide` (private) on a second machine, then move the repo to the doctolib org (needs a PR on github-workspaces).
+6. Release to the team: the repository is `doctolib/review-guide` (CHEAT-981), with CODEOWNERS, release-please and CI from the prompts marketplace scaffolding. Remaining: register it in `doctolib/prompts` as an external plugin, then install it from the marketplace on a second machine.
 7. "Risks to review" cards with a status (accepted limit, decided, not discussed), taken from the hand-made guide.

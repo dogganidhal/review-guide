@@ -4,6 +4,10 @@ description: Opens a guided review page on the work in progress in this session,
 when_to_use: The user, in the session implementing a change, wants to review that work before or alongside opening PRs, asks for a self-review or a review of "what you wrote", or wants to give the agent line-by-line feedback from the review page.
 argument-hint: [quick|balanced|deep] [--branch <top branch>] [--base <ref>] [focus]
 allowed-tools: Bash(python3 ${CLAUDE_SKILL_DIR}/../review-guide/scripts/*), Read
+model: inherit # intentional: the session that wrote the change acts on the feedback itself
+effort: medium
+metadata:
+  category: engineering
 ---
 
 # Self-review

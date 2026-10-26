@@ -1,0 +1,33 @@
+name: Release Please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: prod-linux-xs
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: doctolib/actions/checkout@568bbd82c060461931222968aef7c540f7ebe2e8 # checkout-v0.3.2
+
+      - name: Load secrets
+        uses: doctolib/actions/load-secrets@f77e2af5d1a9030d775c82d4a0d4d0a62dd4d491 # load-secrets-v0.2.9
+        with:
+          prefix_secrets: true
+
+      - name: Generate Github App token
+        uses: doctolib/actions/github-app-token-vault@a54e33ca42838cdf274d50fd54b86e3e359e24f6 # github-app-token-vault-v1.7.1
+        id: app-token
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
